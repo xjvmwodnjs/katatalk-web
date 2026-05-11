@@ -26,6 +26,10 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
+      if (import.meta.env.VITE_AUTH_PROVIDER === "supabase") {
+        const { supabase } = await import("@/lib/supabase");
+        await supabase?.auth.signOut();
+      }
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
       if (

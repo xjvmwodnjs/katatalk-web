@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
 import type { AnalysisJobGetResponse } from "@shared/analysisJob";
+import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import GameInfoHeader from "@/components/GameInfoHeader";
@@ -75,6 +76,22 @@ export default function Home() {
       return;
     }
 
+    const analyzeAuth = await getAnalyzeAuthHeaders();
+    if (import.meta.env.VITE_AUTH_PROVIDER === "supabase") {
+      const hasBearer =
+        typeof analyzeAuth === "object" &&
+        analyzeAuth !== null &&
+        "Authorization" in analyzeAuth &&
+        Boolean((analyzeAuth as Record<string, string>).Authorization);
+      if (!hasBearer) {
+        toast.error("로그인이 필요합니다.", {
+          description: "세션이 없거나 만료되었습니다. 다시 로그인해 주세요.",
+          action: { label: t.login, onClick: handleLogin },
+        });
+        return;
+      }
+    }
+
     if (file.size > MAX_SGF_FILE_BYTES) {
       toast.error(
         lang === "ko" ? "파일이 너무 큽니다." :
@@ -103,6 +120,7 @@ export default function Home() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         credentials: "include",
+        headers: { ...analyzeAuth },
         body: formData,
       });
 
@@ -118,8 +136,10 @@ export default function Home() {
           typeof createPayload.message === "string" && createPayload.message.trim()
             ? createPayload.message
             : !response.ok
-              ? `Could not start analysis (${response.status})`
-              : "Could not start analysis";
+              ? response.status === 401
+                ? "로그인이 필요합니다. 다시 로그인한 뒤 시도해 주세요."
+                : `분석을 시작할 수 없습니다 (${response.status})`
+              : "분석을 시작할 수 없습니다.";
         throw new Error(msg);
       }
 
@@ -129,6 +149,7 @@ export default function Home() {
       while (!pollAbortRef.current && Date.now() < deadline) {
         const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
           credentials: "include",
+          headers: { ...(await getAnalyzeAuthHeaders()) },
         });
 
         const pollBody = (await pollRes.json().catch(() => ({}))) as
