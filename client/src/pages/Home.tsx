@@ -31,7 +31,7 @@ function sleep(ms: number) {
 }
 
 export default function Home() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const [, setLocation] = useLocation();
   const [lang, setLang] = useState<Language>(() => readStoredUiLang());
   const [view, setView] = useState<View>("upload");
@@ -267,7 +267,9 @@ export default function Home() {
                     <User className="w-3.5 h-3.5 text-amber-400" />
                   </div>
                   <span className="text-xs font-medium text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {user?.name || user?.email || "User"}
+                    {authLoading && isAuthenticated && !(user?.name || user?.email)
+                      ? "…"
+                      : user?.name || user?.email || "User"}
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                     style={{
