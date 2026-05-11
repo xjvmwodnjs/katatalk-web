@@ -1,11 +1,12 @@
 import type { Request } from "express";
+import { ForbiddenError } from "@shared/_core/errors";
 import type { User } from "../../drizzle/schema";
 import { ENV } from "./env";
 import type { AuthenticatedUser } from "./sdk";
 import type { ExchangeTokenResponse, GetUserInfoResponse } from "./types/manusTypes";
 
 export interface AuthProvider {
-  name: "local-dev" | "legacy-manus";
+  name: "local-dev" | "legacy-manus" | "supabase" | "clerk";
   authenticateRequest(req: Request): Promise<AuthenticatedUser>;
   exchangeCodeForToken?(code: string, state: string): Promise<ExchangeTokenResponse>;
   getUserInfo?(accessToken: string): Promise<GetUserInfoResponse>;
@@ -42,10 +43,20 @@ const localDevAuthProvider: AuthProvider = {
   },
 };
 
-/**
- * Legacy Manus OAuth adapter.
- * TODO: Replace this provider with Supabase Auth in the commercial service.
- */
+const supabaseCookieDisabledProvider: AuthProvider = {
+  name: "supabase",
+  async authenticateRequest() {
+    throw ForbiddenError("supabase 모드는 Authorization Bearer 만 사용합니다.");
+  },
+};
+
+const clerkCookieDisabledProvider: AuthProvider = {
+  name: "clerk",
+  async authenticateRequest() {
+    throw ForbiddenError("clerk 모드는 Authorization Bearer(Clerk JWT)만 사용합니다.");
+  },
+};
+
 const legacyManusAuthProvider: AuthProvider = {
   name: "legacy-manus",
   async authenticateRequest(req) {
@@ -67,9 +78,16 @@ const legacyManusAuthProvider: AuthProvider = {
 };
 
 export function getAuthProvider(): AuthProvider {
-  return ENV.authProvider === "legacy-manus"
-    ? legacyManusAuthProvider
-    : localDevAuthProvider;
+  if (ENV.authProvider === "legacy-manus") {
+    return legacyManusAuthProvider;
+  }
+  if (ENV.authProvider === "supabase") {
+    return supabaseCookieDisabledProvider;
+  }
+  if (ENV.authProvider === "clerk") {
+    return clerkCookieDisabledProvider;
+  }
+  return localDevAuthProvider;
 }
 
 export const authProvider = getAuthProvider();

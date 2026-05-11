@@ -2,15 +2,13 @@
 // /api/analyze — SGF upload + job enqueue (mock worker, in-memory store)
 // =============================================================
 //
-// SECURITY NOTE:
-// This route is intentionally public for the local demo. A commercial service
-// must move analysis behind protectedProcedure or equivalent auth middleware,
-// validate SGF uploads, enforce quota server-side, and enqueue a KataGo worker.
+// SECURITY NOTE: requireAnalyzeAuth 로 서버 측 인증 필수.
 
 import { Router, type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import type { AnalysisJobCreateResponse } from "@shared/analysisJob";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
+import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
@@ -73,7 +71,7 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
   });
 }
 
-analyzeRouter.get("/api/analyze/:jobId", (req: Request, res: Response) => {
+analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res: Response) => {
   const jobId = req.params.jobId;
   if (!jobId || typeof jobId !== "string") {
     sendUploadError(res, 400, "Missing job ID.");
@@ -94,6 +92,7 @@ analyzeRouter.get("/api/analyze/:jobId", (req: Request, res: Response) => {
 
 analyzeRouter.post(
   "/api/analyze",
+  requireAnalyzeAuth,
   handleMulterUpload,
   (req: Request, res: Response) => {
     const file = req.file;

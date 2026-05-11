@@ -4,13 +4,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, persistUiLang, readStoredUiLang } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
 import type { AnalysisJobGetResponse } from "@shared/analysisJob";
+import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import GameInfoHeader from "@/components/GameInfoHeader";
@@ -32,7 +33,7 @@ function sleep(ms: number) {
 export default function Home() {
   const { user, isAuthenticated, logout } = useAuth();
   const [, setLocation] = useLocation();
-  const [lang, setLang] = useState<Language>("ko");
+  const [lang, setLang] = useState<Language>(() => readStoredUiLang());
   const [view, setView] = useState<View>("upload");
   const [report, setReport] = useState<AnalysisReport>(MOCK_DATA);
   const [jobProgress, setJobProgress] = useState(0);
@@ -75,6 +76,25 @@ export default function Home() {
       return;
     }
 
+    const analyzeAuth = await getAnalyzeAuthHeaders();
+    const needBearer =
+      import.meta.env.VITE_AUTH_PROVIDER === "supabase" ||
+      import.meta.env.VITE_AUTH_PROVIDER === "clerk";
+    if (needBearer) {
+      const hasBearer =
+        typeof analyzeAuth === "object" &&
+        analyzeAuth !== null &&
+        "Authorization" in analyzeAuth &&
+        Boolean((analyzeAuth as Record<string, string>).Authorization);
+      if (!hasBearer) {
+        toast.error("로그인이 필요합니다.", {
+          description: "세션이 없거나 만료되었습니다. 다시 로그인해 주세요.",
+          action: { label: t.login, onClick: handleLogin },
+        });
+        return;
+      }
+    }
+
     if (file.size > MAX_SGF_FILE_BYTES) {
       toast.error(
         lang === "ko" ? "파일이 너무 큽니다." :
@@ -103,6 +123,7 @@ export default function Home() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         credentials: "include",
+        headers: { ...analyzeAuth },
         body: formData,
       });
 
@@ -118,8 +139,10 @@ export default function Home() {
           typeof createPayload.message === "string" && createPayload.message.trim()
             ? createPayload.message
             : !response.ok
-              ? `Could not start analysis (${response.status})`
-              : "Could not start analysis";
+              ? response.status === 401
+                ? "로그인이 필요합니다. 다시 로그인한 뒤 시도해 주세요."
+                : `분석을 시작할 수 없습니다 (${response.status})`
+              : "분석을 시작할 수 없습니다.";
         throw new Error(msg);
       }
 
@@ -129,6 +152,7 @@ export default function Home() {
       while (!pollAbortRef.current && Date.now() < deadline) {
         const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
           credentials: "include",
+          headers: { ...(await getAnalyzeAuthHeaders()) },
         });
 
         const pollBody = (await pollRes.json().catch(() => ({}))) as
@@ -256,8 +280,9 @@ export default function Home() {
                 {/* Logout */}
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/5"
-                  style={{ color: "#94a3b8", fontFamily: "'Noto Sans KR', sans-serif" }}
+                  type="button"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
+                  style={{ color: "#cbd5e1", fontFamily: "'Noto Sans KR', sans-serif" }}
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   {t.logout}
@@ -268,8 +293,9 @@ export default function Home() {
                 {/* Login */}
                 <button
                   onClick={handleLogin}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/5"
-                  style={{ color: "#94a3b8", fontFamily: "'Noto Sans KR', sans-serif" }}
+                  type="button"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
+                  style={{ color: "#cbd5e1", fontFamily: "'Noto Sans KR', sans-serif" }}
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   {t.login}
@@ -278,11 +304,12 @@ export default function Home() {
                 {/* Signup */}
                 <button
                   onClick={handleLogin}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+                  type="button"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
                   style={{
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#e2e8f0",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    color: "#f1f5f9",
                     fontFamily: "'Noto Sans KR', sans-serif",
                   }}
                 >
@@ -294,11 +321,12 @@ export default function Home() {
 
             {/* Subscribe CTA → navigates to /pricing */}
             <button
+              type="button"
               onClick={() => setLocation("/pricing")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:scale-105"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
               style={{
                 background: "linear-gradient(135deg, #C9A84C, #A08030)",
-                color: "#000",
+                color: "#0c0a09",
                 boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
                 fontFamily: "'Noto Sans KR', sans-serif",
               }}
@@ -311,7 +339,13 @@ export default function Home() {
             <div className="w-px h-5 mx-1" style={{ background: "rgba(255,255,255,0.1)" }} />
 
             {/* Language Selector */}
-            <LanguageSelector current={lang} onChange={setLang} />
+            <LanguageSelector
+              current={lang}
+              onChange={next => {
+                setLang(next);
+                persistUiLang(next);
+              }}
+            />
           </div>
         </div>
       </header>
@@ -320,6 +354,38 @@ export default function Home() {
       <main className="container">
         {view === "upload" ? (
           <>
+            {!isAuthenticated && (
+              <div
+                className="max-w-lg mx-auto mb-8 mt-6 rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                style={{
+                  background: "rgba(254, 243, 199, 0.12)",
+                  border: "1px solid rgba(250, 204, 21, 0.35)",
+                  boxShadow: "0 0 0 1px rgba(0,0,0,0.04) inset",
+                }}
+              >
+                <div className="text-sm text-amber-50 font-medium" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                  {lang === "ko"
+                    ? "기보 분석은 로그인한 뒤 이용할 수 있습니다."
+                    : lang === "en"
+                      ? "Sign in to run SGF analysis."
+                      : lang === "zh"
+                        ? "登录后即可进行棋谱分析。"
+                        : "棋譜分析にはログインが必要です。"}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogin}
+                  className="shrink-0 min-h-[44px] px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-900/80"
+                  style={{
+                    background: "linear-gradient(135deg, #C9A84C, #A08030)",
+                    color: "#0c0a09",
+                    fontFamily: "'Noto Sans KR', sans-serif",
+                  }}
+                >
+                  {t.login}
+                </button>
+              </div>
+            )}
             {/* Upload Hero Section with Auth Guard */}
             <UploadHero
               t={t}

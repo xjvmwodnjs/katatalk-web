@@ -1,152 +1,69 @@
 # KataTalk
 
-KataTalk is a React/Vite + Express/tRPC prototype for a future SGF Go game analysis SaaS. The target product is an authenticated service where users upload SGF files, a backend worker analyzes them with KataGo, and the app returns natural-language baduk commentary.
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. 현재 SGF 업로드 후 **mock 분석**만 제공하며, Clerk 로그인으로 `/api/analyze` 가 보호됩니다.
 
-## Current Status
-
-This repository is currently a local mock analysis demo. The UI is preserved from the Manus-generated prototype, but the commercial analysis pipeline is not implemented yet.
-
-Implemented enough for local development:
-
-- React/Vite UI for upload, language selection, pricing display, and mock result viewing
-- Express server with tRPC
-- Drizzle/MySQL schema draft for users and analysis history
-- Local development auth provider
-- Explicit mock `/api/analyze` response
-
-Not implemented yet:
-
-- Real SGF multipart upload
-- SGF parsing and validation
-- KataGo worker or analysis server integration
-- LLM-generated commentary
-- Stripe checkout, billing portal, and webhooks
-- Server-enforced production subscription quota
-
-## Local Setup
-
-Install dependencies:
+## 로컬 실행
 
 ```bash
 pnpm install
-```
-
-Create your local environment file:
-
-```bash
 cp .env.example .env
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Set `JWT_SECRET` in `.env` before starting the server. The server refuses to start without it.
-
-Run the app:
+`.env` 에 `JWT_SECRET` 과 Clerk 키를 넣은 뒤:
 
 ```bash
 pnpm dev
 ```
 
-The dev script is cross-platform and sets `NODE_ENV=development` through `scripts/run-server.mjs`, so it also works in Windows PowerShell.
-
-Build and run production output:
+프로덕션 빌드:
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-`AUTH_PROVIDER=local-dev` can run built output for local smoke testing, but it must not be used for a public deployment.
+`pnpm start` 는 Express 가 빌드된 정적 파일과 API 를 함께 제공하는 형태를 가정합니다. Vercel 등에 올릴 때는 **Node 런타임**에서 동일하게 `pnpm build` 후 `pnpm start` 하거나, 프론트·API 를 분리 배포하는 경우 별도 리버스 프록시 설정이 필요합니다.
 
-## Environment Variables
+## Clerk 환경 변수
 
-Required:
+| 변수 | 사용 위치 | 설명 |
+|------|-----------|------|
+| `AUTH_PROVIDER` | 서버 | `clerk` 로 설정 시 Bearer JWT 검증 경로 사용 |
+| `VITE_AUTH_PROVIDER` | 클라이언트 빌드 | `clerk` 일 때 Clerk UI·토큰 헤더 사용 |
+| `VITE_CLERK_PUBLISHABLE_KEY` | 클라이언트(번들) | Clerk Publishable key 만 노출 |
+| `CLERK_SECRET_KEY` | 서버만 | Secret key — **저장소·프론트 번들에 포함 금지** |
+| `JWT_SECRET` | 서버 | 세션 쿠키 등 (운영에서는 필수) |
 
-- `JWT_SECRET`: server session signing secret. Required even in local mock mode.
+`DATABASE_URL` 은 **선택**입니다. 없어도 Clerk 로그인과 mock 분석 API 는 동작합니다.
 
-Recommended for local development:
+## Clerk Dashboard 설정
 
-- `AUTH_PROVIDER=local-dev`: enables the built-in local mock user.
-- `VITE_AUTH_PROVIDER=local-dev`: keeps client login buttons from trying Manus OAuth.
-- `LOCAL_DEV_USER_EMAIL`: optional local mock user email.
-- `LOCAL_DEV_USER_NAME`: optional local mock user display name.
-- `PORT`: optional server port, default `3000`.
+1. [Clerk Dashboard](https://dashboard.clerk.com/) 에서 애플리케이션 생성  
+2. **Allowed origins**: 로컬 예) `http://localhost:3000` , 배포 도메인 `https://your-domain.com`  
+3. **Redirect URLs**: 동일 출처의 `/login` 등 실제 로그인 URL 허용  
+4. 소셜 로그인(Google 등)을 쓰려면 해당 제공자를 Dashboard 에서 활성화  
 
-Optional:
+로그인·회원가입은 `/login` 에서 Clerk 위젯으로 처리되며, 성공 시 홈(`/`)으로 이동합니다. 로그아웃 후에는 세션이 제거되어 분석 API 가 401 을 반환합니다.
 
-- `DATABASE_URL`: MySQL connection string for Drizzle. If omitted, the app runs with fallback subscription data.
+## 인증과 mock 분석
 
-Legacy Manus variables:
+- `Authorization: Bearer <Clerk 세션 토큰>` 으로 `POST /api/analyze` 및 `GET /api/analyze/:jobId` 호출  
+- 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답  
+- `AUTH_PROVIDER=local-dev` 는 로컬 편의용이며, **운영 배포에서는 사용하지 마세요** (기존 가드 유지)
 
-- `VITE_APP_ID`
-- `OAUTH_SERVER_URL`
-- `VITE_OAUTH_PORTAL_URL`
-- `BUILT_IN_FORGE_API_URL`
-- `BUILT_IN_FORGE_API_KEY`
-- `ENABLE_LEGACY_MANUS_STORAGE`
+## 아직 구현되지 않은 것
 
-These are not required for local development. Keep them disabled unless you are intentionally testing the old Manus adapter.
+- KataGo 실분석 워커  
+- Stripe 결제·구독·서버 측 quota 강제  
+- DB 영구 저장(선택적 `DATABASE_URL` 없이도 베타 동작)
 
-## Auth Architecture
+## 보안·Git
 
-Authentication now goes through `server/_core/authProvider.ts`.
-
-- `local-dev`: returns a fixed local user for independent local development.
-- `legacy-manus`: keeps the old Manus OAuth adapter available behind a provider boundary.
-
-TODO: Replace `legacy-manus` with Supabase Auth or another production auth provider before commercial deployment.
-
-## Mock Analysis Flow
-
-`POST /api/analyze` is explicitly mock-only. It accepts JSON with:
-
-```json
-{
-  "fileName": "example.sgf",
-  "language": "ko"
-}
-```
-
-It does not parse SGF, upload files, call KataGo, call an LLM, or enforce quota. The endpoint returns `meta.mock: true` and sets `X-KataTalk-Mock: true`.
-
-The route has a small function boundary, `runMockSgfAnalysis`, so the next step can replace it with:
-
-- multipart/form-data SGF upload parsing
-- SGF validation
-- job creation
-- KataGo worker queue
-- result persistence
-- LLM commentary generation
-
-## Template Audit
-
-Likely safe to delete later after a second pass:
-
-- `client/src/pages/ComponentShowcase.tsx`
-- `client/src/components/Map.tsx`
-- `client/src/components/ManusDialog.tsx`
-- `client/src/components/DashboardLayout.tsx`
-- `client/src/components/DashboardLayoutSkeleton.tsx`
-- `client/src/components/AIChatBox.tsx`
-- unused generic Manus/Forge helper modules under `server/_core/` such as `dataApi.ts`, `heartbeat.ts`, `imageGeneration.ts`, `map.ts`, `notification.ts`, and `voiceTranscription.ts`
-
-Keep for now:
-
-- `client/src/components/ui/*`, because active pages use these primitives.
-- `server/_core/sdk.ts`, because it is still referenced by the deprecated `legacy-manus` provider.
-- `server/storage.ts` and `server/_core/storageProxy.ts`, because they document the old storage path and are disabled by default.
-
-## Next Development Steps
-
-1. Replace `/api/analyze` JSON mock with authenticated SGF upload.
-2. Add SGF parser and server-side validation.
-3. Add analysis jobs table/status API.
-4. Add KataGo analysis worker with a queue.
-5. Normalize and persist KataGo output.
-6. Generate commentary with an LLM using structured output.
-7. Add Stripe subscription, webhook handling, and server-enforced quota.
-8. Add rate limiting, CSRF protection, upload limits, audit logging, and production tests.
+- `.env` 는 `.gitignore` 에 포함되어 있어 기본적으로 커밋되지 않습니다.  
+- **Secret key·서비스 롤 키를 커밋하지 마세요.**

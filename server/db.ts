@@ -4,6 +4,15 @@ import { InsertUser, users, analysisHistory, InsertAnalysisHistory } from "../dr
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _warnedDbUnavailable = false;
+
+function warnDatabaseUnavailableOnce() {
+  if (_warnedDbUnavailable) return;
+  _warnedDbUnavailable = true;
+  console.warn(
+    "[database] DATABASE_URL 없음 또는 연결 불가 — 사용자 upsert/get 등 DB 작업은 건너뜁니다."
+  );
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -25,7 +34,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    warnDatabaseUnavailableOnce();
     return;
   }
 
@@ -81,7 +90,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+    warnDatabaseUnavailableOnce();
     return undefined;
   }
 
