@@ -45,11 +45,20 @@ pnpm start
 ## Clerk Dashboard 설정
 
 1. [Clerk Dashboard](https://dashboard.clerk.com/) 에서 애플리케이션 생성  
-2. **Allowed origins**: 로컬 예) `http://localhost:3000` , 배포 도메인 `https://your-domain.com`  
-3. **Redirect URLs**: 동일 출처의 `/login` 등 실제 로그인 URL 허용  
-4. 소셜 로그인(Google 등)을 쓰려면 해당 제공자를 Dashboard 에서 활성화  
+2. **Paths**: 앱에서 `signInUrl=/login`, `signUpUrl=/sign-up` 을 사용합니다. Dashboard 의 Application URL·Allowed origins 에 **실제 개발 주소**(예: `http://localhost:3000` 또는 `pnpm dev` 가 쓰는 포트)를 넣으세요.  
+3. **Redirect / Allowed URLs**: `/login`, `/sign-up`, `/`(로그인·가입 완료 후 복귀)이 차단되지 않도록 허용 목록을 맞춥니다.  
+4. **Email** 로그인·회원가입을 쓰려면 User & Authentication → Email 에서 활성화되어 있는지 확인하세요. 메일이 오지 않으면 대부분 Dashboard 의 제한·도메인 설정 이슈입니다.  
+5. **Google** 등 소셜 로그인은 해당 제공자를 Clerk 에서 켠 뒤, 클라이언트 ID/시크릿과 리다이렉트 URI 를 제공자 콘솔과 일치시켜야 합니다.  
 
-로그인·회원가입은 `/login` 에서 Clerk 위젯으로 처리되며, 성공 시 홈(`/`)으로 이동합니다. 로그아웃 후에는 세션이 제거되어 분석 API 가 401 을 반환합니다.
+### 로그인·회원가입 수동 테스트(로컬)
+
+1. 비로그인으로 `/login` 접속 → 다크 테마 로그인 카드  
+2. 이메일 입력 시 글자·placeholder 가 잘 보이는지 확인  
+3. 「회원가입」링크로 `/sign-up` 이동 → 가입 폼 표시  
+4. 가입 또는 로그인 완료 후 `/` 로 이동하는지 확인  
+5. 로그아웃 후 `/login` 또는 비로그인 상태에서 분석 시도 시 401 안내  
+
+**코드 vs Dashboard**: 회원가입 링크·경로는 저장소에서 `/sign-up` 으로 연결합니다. 이메일 인증 메일 미수신·OAuth 오류는 대부분 **Clerk Dashboard·DNS·제공자 콘솔** 설정을 확인하세요. `CLERK_SECRET_KEY` 나 서버 시크릿은 README 나 로그에 적지 마세요.
 
 ## 인증과 mock 분석
 

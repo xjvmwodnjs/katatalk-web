@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl, persistUiLang, readStoredUiLang } from "@/const";
+import { getLoginUrl, getSignUpUrl, persistUiLang, readStoredUiLang } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -54,6 +54,10 @@ export default function Home() {
 
   const handleLogin = () => {
     window.location.href = getLoginUrl();
+  };
+
+  const handleSignUp = () => {
+    window.location.href = getSignUpUrl();
   };
 
   const handleLogout = async () => {
@@ -303,7 +307,7 @@ export default function Home() {
 
                 {/* Signup */}
                 <button
-                  onClick={handleLogin}
+                  onClick={handleSignUp}
                   type="button"
                   className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
                   style={{
