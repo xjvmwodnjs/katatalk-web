@@ -10,6 +10,7 @@ import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
+import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import GameInfoHeader from "@/components/GameInfoHeader";
 import MistakeCard from "@/components/MistakeCard";
@@ -57,26 +58,51 @@ export default function Home() {
       return;
     }
 
-    // Show loading state and call /api/analyze
+    if (file.size > MAX_SGF_FILE_BYTES) {
+      toast.error(
+        lang === "ko" ? "파일이 너무 큽니다." :
+        lang === "en" ? "File is too large." :
+        lang === "zh" ? "文件太大。" : "ファイルが大きすぎます。",
+        {
+          description:
+            lang === "ko" ? `SGF는 최대 ${MAX_SGF_FILE_BYTES / (1024 * 1024)}MB까지 업로드할 수 있습니다.` :
+            lang === "en" ? `SGF uploads are limited to ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB.` :
+            lang === "zh" ? `SGF 文件最大 ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB。` :
+            `SGFは最大${MAX_SGF_FILE_BYTES / (1024 * 1024)}MBまでです。`,
+        }
+      );
+      return;
+    }
+
+    // Show loading state and call /api/analyze (multipart SGF + language)
     setView("loading");
     try {
+      const formData = new FormData();
+      formData.append(SGF_UPLOAD_FORM_FIELD, file);
+      formData.append("language", lang);
+
       const response = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ fileName: file.name, language: lang }),
+        body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Analysis failed");
-      }
-
-      const payload = await response.json() as {
-        success: boolean;
+      const payload = await response.json().catch(() => ({})) as {
+        success?: boolean;
+        message?: string;
         data?: AnalysisReport;
         meta?: { mock?: boolean; message?: string };
       };
+
+      if (!response.ok || payload.success === false) {
+        const msg =
+          typeof payload.message === "string" && payload.message.trim()
+            ? payload.message
+            : !response.ok
+              ? `Analysis failed (${response.status})`
+              : "Analysis failed";
+        throw new Error(msg);
+      }
 
       if (!payload.success || !payload.data) {
         throw new Error("Analysis response was empty");

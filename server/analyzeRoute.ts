@@ -1,5 +1,5 @@
 // =============================================================
-// /api/analyze - explicit mock analysis endpoint
+// /api/analyze — SGF upload + basic validation; analysis still mock
 // =============================================================
 //
 // SECURITY NOTE:
@@ -7,13 +7,18 @@
 // must move analysis behind protectedProcedure or equivalent auth middleware,
 // validate SGF uploads, enforce quota server-side, and enqueue a KataGo worker.
 
-import { Router, type Request, type Response } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
+import multer from "multer";
+import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
+import { validateSgfText } from "./sgfValidation";
 
 type Language = "ko" | "en" | "zh" | "ja";
 
 type AnalyzeInput = {
   fileName: string;
   language: Language;
+  /** Raw SGF text; validated before mock analysis. */
+  sgfContent: string;
 };
 
 const SUPPORTED_LANGUAGES = new Set<Language>(["ko", "en", "zh", "ja"]);
@@ -76,29 +81,39 @@ const MOCK_ANALYSIS_RESULT = {
   ],
 };
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_SGF_FILE_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.originalname.toLowerCase().endsWith(".sgf")) {
+      cb(
+        new Error(
+          "Only .sgf files are allowed. Please upload a file whose name ends with .sgf."
+        )
+      );
+      return;
+    }
+    cb(null, true);
+  },
+});
+
 const analyzeRouter = Router();
 
-function parseAnalyzeInput(req: Request): AnalyzeInput {
-  const fileName =
-    typeof req.body?.fileName === "string" && req.body.fileName.trim()
-      ? req.body.fileName.trim()
-      : "uploaded.sgf";
-  const requestedLanguage = req.body?.language;
-  const language =
-    typeof requestedLanguage === "string" &&
-    SUPPORTED_LANGUAGES.has(requestedLanguage as Language)
-      ? (requestedLanguage as Language)
-      : "ko";
-
-  return { fileName, language };
+function parseLanguage(req: Request): Language {
+  const raw = req.body?.language;
+  if (typeof raw === "string" && SUPPORTED_LANGUAGES.has(raw as Language)) {
+    return raw as Language;
+  }
+  return "ko";
 }
 
 async function runMockSgfAnalysis(input: AnalyzeInput) {
-  // TODO: Replace this boundary with:
-  // 1. multipart/form-data SGF upload parsing
-  // 2. SGF validation and metadata extraction
-  // 3. KataGo analysis worker queue
-  // 4. LLM commentary generation
+  // TODO(KataGo): Replace mock analysis with:
+  // 1. Parse `input.sgfContent` with a full SGF parser (rules, komi, handicap, move tree).
+  // 2. Run KataGo (or a worker queue) on the parsed position sequence / game branch.
+  // 3. Merge engine winrates + candidate moves with LLM commentary for the response shape.
+  void input.sgfContent;
+
   await new Promise(resolve => setTimeout(resolve, 800));
 
   return {
@@ -111,19 +126,78 @@ async function runMockSgfAnalysis(input: AnalyzeInput) {
   };
 }
 
-analyzeRouter.post("/api/analyze", async (req: Request, res: Response) => {
-  const input = parseAnalyzeInput(req);
-  const data = await runMockSgfAnalysis(input);
+function sendUploadError(res: Response, status: number, message: string) {
+  res.status(status).json({ success: false, message });
+}
 
-  res.set("X-KataTalk-Mock", "true");
-  res.json({
-    success: true,
-    data,
-    meta: {
-      mock: true,
-      message: "This is mock analysis data. No SGF parsing, KataGo, or LLM call was performed.",
-    },
+function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
+  upload.single(SGF_UPLOAD_FORM_FIELD)(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        sendUploadError(
+          res,
+          413,
+          `The SGF file is too large. Maximum size is ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB.`
+        );
+        return;
+      }
+      sendUploadError(res, 400, `Upload error: ${err.message}`);
+      return;
+    }
+    if (err instanceof Error) {
+      sendUploadError(res, 400, err.message);
+      return;
+    }
+    sendUploadError(res, 400, "Invalid file upload.");
   });
-});
+}
+
+analyzeRouter.post(
+  "/api/analyze",
+  handleMulterUpload,
+  async (req: Request, res: Response) => {
+    const file = req.file;
+    if (!file) {
+      sendUploadError(
+        res,
+        400,
+        `Missing SGF file. Use multipart/form-data with field "${SGF_UPLOAD_FORM_FIELD}" containing the .sgf file.`
+      );
+      return;
+    }
+
+    const sgfContent = file.buffer.toString("utf8");
+
+    const validation = validateSgfText(sgfContent);
+    if (!validation.ok) {
+      sendUploadError(res, 400, validation.message);
+      return;
+    }
+
+    const language = parseLanguage(req);
+    const fileName = file.originalname.trim() || "uploaded.sgf";
+
+    const data = await runMockSgfAnalysis({
+      fileName,
+      language,
+      sgfContent,
+    });
+
+    res.set("X-KataTalk-Mock", "true");
+    res.json({
+      success: true,
+      data,
+      meta: {
+        mock: true,
+        message:
+          "This is mock analysis data. The SGF was validated and read on the server; KataGo and LLM calls are not wired up yet.",
+      },
+    });
+  }
+);
 
 export { analyzeRouter };

@@ -52,7 +52,11 @@ export default function UploadHero({ t, onAnalyze, isAuthenticated, onLoginRequi
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
-    if (selected) setFile(selected);
+    if (!selected) return;
+    if (!selected.name.toLowerCase().endsWith(".sgf")) {
+      return;
+    }
+    setFile(selected);
   };
 
   const handleUploadClick = () => {
