@@ -3,7 +3,9 @@
 // =============================================================
 //
 // SECURITY NOTE: requireAnalyzeAuth 로 서버 측 인증 필수.
+// 크레딧 차감은 서버(DB 또는 로컬 전용 메모리)에서만 수행한다.
 
+import { nanoid } from "nanoid";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import type { AnalysisJobCreateResponse } from "@shared/analysisJob";
@@ -12,6 +14,12 @@ import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
+import {
+  ensureWalletWithSignupBonus,
+  refundCreditIfJobFailed,
+  spendCreditForAnalysisJob,
+  walletSubjectFromAuthUser,
+} from "./creditService";
 
 const SUPPORTED_LANGUAGES = new Set<AnalysisJobLanguage>(["ko", "en", "zh", "ja"]);
 
@@ -72,9 +80,33 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
 }
 
 analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res: Response) => {
+  const user = req.katatalkUser;
+  if (!user) {
+    sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
+    return;
+  }
+
   const jobId = req.params.jobId;
   if (!jobId || typeof jobId !== "string") {
     sendUploadError(res, 400, "Missing job ID.");
+    return;
+  }
+
+  const internal = analysisJobStore.getInternal(jobId);
+  if (!internal) {
+    res.status(404).json({
+      success: false,
+      message: "Job not found. It may have expired or the ID is invalid.",
+    });
+    return;
+  }
+
+  const viewer = walletSubjectFromAuthUser(user);
+  if (internal.ownerClerkSubject !== viewer) {
+    res.status(403).json({
+      success: false,
+      message: "이 분석 결과에 접근할 권한이 없습니다.",
+    });
     return;
   }
 
@@ -95,40 +127,99 @@ analyzeRouter.post(
   requireAnalyzeAuth,
   handleMulterUpload,
   (req: Request, res: Response) => {
-    const file = req.file;
-    if (!file) {
-      sendUploadError(
-        res,
-        400,
-        `Missing SGF file. Use multipart/form-data with field "${SGF_UPLOAD_FORM_FIELD}" containing the .sgf file.`
-      );
-      return;
-    }
+    void (async () => {
+      const user = req.katatalkUser;
+      if (!user) {
+        sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
+        return;
+      }
 
-    const sgfContent = file.buffer.toString("utf8");
+      const file = req.file;
+      if (!file) {
+        sendUploadError(
+          res,
+          400,
+          `Missing SGF file. Use multipart/form-data with field "${SGF_UPLOAD_FORM_FIELD}" containing the .sgf file.`
+        );
+        return;
+      }
 
-    const validation = validateSgfText(sgfContent);
-    if (!validation.ok) {
-      sendUploadError(res, 400, validation.message);
-      return;
-    }
+      const sgfContent = file.buffer.toString("utf8");
 
-    const language = parseLanguage(req);
-    const fileName = file.originalname.trim() || "uploaded.sgf";
+      const validation = validateSgfText(sgfContent);
+      if (!validation.ok) {
+        sendUploadError(res, 400, validation.message);
+        return;
+      }
 
-    // TODO(KataGo): enqueue onto durable queue + worker instead of in-memory mock pipeline.
-    const jobId = analysisJobStore.createAndEnqueueMock({
-      fileName,
-      language,
-      sgfContent,
-    });
+      try {
+        await ensureWalletWithSignupBonus(user);
+      } catch (e) {
+        console.error("[analyze] ensureWallet", e);
+        res.status(503).json({
+          success: false,
+          code: "CREDITS_UNAVAILABLE",
+          message:
+            "크레딧 지갑을 사용할 수 없습니다. 운영 환경에서는 DATABASE_URL 설정이 필요합니다.",
+        });
+        return;
+      }
 
-    const body: AnalysisJobCreateResponse = {
-      success: true,
-      jobId,
-      status: "queued",
-    };
-    res.status(202).json(body);
+      const language = parseLanguage(req);
+      const fileName = file.originalname.trim() || "uploaded.sgf";
+
+      const jobId = nanoid();
+
+      let spend: Awaited<ReturnType<typeof spendCreditForAnalysisJob>>;
+      try {
+        spend = await spendCreditForAnalysisJob(user, jobId, 1);
+      } catch (e) {
+        console.error("[analyze] spendCredit", e);
+        res.status(503).json({
+          success: false,
+          code: "CREDITS_UNAVAILABLE",
+          message:
+            "크레딧 차감에 실패했습니다. 서버 설정(DATABASE_URL 등)을 확인해 주세요.",
+        });
+        return;
+      }
+
+      if (!spend.ok) {
+        res.status(402).json({
+          success: false,
+          code: "INSUFFICIENT_CREDITS",
+          message: "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해 주세요.",
+        });
+        return;
+      }
+
+      try {
+        analysisJobStore.createAndEnqueueMock({
+          jobId,
+          payload: { fileName, language },
+          ownerClerkSubject: walletSubjectFromAuthUser(user),
+          ownerAppUserId: user.id,
+          creditLedgerId: spend.ledgerId,
+          onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
+        });
+      } catch (e) {
+        console.error("[analyze] enqueue", e);
+        await refundCreditIfJobFailed(user, jobId, 1);
+        res.status(500).json({
+          success: false,
+          message: "분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        });
+        return;
+      }
+
+      const body: AnalysisJobCreateResponse = {
+        success: true,
+        jobId,
+        status: "queued",
+        creditBalance: spend.balanceAfter,
+      };
+      res.status(202).json(body);
+    })();
   }
 );
 

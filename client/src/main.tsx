@@ -6,6 +6,7 @@ import { KATATALK_UI_LANG_EVENT, readStoredUiLang, type UiLangCode } from "@/con
 import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { ClerkProvider } from "@clerk/clerk-react";
 import { enUS, jaJP, koKR, zhCN } from "@clerk/localizations";
+import { dark } from "@clerk/themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -99,6 +100,7 @@ const CLERK_LOCALIZATION: Record<UiLangCode, typeof koKR> = {
   ja: jaJP,
 };
 
+/** Clerk 기본 다크 테마 + KataTalk 톤(골드 포인트, 입력 텍스트 고대비) */
 function ClerkProviderShell({ children }: { children: ReactNode }) {
   const [uiLang, setUiLang] = useState<UiLangCode>(() =>
     typeof window !== "undefined" ? readStoredUiLang() : "ko"
@@ -114,40 +116,50 @@ function ClerkProviderShell({ children }: { children: ReactNode }) {
     <ClerkProvider
       publishableKey={clerkPk}
       localization={CLERK_LOCALIZATION[uiLang]}
+      afterSignInUrl="/"
+      afterSignUpUrl="/"
       afterSignOutUrl="/login"
       signInUrl="/login"
-      signUpUrl="/login"
+      signUpUrl="/sign-up"
       appearance={{
+        baseTheme: dark,
         variables: {
-          colorPrimary: "#A08030",
-          colorBackground: "#ffffff",
-          colorInputBackground: "#f4f4f5",
-          colorInputText: "#18181b",
-          colorText: "#18181b",
-          colorTextSecondary: "#52525b",
-          colorNeutral: "#78716c",
-          colorDanger: "#b91c1c",
-          colorSuccess: "#15803d",
+          colorPrimary: "#C9A84C",
+          colorBackground: "#16161c",
+          colorInputBackground: "rgba(255,255,255,0.08)",
+          colorInputText: "#fafafa",
+          colorText: "#f4f4f5",
+          colorTextSecondary: "#a1a1aa",
+          colorNeutral: "#71717a",
+          colorDanger: "#fca5a5",
+          colorSuccess: "#86efac",
           borderRadius: "12px",
           fontFamily: "'Noto Sans KR', system-ui, sans-serif",
         },
         elements: {
           rootBox: "w-full",
-          card: "bg-white border border-stone-200 shadow-none",
-          headerTitle: "text-stone-900 font-semibold",
-          headerSubtitle: "text-stone-600",
+          card: "border border-white/10 bg-zinc-900/95 shadow-2xl",
+          headerTitle: "text-amber-50 font-semibold",
+          headerSubtitle: "text-zinc-400",
           socialButtonsBlockButton:
-            "rounded-xl border border-stone-200 bg-white text-stone-800 hover:bg-stone-50",
+            "rounded-xl border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-amber-400/45",
           formButtonPrimary:
-            "rounded-xl text-stone-950 font-semibold shadow-sm hover:brightness-95 focus-visible:ring-2 focus-visible:ring-amber-600/50",
+            "rounded-xl font-semibold text-stone-950 shadow-md hover:brightness-110 focus-visible:ring-2 focus-visible:ring-amber-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
           formFieldInput:
-            "rounded-xl border-stone-200 text-stone-900 placeholder:text-stone-400",
-          formFieldLabel: "text-stone-800 font-medium",
-          formFieldHintText: "text-stone-600",
-          formFieldErrorText: "text-red-700",
-          footerActionLink: "text-amber-900 font-medium hover:text-amber-950",
-          identityPreviewText: "text-stone-800",
-          alternativeMethodsBlockButton: "rounded-xl border border-stone-200",
+            "rounded-xl border-white/18 bg-zinc-950/90 text-white caret-amber-300 placeholder:text-zinc-400 focus:border-amber-500/45 focus:shadow-[0_0_0_1px_rgba(250,204,21,0.25)]",
+          formFieldLabel: "text-zinc-200 font-medium",
+          formFieldHintText: "text-zinc-400",
+          formFieldErrorText: "text-red-300",
+          dividerText: "text-zinc-400",
+          dividerLine: "bg-zinc-600",
+          footerActionLink:
+            "text-amber-200 hover:text-amber-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 rounded-sm",
+          identityPreviewText: "text-zinc-200",
+          alternativeMethodsBlockButton:
+            "rounded-xl border border-white/12 bg-white/5 text-zinc-100 hover:bg-white/10",
+          formFieldInputShowPasswordButton: "text-zinc-300 hover:text-white",
+          otpCodeFieldInput:
+            "text-white caret-amber-300 border-white/20 bg-zinc-950/90 placeholder:text-zinc-400",
         },
       }}
     >
@@ -176,14 +188,17 @@ const rootEl = document.getElementById("root")!;
 if (clerkMode && !clerkPk) {
   createRoot(rootEl).render(
     <div
-      className="min-h-screen flex items-center justify-center p-6 text-center text-sm text-stone-800"
-      style={{ background: "linear-gradient(180deg, #faf8f4 0%, #f0ebe3 100%)" }}
+      className="min-h-screen flex items-center justify-center p-6 text-center text-sm text-zinc-200"
+      style={{ background: "oklch(0.13 0.005 285)" }}
     >
-      <div className="max-w-md rounded-2xl border border-amber-900/15 bg-white px-6 py-8 shadow-lg leading-relaxed">
-        <p className="font-semibold text-stone-900 mb-2">Clerk 설정이 필요합니다</p>
-        <p>
+      <div
+        className="max-w-md rounded-2xl border border-amber-500/25 bg-zinc-900/90 px-6 py-8 shadow-xl leading-relaxed"
+        style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+      >
+        <p className="font-semibold text-amber-100 mb-2">Clerk 설정이 필요합니다</p>
+        <p className="text-zinc-300">
           Vite 클라이언트에{" "}
-          <code className="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-800">
+          <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs text-amber-100">
             VITE_CLERK_PUBLISHABLE_KEY
           </code>{" "}
           를 .env 에 넣은 뒤 개발 서버를 다시 시작하세요. 이 값은 Git 에 커밋하지 마세요.

@@ -52,3 +52,12 @@ export const getLoginUrl = () => {
 
   return url.toString();
 };
+
+/** Clerk 회원가입 전용 경로 */
+export const getSignUpUrl = () => {
+  const authProvider = import.meta.env.VITE_AUTH_PROVIDER ?? "local-dev";
+  if (authProvider === "clerk") {
+    return "/sign-up";
+  }
+  return getLoginUrl();
+};

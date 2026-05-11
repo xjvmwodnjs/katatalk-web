@@ -4,7 +4,6 @@ import { InMemoryAnalysisJobStore } from "./inMemoryAnalysisJobStore";
 const payload = {
   fileName: "game.sgf",
   language: "en" as const,
-  sgfContent: "(;FF[4]GM[1];B[pd];W[dd])",
 };
 
 describe("InMemoryAnalysisJobStore", () => {
@@ -18,7 +17,14 @@ describe("InMemoryAnalysisJobStore", () => {
 
   it("starts queued then completes with mock data", async () => {
     const store = new InMemoryAnalysisJobStore();
-    const jobId = store.createAndEnqueueMock(payload);
+    const jobId = "test-job-1";
+    store.createAndEnqueueMock({
+      jobId,
+      payload,
+      ownerClerkSubject: "owner-1",
+      ownerAppUserId: 1,
+      creditLedgerId: 1,
+    });
 
     expect(store.toPublicGetResponse(jobId)?.status).toBe("queued");
 
@@ -29,6 +35,8 @@ describe("InMemoryAnalysisJobStore", () => {
     expect(done?.progress).toBe(100);
     expect(done?.data).toBeDefined();
     expect(done?.meta?.mock).toBe(true);
+    const internal = store.getInternal(jobId);
+    expect(internal?.payload.fileName).toBe("game.sgf");
   });
 
   it("returns null for unknown job id", () => {

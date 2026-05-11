@@ -2,8 +2,10 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
+import { getWalletBalance } from "./creditService";
 
 export const appRouter = router({
   system: systemRouter,
@@ -21,13 +23,15 @@ export const appRouter = router({
   profile: router({
     /** Get current user's subscription info */
     getSubscription: protectedProcedure.query(async ({ ctx }) => {
-      const subscription = await db.getUserSubscription(ctx.user.id);
-      return subscription ?? {
+      const balance = await getWalletBalance(ctx.user);
+      const row = await db.getUserSubscription(ctx.user.id);
+      return {
         subscriptionTier: "free" as const,
-        remainingAnalysisCount: 2,
-        maxAnalysisCount: 3,
+        remainingAnalysisCount: balance,
+        maxAnalysisCount: 999,
         subscriptionStartDate: null,
-        preferredLanguage: "ko",
+        preferredLanguage: row?.preferredLanguage ?? ctx.user.preferredLanguage ?? "ko",
+        creditBalance: balance,
       };
     }),
 
@@ -44,33 +48,22 @@ export const appRouter = router({
   analysis: router({
     /** Check if user can perform analysis (has remaining credits) */
     canAnalyze: protectedProcedure.query(async ({ ctx }) => {
-      const subscription = await db.getUserSubscription(ctx.user.id);
-      const remaining = subscription?.remainingAnalysisCount ?? 0;
+      const remaining = await getWalletBalance(ctx.user);
       return { canAnalyze: remaining > 0, remaining };
     }),
 
-    /** Start a new analysis (decrements credit) */
+    /** @deprecated 크레딧 차감·분석은 POST /api/analyze 만 사용한다. */
     start: protectedProcedure
       .input(z.object({
         fileName: z.string().max(255),
         language: z.enum(["ko", "en", "zh", "ja"]).default("ko"),
       }))
-      .mutation(async ({ ctx, input }) => {
-        // Check remaining credits
-        const canUse = await db.decrementAnalysisCount(ctx.user.id);
-        if (!canUse) {
-          throw new Error("분석 횟수가 소진되었습니다. 구독을 업그레이드해 주세요.");
-        }
-
-        // Create analysis record
-        const analysisId = await db.createAnalysis({
-          userId: ctx.user.id,
-          fileName: input.fileName,
-          language: input.language,
-          status: "pending",
+      .mutation(() => {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "기보 분석은 POST /api/analyze multipart 업로드로만 제공됩니다. (tRPC analysis.start 는 사용하지 않습니다.)",
         });
-
-        return { analysisId, success: true };
       }),
 
     /** Get user's analysis history */

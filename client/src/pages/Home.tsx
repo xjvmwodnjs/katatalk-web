@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl, persistUiLang, readStoredUiLang } from "@/const";
+import { getLoginUrl, getSignUpUrl, persistUiLang, readStoredUiLang } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ function sleep(ms: number) {
 }
 
 export default function Home() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const [, setLocation] = useLocation();
   const [lang, setLang] = useState<Language>(() => readStoredUiLang());
   const [view, setView] = useState<View>("upload");
@@ -48,12 +48,18 @@ export default function Home() {
   }, []);
 
   // Fetch subscription info if authenticated
+  const utils = trpc.useUtils();
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const creditBalance = subscription?.creditBalance ?? subscription?.remainingAnalysisCount ?? 0;
 
   const handleLogin = () => {
     window.location.href = getLoginUrl();
+  };
+
+  const handleSignUp = () => {
+    window.location.href = getSignUpUrl();
   };
 
   const handleLogout = async () => {
@@ -132,7 +138,17 @@ export default function Home() {
         jobId?: string;
         status?: string;
         message?: string;
+        code?: string;
+        creditBalance?: number;
       };
+
+      if (response.status === 402 || createPayload.code === "INSUFFICIENT_CREDITS") {
+        throw new Error(
+          typeof createPayload.message === "string" && createPayload.message.trim()
+            ? createPayload.message
+            : "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해 주세요."
+        );
+      }
 
       if (!response.ok || createPayload.success === false || !createPayload.jobId) {
         const msg =
@@ -144,6 +160,10 @@ export default function Home() {
                 : `분석을 시작할 수 없습니다 (${response.status})`
               : "분석을 시작할 수 없습니다.";
         throw new Error(msg);
+      }
+
+      if (typeof createPayload.creditBalance === "number") {
+        void utils.profile.getSubscription.invalidate();
       }
 
       const jobId = createPayload.jobId;
@@ -263,17 +283,24 @@ export default function Home() {
                     <User className="w-3.5 h-3.5 text-amber-400" />
                   </div>
                   <span className="text-xs font-medium text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {user?.name || user?.email || "User"}
+                    {authLoading && isAuthenticated && !(user?.name || user?.email)
+                      ? "…"
+                      : user?.name || user?.email || "User"}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                     style={{
-                      background: subscription?.subscriptionTier === "premium" ? "rgba(201, 168, 76, 0.2)" :
-                        subscription?.subscriptionTier === "basic" ? "rgba(100, 200, 150, 0.2)" : "rgba(255,255,255,0.06)",
-                      color: subscription?.subscriptionTier === "premium" ? "#C9A84C" :
-                        subscription?.subscriptionTier === "basic" ? "#6ee7b7" : "#94a3b8",
+                      background: "rgba(201, 168, 76, 0.15)",
+                      color: "#C9A84C",
                     }}
                   >
-                    {subscription?.subscriptionTier?.toUpperCase() || "FREE"}
+                    {lang === "ko"
+                      ? `크레딧 ${creditBalance}`
+                      : lang === "en"
+                        ? `Credits ${creditBalance}`
+                        : lang === "zh"
+                          ? `积分 ${creditBalance}`
+                          : `クレジット ${creditBalance}`}
                   </span>
                 </div>
 
@@ -303,7 +330,7 @@ export default function Home() {
 
                 {/* Signup */}
                 <button
-                  onClick={handleLogin}
+                  onClick={handleSignUp}
                   type="button"
                   className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
                   style={{
@@ -319,10 +346,20 @@ export default function Home() {
               </>
             )}
 
-            {/* Subscribe CTA → navigates to /pricing */}
+            {/* Credit top-up (결제 연동 전 안내) */}
             <button
               type="button"
-              onClick={() => setLocation("/pricing")}
+              onClick={() => {
+                toast.info(
+                  lang === "ko"
+                    ? "크레딧 충전 기능은 준비 중입니다."
+                    : lang === "en"
+                      ? "Credit top-up is coming soon."
+                      : lang === "zh"
+                        ? "积分充值功能即将推出。"
+                        : "クレジットチャージは準備中です。"
+                );
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
               style={{
                 background: "linear-gradient(135deg, #C9A84C, #A08030)",
@@ -426,8 +463,13 @@ export default function Home() {
                         {t.profilePlan}
                       </div>
                       <div className="text-sm font-semibold text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                        {subscription?.subscriptionTier === "premium" ? "Premium" :
-                          subscription?.subscriptionTier === "basic" ? "Basic" : t.free}
+                        {lang === "ko"
+                          ? `보유 크레딧 ${creditBalance}`
+                          : lang === "en"
+                            ? `Credits: ${creditBalance}`
+                            : lang === "zh"
+                              ? `积分: ${creditBalance}`
+                              : `クレジット: ${creditBalance}`}
                       </div>
                     </div>
                   </div>
@@ -439,7 +481,7 @@ export default function Home() {
                       className="text-lg font-bold text-amber-300"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
-                      {`${subscription?.remainingAnalysisCount ?? 0} / ${subscription?.maxAnalysisCount ?? 3}`}
+                      {lang === "ko" ? "1 분석 = 1" : lang === "en" ? "1 analysis = 1" : lang === "zh" ? "1 次分析 = 1" : "1 解析 = 1"}
                     </div>
                   </div>
                 </div>

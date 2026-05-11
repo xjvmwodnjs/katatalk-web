@@ -13,6 +13,8 @@ export type AnalysisJobCreateResponse = {
   success: true;
   jobId: string;
   status: "queued";
+  /** 차감 직후 남은 크레딧 (서버 wallet 기준). */
+  creditBalance?: number;
 };
 
 /**

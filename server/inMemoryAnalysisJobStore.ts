@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import type { AnalysisJobGetResponse } from "@shared/analysisJob";
 import type {
   AnalysisJobEnqueuePayload,
@@ -6,6 +5,8 @@ import type {
   AnalysisJobStore,
 } from "./analysisJobStore.types";
 import { buildMockAnalysisReport } from "./mockAnalysisResult";
+
+const TERMINAL_TTL_MS = 60 * 60 * 1000;
 
 function toIso(d: Date): string {
   return d.toISOString();
@@ -40,29 +41,55 @@ function toPublicRow(job: AnalysisJobInternal): AnalysisJobGetResponse {
 }
 
 /**
- * In-memory job store for local dev. Replace with DB + queue implementation
- * that satisfies `AnalysisJobStore` (or a superset with enqueue-only API).
+ * In-memory job store for local dev.
+ * 운영(Vercel/serverless 등)에서는 인스턴스 간 공유가 되지 않으므로 사용하면 안 된다.
  */
 export class InMemoryAnalysisJobStore implements AnalysisJobStore {
   private readonly jobs = new Map<string, AnalysisJobInternal>();
 
-  createAndEnqueueMock(payload: AnalysisJobEnqueuePayload): string {
-    const jobId = nanoid();
+  private sweepExpiredTerminalJobs() {
+    const now = Date.now();
+    for (const [id, job] of Array.from(this.jobs.entries())) {
+      if (job.status !== "completed" && job.status !== "failed") continue;
+      const t = job.terminalAt?.getTime() ?? job.updatedAt.getTime();
+      if (now - t > TERMINAL_TTL_MS) {
+        this.jobs.delete(id);
+      }
+    }
+  }
+
+  createAndEnqueueMock(args: {
+    jobId: string;
+    payload: AnalysisJobEnqueuePayload;
+    ownerClerkSubject: string;
+    ownerAppUserId: number;
+    creditLedgerId: number;
+    onJobFailed?: () => void | Promise<void>;
+  }): void {
+    this.sweepExpiredTerminalJobs();
     const now = new Date();
     const row: AnalysisJobInternal = {
-      jobId,
+      jobId: args.jobId,
       status: "queued",
       progress: 0,
       createdAt: now,
       updatedAt: now,
-      payload,
+      ownerClerkSubject: args.ownerClerkSubject,
+      ownerAppUserId: args.ownerAppUserId,
+      creditLedgerId: args.creditLedgerId,
+      payload: args.payload,
     };
-    this.jobs.set(jobId, row);
-    void this.runMockPipeline(jobId);
-    return jobId;
+    this.jobs.set(args.jobId, row);
+    void this.runMockPipeline(args.jobId, args.onJobFailed);
+  }
+
+  getInternal(jobId: string): AnalysisJobInternal | null {
+    this.sweepExpiredTerminalJobs();
+    return this.jobs.get(jobId) ?? null;
   }
 
   toPublicGetResponse(jobId: string): AnalysisJobGetResponse | null {
+    this.sweepExpiredTerminalJobs();
     const job = this.jobs.get(jobId);
     if (!job) return null;
     return toPublicRow(job);
@@ -79,14 +106,10 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  /**
-   * Simulates queued → running → completed with staged progress.
-   * TODO(KataGo worker): Replace this method with a consumer that:
-   * 1. Marks job running in DB.
-   * 2. Runs KataGo / parsing on `payload.sgfContent`, updates progress.
-   * 3. Writes `resultData` + meta, sets status completed (or failed on error).
-   */
-  private async runMockPipeline(jobId: string): Promise<void> {
+  private async runMockPipeline(
+    jobId: string,
+    onJobFailed?: () => void | Promise<void>
+  ): Promise<void> {
     try {
       await this.sleep(350);
       this.patch(jobId, { status: "running", progress: 25 });
@@ -112,6 +135,7 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
           message:
             "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
         },
+        terminalAt: new Date(),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown error";
@@ -119,7 +143,13 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
         status: "failed",
         progress: null,
         errorMessage: message,
+        terminalAt: new Date(),
       });
+      try {
+        await onJobFailed?.();
+      } catch (refundErr) {
+        console.error("[inMemoryAnalysisJobStore] onJobFailed refund error", refundErr);
+      }
     }
   }
 }

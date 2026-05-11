@@ -61,10 +61,8 @@ const MOCK_ANALYSIS_RESULT = {
 export function buildMockAnalysisReport(input: {
   fileName: string;
   language: AnalysisJobLanguage;
-  sgfContent: string;
 }) {
-  // TODO(KataGo): Build this from engine + LLM pipeline using `input.sgfContent`.
-  void input.sgfContent;
+  // TODO(KataGo): Build this from engine + LLM pipeline using validated SGF (DB/queue 경유).
 
   return {
     ...MOCK_ANALYSIS_RESULT,

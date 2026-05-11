@@ -2,10 +2,21 @@ export type AuthProviderName = "local-dev" | "legacy-manus" | "supabase" | "cler
 
 function readAuthProvider(): AuthProviderName {
   const raw = process.env.AUTH_PROVIDER?.trim();
+  const isProd = process.env.NODE_ENV === "production";
   if (raw === "local-dev" || raw === "legacy-manus" || raw === "supabase" || raw === "clerk") {
+    if (isProd && (raw === "local-dev" || raw === "legacy-manus")) {
+      throw new Error(
+        "AUTH_PROVIDER=local-dev 또는 legacy-manus 는 운영(production) 환경에서 사용할 수 없습니다."
+      );
+    }
     return raw;
   }
-  return process.env.NODE_ENV === "production" ? "legacy-manus" : "local-dev";
+  if (isProd) {
+    throw new Error(
+      "운영(production) 환경에서는 AUTH_PROVIDER 를 명시적으로 설정해야 합니다. (예: AUTH_PROVIDER=clerk)"
+    );
+  }
+  return "local-dev";
 }
 
 export const ENV = {
@@ -25,30 +36,40 @@ export const ENV = {
   enableLegacyManusStorage: process.env.ENABLE_LEGACY_MANUS_STORAGE === "true",
   localDevUserEmail: process.env.LOCAL_DEV_USER_EMAIL ?? "dev@katatalk.local",
   localDevUserName: process.env.LOCAL_DEV_USER_NAME ?? "Local Developer",
+  /** Stripe — 서버 전용 secret, 프론트 번들에 포함 금지 */
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  /** Checkout line_items — 서버에서만 사용 (클라이언트가 price id를 보내지 않음) */
+  stripeBasicPriceId: process.env.STRIPE_BASIC_PRICE_ID ?? "",
+  stripePremiumPriceId: process.env.STRIPE_PREMIUM_PRICE_ID ?? "",
+  appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
 };
 
 const LOCAL_DEV_FALLBACK_JWT_SECRET =
   "local-dev-only-insecure-secret-do-not-use-in-production";
 
 export function getJwtSecret() {
-  if (ENV.cookieSecret) {
-    return ENV.cookieSecret;
+  const trimmed = ENV.cookieSecret.trim();
+  if (trimmed) {
+    return trimmed;
   }
-  if (!ENV.isProduction) {
+  if (!ENV.isProduction && ENV.authProvider === "local-dev") {
     console.warn(
-      "[env] JWT_SECRET 미설정 — 로컬 전용 고정값 사용. 운영 전 .env 에 설정하세요."
+      "[env] JWT_SECRET 미설정 — local-dev 전용 고정값 사용. Clerk 등 다른 AUTH_PROVIDER 에서는 JWT_SECRET 이 필요합니다."
     );
     return LOCAL_DEV_FALLBACK_JWT_SECRET;
   }
-  throw new Error("JWT_SECRET is required. Set it in .env before starting the server.");
+  throw new Error(
+    "JWT_SECRET 이 필요합니다. AUTH_PROVIDER=local-dev 가 아닌 경우 .env 에 JWT_SECRET 을 설정하세요."
+  );
 }
 
 export function validateServerEnv() {
   getJwtSecret();
 
-  if (ENV.isProduction && ENV.authProvider === "local-dev") {
-    console.warn(
-      "[Auth] AUTH_PROVIDER=local-dev 는 데모용입니다. 상용 배포에 사용하지 마세요."
+  if (ENV.isProduction && !ENV.databaseUrl?.trim()) {
+    throw new Error(
+      "운영(production) 환경에서는 크레딧·사용자 영속화를 위해 DATABASE_URL 이 필요합니다."
     );
   }
 
