@@ -1,14 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { checkoutPackageBodySchema } from "./billingRoute";
+import { createCheckoutBodySchema } from "./billingRoute";
 
-describe("checkoutPackageBodySchema", () => {
+describe("createCheckoutBodySchema", () => {
   it("rejects invalid packageId", () => {
-    const r = checkoutPackageBodySchema.safeParse({ packageId: "gold" });
+    const r = createCheckoutBodySchema.safeParse({ packageId: "gold" });
     expect(r.success).toBe(false);
   });
 
-  it("accepts starter", () => {
-    const r = checkoutPackageBodySchema.safeParse({ packageId: "starter" });
+  it("rejects unknown fields (e.g. client creditAmount)", () => {
+    const r = createCheckoutBodySchema.safeParse({
+      packageId: "starter",
+      creditAmount: 9999,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects invalid provider", () => {
+    const r = createCheckoutBodySchema.safeParse({
+      packageId: "starter",
+      provider: "paddle",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts starter + lemonsqueezy", () => {
+    const r = createCheckoutBodySchema.safeParse({
+      packageId: "starter",
+      provider: "lemonsqueezy",
+      locale: "en",
+    });
     expect(r.success).toBe(true);
   });
 });

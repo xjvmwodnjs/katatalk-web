@@ -7,7 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { analyzeRouter } from "../analyzeRoute";
-import { attachBillingWebhook, billingRouter } from "../billingRoute";
+import { attachPaymentWebhooks, billingRouter } from "../billingRoute";
 import { creditsRouter } from "../creditsRoute";
 import { createContext } from "./context";
 import { ENV, validateServerEnv } from "./env";
@@ -37,8 +37,8 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
-  // Stripe webhook: 반드시 express.json() 앞에서 raw body 로 수신
-  attachBillingWebhook(app);
+  // 결제 웹훅: 반드시 express.json() 앞에서 raw body 로 수신
+  attachPaymentWebhooks(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

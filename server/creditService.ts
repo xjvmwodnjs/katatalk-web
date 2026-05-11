@@ -22,8 +22,14 @@ export type CreditLogRow = {
   amount: number;
   type: string;
   description: string | null;
+  /** @deprecated legacy Stripe */
   stripe_event_id: string | null;
+  /** @deprecated legacy Stripe */
   stripe_session_id: string | null;
+  payment_provider: string | null;
+  payment_event_id: string | null;
+  payment_order_id: string | null;
+  payment_checkout_id: string | null;
   analysis_job_id: string | null;
   idempotency_key: string | null;
   metadata: unknown;
@@ -85,7 +91,7 @@ export async function getCreditLogs(clerkProfileId: string, limit = 20): Promise
   const { data, error } = await sb
     .from("credit_logs")
     .select(
-      "id, user_id, amount, type, description, stripe_event_id, stripe_session_id, analysis_job_id, idempotency_key, metadata, created_at"
+      "id, user_id, amount, type, description, stripe_event_id, stripe_session_id, payment_provider, payment_event_id, payment_order_id, payment_checkout_id, analysis_job_id, idempotency_key, metadata, created_at"
     )
     .eq("user_id", clerkProfileId)
     .order("created_at", { ascending: false })
@@ -152,19 +158,26 @@ export async function refundCreditIfJobFailed(
   }
 }
 
-export async function addCreditsFromStripeWebhook(args: {
+/** 웹훅에서만 호출 — idempotency_key 는 `payment:<provider>:<stable_event_or_order_id>` 형태 권장 */
+export async function addCreditsFromPaymentWebhook(args: {
   clerkUserId: string;
   amount: number;
-  stripeEventId: string | null;
-  stripeSessionId: string | null;
+  idempotencyKey: string;
+  paymentProvider: string;
+  paymentEventId: string | null;
+  paymentOrderId: string | null;
+  paymentCheckoutId: string | null;
   description: string | null;
 }): Promise<{ ok: boolean; duplicate: boolean; credits: number | null }> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.rpc("add_credits_from_stripe", {
+  const { data, error } = await sb.rpc("add_credits_from_payment", {
     p_user_id: args.clerkUserId,
     p_amount: args.amount,
-    p_stripe_event_id: args.stripeEventId,
-    p_stripe_session_id: args.stripeSessionId,
+    p_idempotency_key: args.idempotencyKey,
+    p_payment_provider: args.paymentProvider,
+    p_payment_event_id: args.paymentEventId,
+    p_payment_order_id: args.paymentOrderId,
+    p_payment_checkout_id: args.paymentCheckoutId,
     p_description: args.description,
   });
   if (error) {

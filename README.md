@@ -1,6 +1,6 @@
 # KataTalk
 
-React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Stripe Checkout(크레딧 팩·webhook 충전)** 골격이 있으며, SGF 업로드 후 **mock 분석**만 제공합니다.
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 **mock 분석**만 제공합니다. **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
 
 ## 로컬 실행
 
@@ -73,15 +73,25 @@ pnpm start
 
 ## 크레딧·결제·DB (확정 아키텍처 요약)
 
+### Stripe에서 전환한 이유 (요약)
+
+- 한국 기반 판매자에게 **Stripe 사업자 온보딩·정산**이 불확실할 수 있음.  
+- **한국 유저**에게는 **Toss Payments**가 익숙함.  
+- **해외 유저**에게는 **Lemon Squeezy**(글로벌 카드)를 사용.  
+- Stripe에 더 깊게 묶일수록 이후 교체 비용이 커져, **초기에 provider 추상화**로 전환.  
+- **Paddle** 등은 추후 fallback 후보로 문서·운영에서만 검토 (코드 미구현).
+
+### 시스템
+
 - **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
-- **Payment = Stripe** — **Checkout `mode=payment`** 로 **크레딧 팩**만 판매합니다. **Stripe subscription mode·Clerk Billing은 사용하지 않습니다.**  
-- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**(VITE\_ 접두사 금지, 프론트·로그 노출 금지).  
+- **Payment = Toss Payments + Lemon Squeezy** — `server/paymentProviders/` 추상화, **`POST /api/billing/create-checkout`**. **Clerk Billing·Stripe·구독형 결제 미사용.**  
+- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.  
 - **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
-- **SGF 분석 1회당 1 credit** — 차감은 **Supabase RPC `spend_credit_for_analysis`** 로만 수행합니다(select 후 update 패턴 금지). 부족 시 **HTTP 402**, `INSUFFICIENT_CREDITS`.  
-- **`credit_logs`** 에 `signup_bonus` / `refill` / `usage` / `refund` / `admin_adjustment` 를 기록합니다.  
-- **크레딧 증가(충전)** 는 **Stripe `checkout.session.completed` webhook** 에서만 **`add_credits_from_stripe` RPC** 로 반영합니다. **success URL에서 크레딧을 올리지 않습니다.**  
-- 결제 UI에서는 **환불 정책 동의 체크박스**가 필요합니다(문구는 법적 검토 TODO).  
-- **Vercel·serverless** 에서 **in-memory job store만으로 운영하면 안 됩니다.** 현재는 **mock 파이프라인용 인메모리**와 **`analysis_jobs` DB insert**를 병행하며, 운영 완성도를 위해 **DB-backed job/큐**가 필요합니다.
+- **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.  
+- **크레딧 충전**은 **success URL이 아니라** 각 결제사 **웹훅**에서만 **`add_credits_from_payment` RPC** 로 반영 (`payment:<provider>:…` idempotency).  
+- `credit_logs` 의 **`stripe_*` 컬럼은 legacy**(과거 호환). 신규 충전은 **`payment_provider` / `payment_event_id` / `payment_order_id` / `payment_checkout_id`** 를 사용합니다 ([`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql)).  
+- 결제 UI: **환불 정책 동의 체크박스** 필수(운영 전 **법무 검토** TODO).  
+- **Vercel·serverless** 에서 인메모리 job만으로 운영 금지 — DB-backed job/큐 필요.
 
 상세 TODO는 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
 
@@ -94,19 +104,19 @@ pnpm start
 - mock 분석 파이프라인은 **인메모리 job**으로 진행 상태를 유지합니다. **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다.  
 - **차감·소유권 검증**은 Supabase `profiles` / `credit_logs` / `analysis_jobs` 와 연동합니다. **Vercel·serverless** 에서 인메모리만으로 운영하면 안 되며, **DB-backed 큐/워커**가 필요합니다.
 
-## Stripe 크레딧 팩 (Checkout `mode=payment`)
+## 결제 (Toss / Lemon Squeezy)
 
 **`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-1. [Stripe Dashboard](https://dashboard.stripe.com/) → **Test mode**  
-2. 크레딧 팩용 **Product + one-time Price** 3종(Starter / Standard / Pro)을 만들고 Price ID(`price_...`)를 복사합니다.  
-3. `.env` 예시는 [`.env.example`](.env.example) — `STRIPE_CREDIT_PACK_*_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `APP_BASE_URL` 등.  
-4. Webhook: `stripe listen --forward-to localhost:3000/api/billing/webhook` → 출력 signing secret 을 `STRIPE_WEBHOOK_SECRET` 에 설정.  
-5. 클라이언트는 **`packageId`만** `POST /api/billing/create-checkout-session` 에 전달합니다. **가격 ID·크레딧 수량은 서버 매핑**입니다.
+- **Toss**: `TOSS_CLIENT_KEY`(프론트 SDK 시 필요), `TOSS_SECRET_KEY`, `TOSS_WEBHOOK_SECRET`, `TOSS_SUCCESS_URL`, `TOSS_FAIL_URL` — **secret 에 `VITE_` 접두사 금지**.  
+- **Lemon Squeezy**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, variant id 3종.  
+- **웹훅 URL**: `POST /api/billing/webhook/toss`, `POST /api/billing/webhook/lemonsqueezy` (서명 검증 후에만 크레딧 반영).  
+- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` + `locale` 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.
 
 ## Supabase 마이그레이션
 
-- SQL: [`supabase/migrations/001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql) — Supabase SQL Editor 또는 `supabase db push` 등으로 적용합니다.
+- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
+- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
 
 ## 아직 구현되지 않은 것
 

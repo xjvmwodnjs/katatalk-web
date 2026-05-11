@@ -67,7 +67,7 @@ export default function Home() {
           } else {
             toast.success("결제가 완료되었습니다.", {
               description:
-                "Stripe 웹훅으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 화면의 크레딧이 갱신되는지 확인해 주세요.",
+                "결제 웹훅(Toss / Lemon Squeezy)으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 화면의 크레딧이 갱신되는지 확인해 주세요.",
             });
           }
         } catch {

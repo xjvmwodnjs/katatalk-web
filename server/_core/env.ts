@@ -38,13 +38,21 @@ export const ENV = {
   enableLegacyManusStorage: process.env.ENABLE_LEGACY_MANUS_STORAGE === "true",
   localDevUserEmail: process.env.LOCAL_DEV_USER_EMAIL ?? "dev@katatalk.local",
   localDevUserName: process.env.LOCAL_DEV_USER_NAME ?? "Local Developer",
-  /** Stripe — 서버 전용 secret, 프론트 번들에 포함 금지 */
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
-  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
-  /** 크레딧 팩 Checkout — 서버에서만 packageId → Price ID 매핑 */
-  stripeCreditPackStarterPriceId: process.env.STRIPE_CREDIT_PACK_STARTER_PRICE_ID ?? "",
-  stripeCreditPackStandardPriceId: process.env.STRIPE_CREDIT_PACK_STANDARD_PRICE_ID ?? "",
-  stripeCreditPackProPriceId: process.env.STRIPE_CREDIT_PACK_PRO_PRICE_ID ?? "",
+  /** Toss — client key 는 프론트 SDK용으로 노출될 수 있음(문서 참고). secret 은 서버 전용, VITE_ 접두사 금지 */
+  tossClientKey: process.env.TOSS_CLIENT_KEY ?? "",
+  tossSecretKey: process.env.TOSS_SECRET_KEY ?? "",
+  tossWebhookSecret: process.env.TOSS_WEBHOOK_SECRET ?? "",
+  tossSuccessUrl: process.env.TOSS_SUCCESS_URL ?? "",
+  tossFailUrl: process.env.TOSS_FAIL_URL ?? "",
+  /** Lemon Squeezy — API 키·웹훅 시크릿은 서버 전용 */
+  lemonsqueezyApiKey: process.env.LEMONSQUEEZY_API_KEY ?? "",
+  lemonsqueezyStoreId: process.env.LEMONSQUEEZY_STORE_ID ?? "",
+  lemonsqueezyWebhookSecret: process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "",
+  lemonsqueezyCreditPackStarterVariantId:
+    process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID ?? "",
+  lemonsqueezyCreditPackStandardVariantId:
+    process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID ?? "",
+  lemonsqueezyCreditPackProVariantId: process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID ?? "",
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
 };
 

@@ -1,148 +1,136 @@
 // =============================================================
-// /api/billing — Stripe Checkout mode=payment (크레딧 팩) + webhook
+// /api/billing — Toss Payments + Lemon Squeezy (크레딧 팩, webhook 전용 충전)
 // =============================================================
 //
-// - subscription mode / Clerk Billing 미사용
-// - credits 증가는 checkout.session.completed webhook + Supabase RPC 만
+// - Stripe 미사용. credits 증가는 success URL 이 아니라 provider webhook 에서만.
+// - express.json() 보다 앞에 raw body 웹훅 라우트를 등록한다.
 
 import type { Express, Request, Response } from "express";
 import express, { Router } from "express";
-import Stripe from "stripe";
 import { z } from "zod";
-import { ENV } from "./_core/env";
-import { addCreditsFromStripeWebhook, walletSubjectFromAuthUser } from "./creditService";
+import { addCreditsFromPaymentWebhook, walletSubjectFromAuthUser } from "./creditService";
 import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
 } from "./middleware/requireAnalyzeAuth";
+import { ENV } from "./_core/env";
+import {
+  getPaymentProvider,
+  resolveCheckoutProvider,
+  type PaymentProviderId,
+  type UiLocale,
+} from "./paymentProviders";
 
-export const checkoutPackageBodySchema = z.object({
-  packageId: z.enum(["starter", "standard", "pro"]),
-});
+export const createCheckoutBodySchema = z
+  .object({
+    packageId: z.enum(["starter", "standard", "pro"]),
+    provider: z.enum(["toss", "lemonsqueezy"]).optional(),
+    locale: z.enum(["ko", "en", "zh", "ja"]).optional(),
+  })
+  .strict();
 
-export type CreditPackId = z.infer<typeof checkoutPackageBodySchema>["packageId"];
+export type CreateCheckoutBody = z.infer<typeof createCheckoutBodySchema>;
 
-const PACK_TO_PRICE_ENV: Record<
-  CreditPackId,
-  keyof Pick<
-    typeof ENV,
-    "stripeCreditPackStarterPriceId" | "stripeCreditPackStandardPriceId" | "stripeCreditPackProPriceId"
-  >
-> = {
-  starter: "stripeCreditPackStarterPriceId",
-  standard: "stripeCreditPackStandardPriceId",
-  pro: "stripeCreditPackProPriceId",
-};
-
-/** 서버 전용 — 클라이언트는 packageId 만 전달 */
-export const CREDIT_PACK_CREDITS: Record<CreditPackId, number> = {
-  starter: 50,
-  standard: 120,
-  pro: 300,
-};
-
-let stripeClient: Stripe | null | undefined;
-
-function getStripe(): Stripe | null {
-  if (stripeClient !== undefined) {
-    return stripeClient;
-  }
-  const key = ENV.stripeSecretKey.trim();
-  if (!key) {
-    stripeClient = null;
-    return null;
-  }
-  stripeClient = new Stripe(key);
-  return stripeClient;
+function paymentIdempotencyKey(provider: PaymentProviderId, stableId: string): string {
+  return `payment:${provider}:${stableId}`;
 }
 
-/** Stripe webhook 은 JSON raw body 가 필요하므로 전역 express.json() 보다 먼저 등록한다. */
-export function attachBillingWebhook(app: Express): void {
+function sendBillingError(res: Response, status: number, message: string): void {
+  res.status(status).json({ success: false, message });
+}
+
+/** Lemon Squeezy / Toss 웹훅 — raw body 로 서명 검증 */
+export function attachPaymentWebhooks(app: Express): void {
+  app.post("/api/billing/webhook/toss", express.raw({ type: "*/*" }), tossWebhookHandler);
   app.post(
-    "/api/billing/webhook",
-    express.raw({ type: "application/json" }),
-    stripeWebhookHandler
+    "/api/billing/webhook/lemonsqueezy",
+    express.raw({ type: "*/*" }),
+    lemonsqueezyWebhookHandler
   );
 }
 
-function stripeWebhookHandler(req: Request, res: Response): void {
+function tossWebhookHandler(req: Request, res: Response): void {
   void (async () => {
-    const webhookSecret = ENV.stripeWebhookSecret.trim();
-    const stripe = getStripe();
-    const sig = req.headers["stripe-signature"];
-
-    if (!webhookSecret || !stripe) {
-      res.status(400).json({ received: false });
-      return;
-    }
-    if (typeof sig !== "string") {
-      res.status(400).json({ received: false });
-      return;
-    }
-
-    let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
-    } catch {
-      res.status(400).json({ received: false });
-      return;
-    }
-
-    try {
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object as Stripe.Checkout.Session;
-        if (session.mode !== "payment") {
-          res.json({ received: true });
-          return;
-        }
-        if (session.payment_status !== "paid") {
-          res.json({ received: true });
-          return;
-        }
-
-        const meta = session.metadata ?? {};
-        const clerkUserId = meta.clerkUserId ?? meta.clerk_user_id;
-        const creditAmountRaw = meta.creditAmount ?? meta.credit_amount;
-        const packId = meta.creditPackageId ?? meta.credit_package_id;
-
-        if (typeof clerkUserId !== "string" || !clerkUserId.trim()) {
-          console.error("[billing/webhook] missing clerkUserId in session metadata");
-          res.status(400).json({ received: false });
-          return;
-        }
-        const creditAmount =
-          typeof creditAmountRaw === "string"
-            ? parseInt(creditAmountRaw, 10)
-            : typeof creditAmountRaw === "number"
-              ? creditAmountRaw
-              : NaN;
-        if (!Number.isFinite(creditAmount) || creditAmount < 1) {
-          console.error("[billing/webhook] invalid creditAmount in metadata");
-          res.status(400).json({ received: false });
-          return;
-        }
-
-        await addCreditsFromStripeWebhook({
-          clerkUserId: clerkUserId.trim(),
-          amount: creditAmount,
-          stripeEventId: typeof event.id === "string" ? event.id : null,
-          stripeSessionId: typeof session.id === "string" ? session.id : null,
-          description:
-            typeof packId === "string"
-              ? `Stripe 크레딧 팩 충전 (${packId})`
-              : "Stripe 크레딧 팩 충전",
-        });
+      const secret = ENV.tossWebhookSecret.trim();
+      if (!secret && ENV.isProduction) {
+        res.status(503).json({ received: false });
+        return;
       }
-      // customer.subscription.* 등 구독 이벤트는 크레딧 모델에서 사용하지 않음
-      res.json({ received: true });
-    } catch (e) {
-      console.error("[billing/webhook] handler error");
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? ""));
+      const v = await getPaymentProvider("toss").verifyWebhookAndExtractEvent({
+        rawBody,
+        headers: req.headers as Record<string, string | string[] | undefined>,
+      });
+      if (!v.ok) {
+        if (
+          v.reason === "TOSS_WEBHOOK_NOT_IMPLEMENTED" ||
+          (!ENV.isProduction && v.reason === "MISSING_TOSS_WEBHOOK_SECRET")
+        ) {
+          res.status(200).json({ received: true, skipped: true });
+          return;
+        }
+        if (v.reason === "TOSS_WEBHOOK_NOT_CONFIGURED") {
+          res.status(503).json({ received: false });
+          return;
+        }
+        res.status(400).json({ received: false });
+        return;
+      }
+      // TODO: Toss 검증 성공 시 addCreditsFromPaymentWebhook 호출
+      res.status(200).json({ received: true });
+    } catch {
       res.status(500).json({ received: false });
     }
   })();
 }
 
-function createCheckoutSession(req: Request, res: Response): void {
+function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
+  void (async () => {
+    try {
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? ""));
+      const v = await getPaymentProvider("lemonsqueezy").verifyWebhookAndExtractEvent({
+        rawBody,
+        headers: req.headers as Record<string, string | string[] | undefined>,
+      });
+      if (!v.ok) {
+        const unauthorized =
+          v.reason === "MISSING_SIGNATURE" ||
+          v.reason === "INVALID_SIGNATURE" ||
+          v.reason === "MISSING_LEMONSQUEEZY_WEBHOOK_SECRET" ||
+          v.reason === "LEMONSQUEEZY_WEBHOOK_NOT_CONFIGURED";
+        const status = unauthorized ? 401 : v.reason === "IGNORED_EVENT" ? 200 : 400;
+        if (status === 200) {
+          res.status(200).json({ received: true, ignored: true });
+          return;
+        }
+        res.status(status).json({ received: false });
+        return;
+      }
+
+      const ev = v.event;
+      const stable = ev.paymentEventId ?? ev.paymentOrderId ?? "unknown";
+      const idem = paymentIdempotencyKey("lemonsqueezy", stable);
+
+      await addCreditsFromPaymentWebhook({
+        clerkUserId: ev.clerkUserId,
+        amount: ev.creditAmount,
+        idempotencyKey: idem,
+        paymentProvider: "lemonsqueezy",
+        paymentEventId: ev.paymentEventId,
+        paymentOrderId: ev.paymentOrderId,
+        paymentCheckoutId: ev.paymentCheckoutId,
+        description: ev.description,
+      });
+
+      res.status(200).json({ received: true });
+    } catch {
+      res.status(500).json({ received: false });
+    }
+  })();
+}
+
+function createCheckoutHandler(req: Request, res: Response): void {
   void (async () => {
     try {
       const user = req.katatalkUser;
@@ -151,67 +139,53 @@ function createCheckoutSession(req: Request, res: Response): void {
         return;
       }
 
-      const parsed = checkoutPackageBodySchema.safeParse(req.body);
+      const parsed = createCheckoutBodySchema.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          message: "packageId는 starter, standard, pro 중 하나여야 합니다.",
-        });
+        sendBillingError(
+          res,
+          400,
+          "packageId·provider·locale 형식이 올바르지 않습니다. 임의의 금액·variant 필드는 전송할 수 없습니다."
+        );
         return;
       }
 
-      const stripe = getStripe();
-      if (!stripe) {
-        res.status(503).json({
-          success: false,
-          message: "결제 서비스가 아직 설정되지 않았습니다.",
+      const { packageId, provider: bodyProvider, locale } = parsed.data;
+      const uiLocale: UiLocale = locale ?? "en";
+      const providerId = resolveCheckoutProvider(bodyProvider, uiLocale);
+
+      const baseUrl = ENV.appBaseUrl.replace(/\/$/, "");
+      const impl = getPaymentProvider(providerId);
+
+      try {
+        const out = await impl.createCreditCheckout({
+          user,
+          packageId,
+          provider: providerId,
+          locale: uiLocale,
+          baseUrl,
         });
-        return;
-      }
-
-      const { packageId } = parsed.data;
-      const creditAmount = CREDIT_PACK_CREDITS[packageId];
-      const envKey = PACK_TO_PRICE_ENV[packageId];
-      const priceId = ENV[envKey].trim();
-      if (!priceId) {
-        res.status(503).json({
-          success: false,
-          message: "해당 크레딧 팩의 Stripe Price ID가 서버에 설정되지 않았습니다.",
+        res.json({
+          success: true,
+          provider: out.provider,
+          creditAmount: out.creditAmount,
+          creditPackageId: out.creditPackageId,
+          url: out.url,
+          checkoutPayload: out.checkoutPayload,
         });
-        return;
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "";
+        if (code === "LEMONSQUEEZY_NOT_CONFIGURED" || code.startsWith("LEMONSQUEEZY_CHECKOUT")) {
+          sendBillingError(
+            res,
+            503,
+            "Lemon Squeezy 결제 설정이 완료되지 않았습니다. 관리자에게 문의하거나 다른 결제 수단을 선택해 주세요."
+          );
+          return;
+        }
+        sendBillingError(res, 503, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.");
       }
-
-      const base = ENV.appBaseUrl.replace(/\/$/, "");
-      const clerkUserId = walletSubjectFromAuthUser(user);
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${base}/?billing=success`,
-        cancel_url: `${base}/?billing=cancel`,
-        customer_email: user.email ?? undefined,
-        metadata: {
-          clerkUserId,
-          creditPackageId: packageId,
-          creditAmount: String(creditAmount),
-        },
-      });
-
-      if (!session.url) {
-        res.status(500).json({
-          success: false,
-          message: "결제 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-        });
-        return;
-      }
-
-      res.json({ success: true, url: session.url });
-    } catch (e) {
-      console.error("[billing/create-checkout-session] error");
-      res.status(500).json({
-        success: false,
-        message: "결제 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-      });
+    } catch {
+      sendBillingError(res, 500, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.");
     }
   })();
 }
@@ -224,15 +198,11 @@ function getBillingStatus(req: Request, res: Response): void {
   }
   res.json({
     success: true,
-    message: "구독 상태 대신 Supabase profiles.credits 를 사용합니다. (GET /api/credits/me)",
+    message: "크레딧은 Supabase profiles + webhook 충전을 사용합니다. (GET /api/credits/me)",
     userId: walletSubjectFromAuthUser(user),
   });
 }
 
 export const billingRouter = Router();
-billingRouter.post(
-  "/api/billing/create-checkout-session",
-  requireAnalyzeAuth,
-  createCheckoutSession
-);
+billingRouter.post("/api/billing/create-checkout", requireAnalyzeAuth, createCheckoutHandler);
 billingRouter.get("/api/billing/status", requireAnalyzeAuth, getBillingStatus);

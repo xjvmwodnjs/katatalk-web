@@ -1,19 +1,20 @@
 # KataTalk — 이후 작업 TODO
 
-> 크레딧·결제·Supabase 스키마/RPC 기본 구현은 반영되었습니다. 아래는 **운영 완성도·법무·실분석** 쪽 남은 작업입니다.
-
-## 인프라·데이터
-
-- [ ] Supabase SQL 마이그레이션 적용 후 **RLS·RPC** 동작 검증(스테이징)
-- [ ] 기존 MySQL `user_wallets` / `credit_ledger` 데이터가 있다면 **Supabase `profiles` / `credit_logs`로 이전** 전략 수립(현재 레거시 코드: `server/creditDb.legacy.ts`)
+> 결제는 **Toss + Lemon Squeezy** 추상화로 전환되었습니다. Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
 
 ## 결제·법무
 
-- [ ] **환불 정책·이용약관** 문구 법무 검토 (UI 체크박스 문구는 TODO 표기됨)
-- [ ] Stripe **라이브** 키·Webhook·Price ID 전환 체크리스트
+- [ ] **Toss** 실결제창·결제 승인 API·웹훅 서명 검증 완성 (`tossProvider.ts` TODO)
+- [ ] **Lemon Squeezy** Checkout API 필드·실주문 payload 검증 (운영 variant·store 연동)
+- [ ] **환불 정책·이용약관** 법무 검토
+- [ ] 운영 웹훅 엔드포인트 URL·시크릿 로테이션 절차
 
-## 분석 파이프라인
+## 인프라
 
-- [ ] **in-memory mock job** 대신 **DB/큐 기반 워커**로 전환 (Vercel/serverless 운영 필수)
-- [ ] **KataGo** 워커 연결 및 실분석 결과 저장
-- [ ] **LLM** 해설(선택) 파이프라인
+- [ ] Supabase **`002` 마이그레이션** 적용 후 `add_credits_from_payment` RPC 검증
+- [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지
+
+## 분석
+
+- [ ] DB/큐 기반 job (인메모리 mock 대체)
+- [ ] KataGo / LLM (현재 mock)

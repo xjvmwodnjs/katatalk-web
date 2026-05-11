@@ -1,16 +1,19 @@
 // =============================================================
-// PricingTable: 크레딧 팩 충전 (Stripe Checkout mode=payment)
+// PricingTable: 크레딧 팩 충전 (Toss Payments / Lemon Squeezy)
 // =============================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { Translations } from "@/lib/mockData";
+import { Translations, type Language } from "@/lib/mockData";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { isCreditChargeCheckoutDisabled } from "@shared/billingUiRules";
 
+export type BillingProviderChoice = "toss" | "lemonsqueezy";
+
 interface PricingTableProps {
   t: Translations;
+  lang: Language;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }
@@ -20,7 +23,6 @@ type PackId = "starter" | "standard" | "pro";
 const PACKS: {
   id: PackId;
   credits: number;
-  /** 표시용 — 실제 과금 금액은 Stripe Price에 따름 */
   labelKo: string;
 }[] = [
   { id: "starter", credits: 50, labelKo: "Starter" },
@@ -28,9 +30,18 @@ const PACKS: {
   { id: "pro", credits: 300, labelKo: "Pro" },
 ];
 
-export default function PricingTable({ t, isAuthenticated, onRequireLogin }: PricingTableProps) {
+function defaultProviderForLang(lang: Language): BillingProviderChoice {
+  return lang === "ko" ? "toss" : "lemonsqueezy";
+}
+
+export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin }: PricingTableProps) {
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [provider, setProvider] = useState<BillingProviderChoice>(() => defaultProviderForLang(lang));
+
+  useEffect(() => {
+    setProvider(defaultProviderForLang(lang));
+  }, [lang]);
 
   const refundPolicyTextKo =
     "디지털 분석 크레딧은 사용 즉시 차감되며, 이미 사용한 크레딧은 환불되지 않는다는 점에 동의합니다.";
@@ -38,6 +49,13 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
     "TODO: 정식 출시 전 환불 정책 문구는 법적 검토가 필요합니다.";
 
   const buttonDisabled = isCreditChargeCheckoutDisabled(policyAccepted, checkoutLoading);
+
+  const payButtonLabel =
+    provider === "toss"
+      ? lang === "ko"
+        ? "토스로 결제하기"
+        : "Pay with Toss (KR)"
+      : "Pay with card";
 
   const startCheckout = async (packageId: PackId) => {
     if (!isAuthenticated) {
@@ -50,18 +68,20 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
     setCheckoutLoading(true);
     try {
       const headers = await getAnalyzeAuthHeaders();
-      const res = await fetch("/api/billing/create-checkout-session", {
+      const res = await fetch("/api/billing/create-checkout", {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
           ...headers,
         },
-        body: JSON.stringify({ packageId }),
+        body: JSON.stringify({ packageId, provider, locale: lang }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         url?: string;
+        checkoutPayload?: unknown;
+        provider?: string;
         message?: string;
       };
       if (res.status === 401) {
@@ -69,15 +89,31 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
         onRequireLogin();
         return;
       }
-      if (!res.ok || !body.success || typeof body.url !== "string" || !body.url) {
+      if (!res.ok || body.success === false) {
         const msg =
           typeof body.message === "string" && body.message.trim()
             ? body.message
-            : "결제 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+            : "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.";
         toast.error("결제를 시작할 수 없습니다.", { description: msg });
         return;
       }
-      window.location.href = body.url;
+
+      if (typeof body.url === "string" && body.url) {
+        window.location.href = body.url;
+        return;
+      }
+
+      if (body.checkoutPayload) {
+        toast.message("테스트 결제 준비 중", {
+          description:
+            "Toss 결제창·승인 API 연동은 다음 단계에서 완료됩니다. success URL 만으로 크레딧이 오르지 않으며, 웹훅으로만 반영됩니다.",
+        });
+        return;
+      }
+
+      toast.error("결제 정보를 받지 못했습니다.", {
+        description: "잠시 후 다시 시도하거나 다른 결제 수단을 선택해 주세요.",
+      });
     } catch {
       toast.error("네트워크 오류로 결제를 시작하지 못했습니다.");
     } finally {
@@ -96,6 +132,40 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
         </h2>
         <p className="text-sm text-slate-400" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
           {t.pricingSubtitle}
+        </p>
+      </div>
+
+      <div
+        className="max-w-xl mx-auto mb-6 rounded-xl p-4 text-left text-xs space-y-3"
+        style={{
+          background: "rgba(22, 22, 28, 0.85)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          fontFamily: "'Noto Sans KR', sans-serif",
+        }}
+      >
+        <p className="text-slate-500">결제 수단</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+            <input
+              type="radio"
+              name="pay-provider"
+              checked={provider === "toss"}
+              onChange={() => setProvider("toss")}
+            />
+            한국 결제 (Toss Payments)
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+            <input
+              type="radio"
+              name="pay-provider"
+              checked={provider === "lemonsqueezy"}
+              onChange={() => setProvider("lemonsqueezy")}
+            />
+            해외 결제 (Global card / Lemon Squeezy)
+          </label>
+        </div>
+        <p className="text-[11px] text-slate-500 pt-1">
+          기본값: UI 언어가 한국어이면 Toss, 그 외에는 Lemon Squeezy 가 선택됩니다. 연동은 단계적으로 켜집니다.
         </p>
       </div>
 
@@ -174,7 +244,7 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
                   <span className="text-xs text-slate-500">credits</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-6" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                  실제 결제 금액은 Stripe Checkout에서 확인됩니다.
+                  결제 금액은 각 결제사(Toss / Lemon Squeezy) 확인 화면에서 표시됩니다.
                 </p>
 
                 <ul className="space-y-2.5 mb-6">
@@ -217,7 +287,7 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
                         }
                   }
                 >
-                  {t.subscribe}
+                  {payButtonLabel}
                 </button>
               </div>
             </div>

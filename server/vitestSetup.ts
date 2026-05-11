@@ -14,6 +14,10 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
   process.env.SUPABASE_SERVICE_ROLE_KEY = "vitest-service-role-placeholder-not-real";
 }
 
+if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET?.trim()) {
+  process.env.LEMONSQUEEZY_WEBHOOK_SECRET = "vitest-lemon-webhook-secret-32chars___";
+}
+
 function queryBuilder(table: string) {
   const builder: Record<string, unknown> = {
     select() {
@@ -78,7 +82,7 @@ vi.mock("./_core/supabaseAdmin", () => {
       if (name === "refund_credit_for_analysis") {
         return { data: { ok: true, duplicate: false }, error: null };
       }
-      if (name === "add_credits_from_stripe") {
+      if (name === "add_credits_from_payment") {
         return {
           data: { ok: true, duplicate: false, credits: 52, log_id: "00000000-0000-0000-0000-00000000bb01" },
           error: null,

@@ -1,20 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import http from "http";
+import { createHmac } from "crypto";
 import * as resolve from "./_core/resolveRequestUser";
-
-vi.hoisted(() => {
-  process.env.STRIPE_SECRET_KEY = "sk_test_12345678901234567890123456789012";
-  process.env.STRIPE_CREDIT_PACK_STARTER_PRICE_ID = "price_test_starter";
-  process.env.STRIPE_CREDIT_PACK_STANDARD_PRICE_ID = "price_test_standard";
-  process.env.STRIPE_CREDIT_PACK_PRO_PRICE_ID = "price_test_pro";
-});
+import * as creditService from "./creditService";
 
 vi.mock("./_core/resolveRequestUser", () => ({
   tryResolveUserFromRequest: vi.fn(),
 }));
 
-import { attachBillingWebhook, billingRouter } from "./billingRoute";
+import { attachPaymentWebhooks, billingRouter } from "./billingRoute";
 import { analyzeRouter } from "./analyzeRoute";
 import { creditsRouter } from "./creditsRoute";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
@@ -119,34 +114,76 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(res.status).toBe(403);
   });
 
-  it("POST /api/billing/create-checkout-session returns 401 when unauthenticated", async () => {
+  it("POST /api/billing/create-checkout returns 401 when unauthenticated", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(null);
-    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout-session`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ packageId: "starter" }),
+      body: JSON.stringify({ packageId: "starter", locale: "ko" }),
     });
     expect(res.status).toBe(401);
   });
 
-  it("POST /api/billing/create-checkout-session returns 400 for invalid packageId", async () => {
+  it("POST /api/billing/create-checkout returns 400 for invalid packageId", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout-session`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
-      body: JSON.stringify({ packageId: "enterprise" }),
+      body: JSON.stringify({ packageId: "enterprise", locale: "en" }),
     });
     expect(res.status).toBe(400);
   });
+
+  it("POST /api/billing/create-checkout returns 400 for invalid provider", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", provider: "paddle", locale: "en" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/billing/create-checkout ignores client creditAmount (strict body)", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", provider: "toss", locale: "ko", creditAmount: 9999 }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/billing/create-checkout returns toss payload for ko + toss", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", provider: "toss", locale: "ko" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      success?: boolean;
+      checkoutPayload?: { metadata?: { creditAmount?: string } };
+      creditAmount?: number;
+    };
+    expect(body.success).toBe(true);
+    expect(body.creditAmount).toBe(50);
+    expect(body.checkoutPayload?.metadata?.creditAmount).toBe("50");
+  });
 });
 
-describe("Stripe webhook raw route", () => {
+describe("Payment webhooks HTTP", () => {
   let server: http.Server;
   let port: number;
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeAll(async () => {
     const app = express();
-    attachBillingWebhook(app);
+    attachPaymentWebhooks(app);
     const r = await listen(app);
     server = r.server;
     port = r.port;
@@ -158,12 +195,54 @@ describe("Stripe webhook raw route", () => {
     });
   });
 
-  it("returns 400 when Stripe-Signature header missing", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook`, {
+  it("Toss webhook returns 200 skipped when not implemented (dev)", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/toss`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+  });
+
+  it("Lemon webhook 401 without signature", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("Lemon webhook order_created calls addCreditsFromPaymentWebhook", async () => {
+    const spy = vi.spyOn(creditService, "addCreditsFromPaymentWebhook").mockResolvedValue({
+      ok: true,
+      duplicate: false,
+      credits: 52,
+    });
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_http_1" },
+      data: {
+        type: "orders",
+        id: "order_http_1",
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_a",
+            creditPackageId: "starter",
+            creditAmount: "50",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalled();
   });
 });
