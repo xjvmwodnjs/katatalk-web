@@ -2,7 +2,7 @@
 // Home Page: KataTalk — Upload + Analysis Results only (no pricing)
 // =============================================================
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
@@ -10,6 +10,7 @@ import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
+import type { AnalysisJobGetResponse } from "@shared/analysisJob";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import GameInfoHeader from "@/components/GameInfoHeader";
@@ -21,13 +22,29 @@ const HERO_IMAGE =
 
 type View = "upload" | "loading" | "result";
 
+const POLL_INTERVAL_MS = 450;
+const POLL_MAX_MS = 120_000;
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
 export default function Home() {
   const { user, isAuthenticated, logout } = useAuth();
   const [, setLocation] = useLocation();
   const [lang, setLang] = useState<Language>("ko");
   const [view, setView] = useState<View>("upload");
   const [report, setReport] = useState<AnalysisReport>(MOCK_DATA);
+  const [jobProgress, setJobProgress] = useState(0);
+  const [jobStatus, setJobStatus] = useState<AnalysisJobGetResponse["status"] | "idle">("idle");
+  const pollAbortRef = useRef(false);
   const t = TRANSLATIONS[lang];
+
+  useEffect(() => {
+    return () => {
+      pollAbortRef.current = true;
+    };
+  }, []);
 
   // Fetch subscription info if authenticated
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
@@ -74,7 +91,9 @@ export default function Home() {
       return;
     }
 
-    // Show loading state and call /api/analyze (multipart SGF + language)
+    pollAbortRef.current = false;
+    setJobProgress(0);
+    setJobStatus("queued");
     setView("loading");
     try {
       const formData = new FormData();
@@ -87,38 +106,81 @@ export default function Home() {
         body: formData,
       });
 
-      const payload = await response.json().catch(() => ({})) as {
+      const createPayload = await response.json().catch(() => ({})) as {
         success?: boolean;
+        jobId?: string;
+        status?: string;
         message?: string;
-        data?: AnalysisReport;
-        meta?: { mock?: boolean; message?: string };
       };
 
-      if (!response.ok || payload.success === false) {
+      if (!response.ok || createPayload.success === false || !createPayload.jobId) {
         const msg =
-          typeof payload.message === "string" && payload.message.trim()
-            ? payload.message
+          typeof createPayload.message === "string" && createPayload.message.trim()
+            ? createPayload.message
             : !response.ok
-              ? `Analysis failed (${response.status})`
-              : "Analysis failed";
+              ? `Could not start analysis (${response.status})`
+              : "Could not start analysis";
         throw new Error(msg);
       }
 
-      if (!payload.success || !payload.data) {
-        throw new Error("Analysis response was empty");
+      const jobId = createPayload.jobId;
+      const deadline = Date.now() + POLL_MAX_MS;
+
+      while (!pollAbortRef.current && Date.now() < deadline) {
+        const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
+          credentials: "include",
+        });
+
+        const pollBody = (await pollRes.json().catch(() => ({}))) as
+          | AnalysisJobGetResponse
+          | { success?: false; message?: string };
+
+        if (!pollRes.ok || pollBody.success === false) {
+          const msg =
+            "message" in pollBody && typeof pollBody.message === "string"
+              ? pollBody.message
+              : `Job status request failed (${pollRes.status})`;
+          throw new Error(msg);
+        }
+
+        const job = pollBody as AnalysisJobGetResponse;
+        setJobStatus(job.status);
+        setJobProgress(typeof job.progress === "number" ? job.progress : 0);
+
+        if (job.status === "completed") {
+          if (!job.data) {
+            throw new Error("Analysis finished but no data was returned.");
+          }
+          setReport(job.data as AnalysisReport);
+          setView("result");
+          setJobStatus("idle");
+          toast.success(
+            lang === "ko" ? "분석이 완료되었습니다!" :
+            lang === "en" ? "Analysis complete!" :
+            lang === "zh" ? "分析完成！" : "分析が完了しました！"
+          );
+          return;
+        }
+
+        if (job.status === "failed") {
+          throw new Error(job.error?.message ?? "Analysis job failed.");
+        }
+
+        await sleep(POLL_INTERVAL_MS);
       }
 
-      setReport(payload.data);
-
-      // Analysis complete — show results
-      setView("result");
-      toast.success(
-        lang === "ko" ? "분석이 완료되었습니다!" :
-        lang === "en" ? "Analysis complete!" :
-        lang === "zh" ? "分析完成！" : "分析が完了しました！"
+      if (pollAbortRef.current) {
+        return;
+      }
+      throw new Error(
+        lang === "ko" ? "분석 작업 시간이 초과되었습니다." :
+        lang === "en" ? "Analysis timed out. Please try again." :
+        lang === "zh" ? "分析超时，请重试。" : "分析がタイムアウトしました。もう一度お試しください。"
       );
     } catch (error: any) {
       setView("upload");
+      setJobStatus("idle");
+      setJobProgress(0);
       toast.error(
         lang === "ko" ? "분석 중 오류가 발생했습니다." :
         lang === "en" ? "An error occurred during analysis." :
@@ -342,9 +404,43 @@ export default function Home() {
               {t.analyzing}
             </h3>
             <p className="text-sm text-slate-400 text-center max-w-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-              {lang === "ko" ? "KataGo AI가 기보를 분석하고 있습니다. 잠시만 기다려 주세요..." :
-               lang === "en" ? "KataGo AI is analyzing your game. Please wait..." :
-               lang === "zh" ? "KataGo AI正在分析棋谱，请稍候..." : "KataGo AIが棋譜を分析中です。しばらくお待ちください..."}
+              {jobStatus === "queued"
+                ? lang === "ko"
+                  ? "분석 작업이 대기열에 올라갔습니다. 곧 시작합니다…"
+                  : lang === "en"
+                    ? "Your analysis job is queued and will start shortly…"
+                    : lang === "zh"
+                      ? "分析任务已排队，即将开始…"
+                      : "解析ジョブはキューに入りました。まもなく開始します…"
+                : lang === "ko"
+                  ? "KataGo AI가 기보를 분석하고 있습니다. 잠시만 기다려 주세요…"
+                  : lang === "en"
+                    ? "KataGo AI is analyzing your game. Please wait…"
+                    : lang === "zh"
+                      ? "KataGo AI正在分析棋谱，请稍候…"
+                      : "KataGo AIが棋譜を分析中です。しばらくお待ちください…"}
+            </p>
+            <div
+              className="mt-6 w-64 max-w-[85vw] h-1.5 rounded-full overflow-hidden mx-auto"
+              style={{ background: "rgba(255,255,255,0.08)" }}
+              aria-valuenow={jobProgress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              role="progressbar"
+            >
+              <div
+                className="h-full rounded-full transition-[width] duration-300 ease-out"
+                style={{
+                  width: `${Math.min(100, Math.max(0, jobProgress))}%`,
+                  background: "linear-gradient(90deg, #C9A84C, #E8D48B)",
+                }}
+              />
+            </div>
+            <p
+              className="mt-2 text-xs text-slate-500 text-center font-mono"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
+              {jobStatus !== "idle" ? `${jobStatus} · ${Math.round(jobProgress)}%` : ""}
             </p>
             <div className="mt-6 flex gap-1.5">
               {[0, 1, 2, 3, 4].map((i) => (
