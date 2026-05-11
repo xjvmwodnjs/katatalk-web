@@ -1,5 +1,5 @@
 // =============================================================
-// PricingTable: Three-tier pricing cards (Free, Basic, Premium)
+// PricingTable: Free + 유료 크레딧 팩(충전) 안내 — 실제 결제는 추후 Stripe
 // =============================================================
 
 import { Check, Sparkles } from "lucide-react";
@@ -8,9 +8,20 @@ import { Translations } from "@/lib/mockData";
 
 interface PricingTableProps {
   t: Translations;
+  isAuthenticated: boolean;
+  onRequireLogin: () => void;
 }
 
-export default function PricingTable({ t }: PricingTableProps) {
+export default function PricingTable({ t, isAuthenticated, onRequireLogin }: PricingTableProps) {
+  const onCreditPackClick = () => {
+    if (!isAuthenticated) {
+      toast.info("로그인이 필요합니다. 로그인 페이지로 이동합니다.");
+      onRequireLogin();
+      return;
+    }
+    toast.info("크레딧 팩 구매(충전)는 Stripe Checkout 연동 후 제공됩니다. 현재는 준비 중입니다.");
+  };
+
   const plans = [
     {
       name: t.free,
@@ -18,6 +29,7 @@ export default function PricingTable({ t }: PricingTableProps) {
       features: t.pricingFeatures.free,
       isCurrent: true,
       isPopular: false,
+      showCreditCta: false,
     },
     {
       name: t.basic,
@@ -25,6 +37,7 @@ export default function PricingTable({ t }: PricingTableProps) {
       features: t.pricingFeatures.basic,
       isCurrent: false,
       isPopular: true,
+      showCreditCta: true,
     },
     {
       name: t.premium,
@@ -32,6 +45,7 @@ export default function PricingTable({ t }: PricingTableProps) {
       features: t.pricingFeatures.premium,
       isCurrent: false,
       isPopular: false,
+      showCreditCta: true,
     },
   ];
 
@@ -66,7 +80,6 @@ export default function PricingTable({ t }: PricingTableProps) {
               backdropFilter: "blur(8px)",
             }}
           >
-            {/* Popular badge */}
             {plan.isPopular && (
               <div
                 className="absolute top-0 right-0 px-3 py-1 rounded-bl-lg text-[10px] font-bold flex items-center gap-1"
@@ -81,7 +94,6 @@ export default function PricingTable({ t }: PricingTableProps) {
             )}
 
             <div className="p-6">
-              {/* Plan name */}
               <h3
                 className="text-lg font-bold text-amber-100 mb-1"
                 style={{ fontFamily: "'Noto Serif KR', serif" }}
@@ -89,7 +101,6 @@ export default function PricingTable({ t }: PricingTableProps) {
                 {plan.name}
               </h3>
 
-              {/* Price */}
               <div className="flex items-baseline gap-1 mb-6">
                 <span
                   className="text-3xl font-bold"
@@ -105,7 +116,6 @@ export default function PricingTable({ t }: PricingTableProps) {
                 )}
               </div>
 
-              {/* Features */}
               <ul className="space-y-2.5 mb-6">
                 {plan.features.map((feature, fi) => (
                   <li key={fi} className="flex items-start gap-2">
@@ -123,10 +133,13 @@ export default function PricingTable({ t }: PricingTableProps) {
                 ))}
               </ul>
 
-              {/* CTA Button */}
               <button
-                onClick={() => toast.info("Feature coming soon")}
-                className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
+                type="button"
+                onClick={() => {
+                  if (plan.isCurrent) return;
+                  if (plan.showCreditCta) onCreditPackClick();
+                }}
+                className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 inline-flex items-center justify-center gap-2"
                 style={
                   plan.isCurrent
                     ? {
@@ -147,7 +160,7 @@ export default function PricingTable({ t }: PricingTableProps) {
                       }
                 }
               >
-                {plan.isCurrent ? t.currentPlan : t.choosePlan}
+                {plan.isCurrent ? t.currentPlan : plan.showCreditCta ? t.subscribe : t.currentPlan}
               </button>
             </div>
           </div>

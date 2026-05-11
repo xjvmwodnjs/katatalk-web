@@ -184,7 +184,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     brandName: "바둑 AI 해설",
     login: "로그인",
     signup: "회원가입",
-    subscribe: "구독하기",
+    subscribe: "크레딧 충전",
     logout: "로그아웃",
     logoutSuccess: "로그아웃 되었습니다.",
     loginRequired: "로그인이 필요합니다.",
@@ -241,8 +241,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
       premium: ["무제한 기보 분석", "프로 수준 심층 분석", "4개 언어 해설 지원", "전체 참고도(PV)", "승률 그래프 + 형세판단", "우선 처리 큐"],
     },
     
-    profilePlan: "현재 플랜",
-    profileRemaining: "이번 달 남은 분석 횟수",
+    profilePlan: "보유 크레딧",
+    profileRemaining: "차감 기준",
     profileUsed: "사용한 횟수",
     
     footerPowered: "Powered by KataGo + GPT-4o",
@@ -252,7 +252,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     brandName: "Baduk AI Review",
     login: "Log In",
     signup: "Sign Up",
-    subscribe: "Subscribe",
+    subscribe: "Buy credits",
     logout: "Log Out",
     logoutSuccess: "You have been logged out.",
     loginRequired: "Please log in to continue.",
@@ -309,8 +309,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
       premium: ["Unlimited reviews", "Pro-level deep analysis", "4 language commentary", "All PV variations", "Winrate graph + Territory map", "Priority queue"],
     },
     
-    profilePlan: "Current Plan",
-    profileRemaining: "Reviews remaining this month",
+    profilePlan: "Your credits",
+    profileRemaining: "Usage",
     profileUsed: "Reviews used",
     
     footerPowered: "Powered by KataGo + GPT-4o",
@@ -320,7 +320,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     brandName: "围棋AI解说",
     login: "登录",
     signup: "注册",
-    subscribe: "订阅",
+    subscribe: "充值",
     logout: "退出登录",
     logoutSuccess: "已成功退出登录。",
     loginRequired: "请先登录。",
@@ -377,8 +377,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
       premium: ["无限棋谱分析", "专业级深度分析", "支持4种语言解说", "全部变化图", "胜率图表 + 形势判断", "优先处理队列"],
     },
     
-    profilePlan: "当前方案",
-    profileRemaining: "本月剩余分析次数",
+    profilePlan: "当前积分",
+    profileRemaining: "消耗",
     profileUsed: "已使用次数",
     
     footerPowered: "Powered by KataGo + GPT-4o",
@@ -388,7 +388,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     brandName: "囲碁AI解説",
     login: "ログイン",
     signup: "新規登録",
-    subscribe: "サブスクリプション",
+    subscribe: "チャージ",
     logout: "ログアウト",
     logoutSuccess: "ログアウトしました。",
     loginRequired: "ログインが必要です。",
@@ -445,8 +445,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
       premium: ["無制限の棋譜解析", "プロレベル深層分析", "4言語解説対応", "全参考図", "勝率グラフ + 形勢判断", "優先処理キュー"],
     },
     
-    profilePlan: "現在のプラン",
-    profileRemaining: "今月の残り解析回数",
+    profilePlan: "保有クレジット",
+    profileRemaining: "消費",
     profileUsed: "使用回数",
     
     footerPowered: "Powered by KataGo + GPT-4o",

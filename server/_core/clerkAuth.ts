@@ -3,6 +3,7 @@ import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
 import type { AuthenticatedUser } from "./sdk";
+import { ensureWalletWithSignupBonus } from "../creditService";
 
 function mapRow(row: User): AuthenticatedUser {
   return { ...row } as AuthenticatedUser;
@@ -78,7 +79,9 @@ export async function verifyClerkBearerAndSyncUser(
 
   const hasDatabaseUrl = Boolean(ENV.databaseUrl?.trim());
   if (!hasDatabaseUrl) {
-    return buildClerkUserWithoutDb(openId, email, name);
+    const u = buildClerkUserWithoutDb(openId, email, name);
+    await ensureWalletWithSignupBonus(u);
+    return u;
   }
 
   await db.upsertUser({
@@ -95,5 +98,7 @@ export async function verifyClerkBearerAndSyncUser(
     return null;
   }
 
-  return mapRow(row);
+  const authed = mapRow(row);
+  await ensureWalletWithSignupBonus(authed);
+  return authed;
 }

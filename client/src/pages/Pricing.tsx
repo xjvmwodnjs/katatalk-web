@@ -21,6 +21,7 @@ export default function Pricing() {
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const creditBalance = subscription?.creditBalance ?? subscription?.remainingAnalysisCount ?? 0;
 
   const handleLogin = () => {
     window.location.href = getLoginUrl();
@@ -81,15 +82,20 @@ export default function Pricing() {
                   <span className="text-xs font-medium text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
                     {user?.name || user?.email || "User"}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                     style={{
-                      background: subscription?.subscriptionTier === "premium" ? "rgba(201, 168, 76, 0.2)" :
-                        subscription?.subscriptionTier === "basic" ? "rgba(100, 200, 150, 0.2)" : "rgba(255,255,255,0.06)",
-                      color: subscription?.subscriptionTier === "premium" ? "#C9A84C" :
-                        subscription?.subscriptionTier === "basic" ? "#6ee7b7" : "#94a3b8",
+                      background: "rgba(201, 168, 76, 0.15)",
+                      color: "#C9A84C",
                     }}
                   >
-                    {subscription?.subscriptionTier?.toUpperCase() || "FREE"}
+                    {lang === "ko"
+                      ? `크레딧 ${creditBalance}`
+                      : lang === "en"
+                        ? `Credits ${creditBalance}`
+                        : lang === "zh"
+                          ? `积分 ${creditBalance}`
+                          : `クレジット ${creditBalance}`}
                   </span>
                 </div>
                 <button
@@ -156,7 +162,13 @@ export default function Pricing() {
         </div>
 
         {/* Pricing Table */}
-        <PricingTable t={t} />
+        <PricingTable
+          t={t}
+          isAuthenticated={isAuthenticated}
+          onRequireLogin={() => {
+            window.location.href = getLoginUrl();
+          }}
+        />
 
         {/* Footer */}
         <footer className="py-8 border-t text-center" style={{ borderColor: "rgba(255,255,255,0.06)" }}>

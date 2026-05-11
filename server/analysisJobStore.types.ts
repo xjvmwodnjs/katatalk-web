@@ -1,37 +1,49 @@
 /**
  * Server-side job persistence abstraction.
- * Swap `InMemoryAnalysisJobStore` for a class that reads/writes DB rows and
- * pushes work to a queue; the worker updates the same logical fields.
+ * Swap `InMemoryAnalysisJobStore` on the server with a DB-backed row +
+ * queue producer; workers update the same logical fields.
  */
 
 import type { AnalysisJobGetResponse, AnalysisJobStatus } from "@shared/analysisJob";
 
 export type AnalysisJobLanguage = "ko" | "en" | "zh" | "ja";
 
-/** Input captured at enqueue time (SGF already validated). */
+/** In-memory mock 파이프라인에 필요한 최소 필드 (SGF 원문은 저장하지 않음). */
 export type AnalysisJobEnqueuePayload = {
   fileName: string;
   language: AnalysisJobLanguage;
-  sgfContent: string;
 };
 
-/** Internal row — not sent to the client as-is (excludes raw SGF in API). */
+/** Internal row — not sent to the client as-is. */
 export type AnalysisJobInternal = {
   jobId: string;
   status: AnalysisJobStatus;
   progress: number | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Clerk JWT `sub` 또는 non-clerk 로컬 식별자 (creditService 와 동일 규칙). */
+  ownerClerkSubject: string;
+  /** users.id — DB 없이 Clerk JWT 만 쓰는 경우 0 */
+  ownerAppUserId: number;
+  creditLedgerId: number;
   payload: AnalysisJobEnqueuePayload;
   /** Set when completed (mock or future KataGo). */
   resultData?: unknown;
   meta?: { mock: boolean; message: string };
   errorMessage?: string;
+  /** 완료/실패 시 TTL 정리용 */
+  terminalAt?: Date;
 };
 
 export interface AnalysisJobStore {
-  /** Persist queued job and start async processing (mock delay for now). */
-  createAndEnqueueMock(payload: AnalysisJobEnqueuePayload): string;
-  /** Serialize public GET shape, or null if jobId unknown. */
+  createAndEnqueueMock(args: {
+    jobId: string;
+    payload: AnalysisJobEnqueuePayload;
+    ownerClerkSubject: string;
+    ownerAppUserId: number;
+    creditLedgerId: number;
+    onJobFailed?: () => void | Promise<void>;
+  }): void;
+  getInternal(jobId: string): AnalysisJobInternal | null;
   toPublicGetResponse(jobId: string): AnalysisJobGetResponse | null;
 }
