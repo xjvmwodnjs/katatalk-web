@@ -48,7 +48,8 @@ export default function LoginPage() {
   const { isAuthenticated, loading } = useAuth();
   const [uiLang, setUiLang] = useState<UiLangCode>(() => readStoredUiLang());
   const t = COPY[uiLang];
-  const isSignUp = location === "/sign-up";
+  const pathOnly = location.split("?")[0] ?? location;
+  const isSignUp = pathOnly === "/sign-up" || pathOnly.startsWith("/sign-up/");
 
   useEffect(() => {
     const sync = () => setUiLang(readStoredUiLang());
@@ -172,6 +173,7 @@ export default function LoginPage() {
                     routing="path"
                     path="/sign-up"
                     signInUrl="/login"
+                    afterSignUpUrl="/"
                     forceRedirectUrl="/"
                   />
                 ) : (
@@ -179,6 +181,7 @@ export default function LoginPage() {
                     routing="path"
                     path="/login"
                     signUpUrl="/sign-up"
+                    afterSignInUrl="/"
                     forceRedirectUrl="/"
                   />
                 )}

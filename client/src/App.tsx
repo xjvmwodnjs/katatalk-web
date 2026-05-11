@@ -12,8 +12,9 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
-      <Route path={"/login"} component={LoginPage} />
-      <Route path={"/sign-up"} component={LoginPage} />
+      {/* nest: Clerk가 /login/..., /sign-up/... 하위 경로로 이동해도 SPA 404 방지 */}
+      <Route path={"/login"} nest component={LoginPage} />
+      <Route path={"/sign-up"} nest component={LoginPage} />
       <Route path={"/pricing"} component={Pricing} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
