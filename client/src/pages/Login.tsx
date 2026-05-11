@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { SignIn, SignUp, UserButton, SignedIn, SignedOut } from "@clerk/clerk-react";
+import {
+  SignIn,
+  SignUp,
+  UserButton,
+  SignedIn,
+  SignedOut,
+  useAuth as useClerkSession,
+} from "@clerk/clerk-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import LanguageSelector from "@/components/LanguageSelector";
 import { KATATALK_UI_LANG_EVENT, readStoredUiLang, persistUiLang, type UiLangCode } from "@/const";
@@ -40,16 +47,43 @@ const COPY: Record<
   },
 };
 
-/** 홈과 동일한 다크 배경 */
 const PAGE_BG = "oklch(0.13 0.005 285)";
 
-export default function LoginPage() {
-  const [location, setLocation] = useLocation();
-  const { isAuthenticated, loading } = useAuth();
+/** ClerkProvider 밖에서도 안전하게 안내만 표시 */
+function NonClerkLoginScreen() {
   const [uiLang, setUiLang] = useState<UiLangCode>(() => readStoredUiLang());
   const t = COPY[uiLang];
-  const pathOnly = location.split("?")[0] ?? location;
+  useEffect(() => {
+    const sync = () => setUiLang(readStoredUiLang());
+    window.addEventListener(KATATALK_UI_LANG_EVENT, sync);
+    return () => window.removeEventListener(KATATALK_UI_LANG_EVENT, sync);
+  }, []);
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center p-6 text-sm text-zinc-300"
+      style={{ background: PAGE_BG }}
+    >
+      <div
+        className="max-w-md rounded-2xl px-6 py-8 border border-amber-500/20 bg-zinc-900/90 shadow-xl"
+        style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+      >
+        <p className="leading-relaxed">{t.notConfigured}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Clerk 훅은 이 컴포넌트 안에서만 호출 (ClerkProvider 하위에서만 마운트) */
+function ClerkLoginScreen() {
+  const [, setLocation] = useLocation();
+  const { isAuthenticated, loading } = useAuth();
+  const { isLoaded: clerkLoaded } = useClerkSession();
+  const [uiLang, setUiLang] = useState<UiLangCode>(() => readStoredUiLang());
+  const t = COPY[uiLang];
+  const pathOnly =
+    (typeof window !== "undefined" ? window.location.pathname : "/login").split("?")[0] ?? "/login";
   const isSignUp = pathOnly === "/sign-up" || pathOnly.startsWith("/sign-up/");
+  const isLoginPath = pathOnly === "/login" || pathOnly.startsWith("/login/");
 
   useEffect(() => {
     const sync = () => setUiLang(readStoredUiLang());
@@ -58,29 +92,10 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.VITE_AUTH_PROVIDER !== "clerk") {
-      return;
-    }
     if (!loading && isAuthenticated) {
       setLocation("/");
     }
   }, [isAuthenticated, loading, setLocation]);
-
-  if (import.meta.env.VITE_AUTH_PROVIDER !== "clerk") {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center p-6 text-sm text-zinc-300"
-        style={{ background: PAGE_BG }}
-      >
-        <div
-          className="max-w-md rounded-2xl px-6 py-8 border border-amber-500/20 bg-zinc-900/90 shadow-xl"
-          style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
-        >
-          <p className="leading-relaxed">{t.notConfigured}</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: PAGE_BG }}>
@@ -134,9 +149,9 @@ export default function LoginPage() {
             boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
           }}
         >
-          <div className="text-center mb-6 sm:mb-8">
+          <div className="text-center mb-5 sm:mb-6">
             <h1
-              className="text-2xl sm:text-3xl font-bold text-amber-100 mb-3"
+              className="text-2xl sm:text-3xl font-bold text-amber-100 mb-2"
               style={{ fontFamily: "'Noto Serif KR', serif" }}
             >
               {t.title}
@@ -166,26 +181,38 @@ export default function LoginPage() {
             </div>
           </SignedIn>
           <SignedOut>
-            <div className="w-full flex justify-center px-0 sm:px-1 min-w-0">
-              <div className="w-full min-w-0 max-w-full overflow-x-auto">
-                {isSignUp ? (
-                  <SignUp
-                    routing="path"
-                    path="/sign-up"
-                    signInUrl="/login"
-                    afterSignUpUrl="/"
-                    forceRedirectUrl="/"
-                  />
-                ) : (
-                  <SignIn
-                    routing="path"
-                    path="/login"
-                    signUpUrl="/sign-up"
-                    afterSignInUrl="/"
-                    forceRedirectUrl="/"
-                  />
-                )}
-              </div>
+            <div className="w-full flex flex-col justify-center px-0 sm:px-1 min-w-0 gap-3">
+              {!clerkLoaded && (
+                <p className="text-center text-sm text-zinc-400" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                  Clerk 연결 중입니다…
+                </p>
+              )}
+              {clerkLoaded && !isSignUp && !isLoginPath && (
+                <p className="text-center text-sm text-amber-200/90" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                  로그인 경로를 인식하지 못했습니다. 주소가 /login 또는 /sign-up 으로 시작하는지 확인해 주세요.
+                </p>
+              )}
+              {clerkLoaded && (isSignUp || isLoginPath) && (
+                <div className="w-full min-w-0 max-w-full overflow-x-auto">
+                  {isSignUp ? (
+                    <SignUp
+                      routing="path"
+                      path="/sign-up"
+                      signInUrl="/login"
+                      afterSignUpUrl="/"
+                      forceRedirectUrl="/"
+                    />
+                  ) : (
+                    <SignIn
+                      routing="path"
+                      path="/login"
+                      signUpUrl="/sign-up"
+                      afterSignInUrl="/"
+                      forceRedirectUrl="/"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           </SignedOut>
         </div>
@@ -199,4 +226,11 @@ export default function LoginPage() {
       </main>
     </div>
   );
+}
+
+export default function LoginPage() {
+  if (import.meta.env.VITE_AUTH_PROVIDER !== "clerk") {
+    return <NonClerkLoginScreen />;
+  }
+  return <ClerkLoginScreen />;
 }

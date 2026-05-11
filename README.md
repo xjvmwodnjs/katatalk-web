@@ -45,9 +45,13 @@ pnpm start
 ## Clerk Dashboard 설정
 
 1. [Clerk Dashboard](https://dashboard.clerk.com/) 에서 애플리케이션 생성  
-2. **Paths**: 앱에서 `signInUrl=/login`, `signUpUrl=/sign-up` 을 사용합니다. Dashboard 의 Application URL·Allowed origins 에 **실제 개발 주소**(예: `http://localhost:3000` 또는 `pnpm dev` 가 쓰는 포트)를 넣으세요.  
+2. **Paths (Development)**  
+   - Development host / Application URL 은 **실제 dev 주소**와 같아야 합니다. 예: `http://localhost:3000` (`pnpm dev` 포트가 다르면 그 포트).  
+   - Sign-in URL 경로: **`/login`**  
+   - Sign-up URL 경로: **`/sign-up`**  
+   - 이메일 verification 코드는 오는데 **404 또는 빈 화면**이면 SMTP 문제가 아니라 **`/sign-up`·`/login` 라우팅** 또는 Dashboard 의 Paths/Redirect 허용 목록 문제일 가능성이 큽니다.  
 3. **Redirect / Allowed URLs**: `/login`, `/sign-up`, `/`(로그인·가입 완료 후 복귀)뿐 아니라 Clerk 이메일 인증 등으로 이동하는 **하위 경로**(예: `/sign-up/verify-email-address`, `/login/sso-callback`)가 같은 오리진에서 열리도록 Dashboard 의 Development host·Redirect/Allowed 목록을 **실제 dev URL**(포트 포함, 예: `http://localhost:3003`)과 함께 맞춥니다. 인증 메일은 오는데 404가 나면 SMTP 문제가 아니라 **앱 라우팅 또는 Dashboard URL 허용 목록**을 의심하세요.  
-4. **Email** 로그인·회원가입을 쓰려면 User & Authentication → Email 에서 활성화되어 있는지 확인하세요. 메일이 오지 않으면 대부분 Dashboard 의 제한·도메인 설정 이슈입니다.  
+4. **Email** sign-up / sign-in 은 Clerk Dashboard → User & Authentication → Email 에서 **반드시 활성화**되어 있어야 합니다. 메일이 오지 않으면 Dashboard 의 제한·도메인 설정을 확인하세요.  
 5. **Google** 등 소셜 로그인은 해당 제공자를 Clerk 에서 켠 뒤, 클라이언트 ID/시크릿과 리다이렉트 URI 를 제공자 콘솔과 일치시켜야 합니다.  
 
 ### 로그인·회원가입 수동 테스트(로컬)

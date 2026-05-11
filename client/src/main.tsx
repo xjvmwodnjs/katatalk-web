@@ -158,6 +158,8 @@ function ClerkProviderShell({ children }: { children: ReactNode }) {
           alternativeMethodsBlockButton:
             "rounded-xl border border-white/12 bg-white/5 text-zinc-100 hover:bg-white/10",
           formFieldInputShowPasswordButton: "text-zinc-300 hover:text-white",
+          otpCodeFieldInput:
+            "text-white caret-amber-300 border-white/20 bg-zinc-950/90 placeholder:text-zinc-400",
         },
       }}
     >
