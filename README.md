@@ -40,7 +40,7 @@ pnpm start
 | `CLERK_SECRET_KEY` | 서버만 | Secret key — **저장소·프론트 번들에 포함 금지** |
 | `JWT_SECRET` | 서버 | 세션 쿠키 등 (운영에서는 필수) |
 
-`DATABASE_URL` 은 **선택**입니다. 없어도 Clerk 로그인과 mock 분석 API 는 동작합니다.
+`DATABASE_URL` 은 **로컬 개발** 에서는 없어도 Clerk 로그인·mock 분석(메모리 크레딧)이 동작할 수 있습니다. **운영(production)** 에서는 크레딧·사용자 영속화를 위해 **필수**입니다(서버 기동 시 검증).
 
 ## Clerk Dashboard 설정
 
@@ -79,6 +79,21 @@ pnpm start
 - `GET /api/analyze/:jobId` 는 **job 소유자(Clerk sub)** 와 요청자가 다르면 **403** 입니다.  
 - **운영(production)** 에서는 `DATABASE_URL` 과 `AUTH_PROVIDER=clerk` 등이 **필수**이며, 크레딧은 **DB + ledger** 로만 관리합니다. **프론트 잔액만으로는 절대 신뢰하지 마세요.**  
 - `DATABASE_URL` 이 없는 **로컬 개발** 에서는 Clerk 인증은 유지하되, 크레딧은 **프로세스 내 메모리 구현**으로만 동작합니다(운영에서 in-memory 크레딧 사용 금지).
+
+## 현재 DB 구현과 향후 Supabase 로드맵
+
+1. **크레딧 모델**은 **충전식**이며, 월 정액 구독이 아닙니다.  
+2. **회원가입/첫 인증 요청** 시 서버가 wallet 을 만들고 **2 credits** 를 한 번만 지급합니다.  
+3. **SGF 분석 1회당 1 credit** 을 서버에서 차감합니다.  
+4. **현재 구현**은 **Drizzle + MySQL** 의 `user_wallets`, `credit_ledger` 테이블입니다.  
+5. **최종 운영 DB** 는 **Supabase** 를 전제로 하며, 예: **`profiles`**(사용자·크레딧 잔액 등), **`credit_logs`**(원장) 형태로 **전환 예정**입니다. (이 저장소의 MySQL 스키마는 과도기 구현입니다.)  
+6. Supabase 전환 시 **`profiles.id` 는 Clerk `userId`(JWT `sub`)** 와 정렬하는 것을 권장합니다.  
+7. `credit_logs` 는 **refill**(충전) / **usage**(차감) / **refund** / **admin_adjustment** 등 유형을 기록합니다.  
+8. **Stripe 결제 완료 후 크레딧 증가**는 success 페이지가 아니라 **반드시 webhook** 에서만 처리해야 합니다(클라이언트 조작 방지).  
+9. **Vercel·serverless** 환경에서는 **in-memory job store** 를 사용하면 안 됩니다(인스턴스 간 공유 불가).  
+10. **운영**에서는 **DB-backed job 테이블** 또는 **메시지 큐 + 워커** 가 필요합니다.
+
+상세 TODO 목록은 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
 
 ## in-memory 분석 job 저장소 (로컬·개발 전용)
 
