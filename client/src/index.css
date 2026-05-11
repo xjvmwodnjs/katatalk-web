@@ -1,0 +1,239 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Custom Baduk Theme Colors */
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-board: var(--board);
+  --color-stone-black: var(--stone-black);
+  --color-stone-white: var(--stone-white);
+  --color-danger: var(--danger);
+}
+
+:root {
+  --radius: 0.5rem;
+  
+  /* Baduk Dark Theme */
+  --background: oklch(0.13 0.005 285);
+  --foreground: oklch(0.88 0.01 65);
+  --card: oklch(0.16 0.006 285);
+  --card-foreground: oklch(0.88 0.01 65);
+  --popover: oklch(0.16 0.006 285);
+  --popover-foreground: oklch(0.88 0.01 65);
+  
+  /* Gold as primary */
+  --primary: oklch(0.72 0.12 75);
+  --primary-foreground: oklch(0.13 0.005 285);
+  
+  --secondary: oklch(0.22 0.006 285);
+  --secondary-foreground: oklch(0.75 0.01 65);
+  --muted: oklch(0.20 0.005 285);
+  --muted-foreground: oklch(0.55 0.01 285);
+  --accent: oklch(0.22 0.006 285);
+  --accent-foreground: oklch(0.88 0.01 65);
+  --destructive: oklch(0.62 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.72 0.12 75);
+  
+  /* Charts */
+  --chart-1: oklch(0.72 0.12 75);
+  --chart-2: oklch(0.62 0.2 25);
+  --chart-3: oklch(0.55 0.15 200);
+  --chart-4: oklch(0.65 0.1 140);
+  --chart-5: oklch(0.60 0.15 300);
+  
+  /* Sidebar */
+  --sidebar: oklch(0.14 0.005 285);
+  --sidebar-foreground: oklch(0.88 0.01 65);
+  --sidebar-primary: oklch(0.72 0.12 75);
+  --sidebar-primary-foreground: oklch(0.13 0.005 285);
+  --sidebar-accent: oklch(0.20 0.005 285);
+  --sidebar-accent-foreground: oklch(0.88 0.01 65);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.72 0.12 75);
+  
+  /* Custom Baduk Colors */
+  --gold: #C9A84C;
+  --gold-light: #E8C96A;
+  --board: #8B6914;
+  --stone-black: #111111;
+  --stone-white: #F5F0E8;
+  --danger: #E05252;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+  h1, h2, h3 {
+    font-family: 'Noto Serif KR', serif;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+      max-width: 1280px;
+    }
+  }
+  
+  /* Baduk Board Grid Lines */
+  .baduk-board {
+    background-color: #B8860B;
+    background-image: 
+      repeating-linear-gradient(
+        to right,
+        rgba(0,0,0,0.4) 0px,
+        rgba(0,0,0,0.4) 1px,
+        transparent 1px,
+        transparent calc(100% / 18)
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.4) 0px,
+        rgba(0,0,0,0.4) 1px,
+        transparent 1px,
+        transparent calc(100% / 18)
+      );
+  }
+  
+  /* Gold shimmer animation */
+  @keyframes gold-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0); }
+    50% { box-shadow: 0 0 12px 2px rgba(201, 168, 76, 0.3); }
+  }
+  
+  .gold-pulse {
+    animation: gold-pulse 2s ease-in-out infinite;
+  }
+  
+  /* Stone entrance animation */
+  @keyframes stone-appear {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+    70% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+  
+  .stone-appear {
+    animation: stone-appear 0.25s ease-out forwards;
+  }
+  
+  /* SVG stone entrance animation */
+  @keyframes stone-appear-svg {
+    0% { transform: scale(0); opacity: 0; }
+    70% { transform: scale(1.12); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  
+  .stone-appear-svg {
+    animation: stone-appear-svg 0.25s ease-out forwards;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+  
+  /* Card entrance animation */
+  @keyframes card-enter {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .card-enter {
+    animation: card-enter 0.4s ease-out forwards;
+  }
+  
+  /* Winrate drop bar animation */
+  @keyframes bar-fill {
+    from { width: 0%; }
+  }
+  
+  .bar-fill {
+    animation: bar-fill 0.8s ease-out forwards;
+  }
+  
+  /* Subtle grid texture for background */
+  .grid-texture {
+    background-image: 
+      linear-gradient(rgba(201, 168, 76, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201, 168, 76, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
