@@ -63,7 +63,7 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
     payload: AnalysisJobEnqueuePayload;
     ownerClerkSubject: string;
     ownerAppUserId: number;
-    creditLedgerId: number;
+    creditLedgerId: string;
     onJobFailed?: () => void | Promise<void>;
   }): void {
     this.sweepExpiredTerminalJobs();

@@ -15,6 +15,8 @@ export type AnalysisJobCreateResponse = {
   status: "queued";
   /** 차감 직후 남은 크레딧 (서버 wallet 기준). */
   creditBalance?: number;
+  /** 차감 직후 남은 크레딧 (creditBalance 와 동일, 클라이언트 편의). */
+  remainingCredits?: number;
 };
 
 /**

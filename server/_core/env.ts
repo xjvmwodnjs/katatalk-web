@@ -22,6 +22,8 @@ function readAuthProvider(): AuthProviderName {
 export const ENV = {
   authProvider: readAuthProvider(),
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
+  /** 서버 전용 서비스 롤 — VITE_ 접두사 금지, 클라이언트에 노출 금지 */
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
   /** Clerk 서버 전용 — 프론트 번들에 포함 금지 */
   clerkSecretKey: process.env.CLERK_SECRET_KEY ?? "",
@@ -39,9 +41,10 @@ export const ENV = {
   /** Stripe — 서버 전용 secret, 프론트 번들에 포함 금지 */
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
-  /** Checkout line_items — 서버에서만 사용 (클라이언트가 price id를 보내지 않음) */
-  stripeBasicPriceId: process.env.STRIPE_BASIC_PRICE_ID ?? "",
-  stripePremiumPriceId: process.env.STRIPE_PREMIUM_PRICE_ID ?? "",
+  /** 크레딧 팩 Checkout — 서버에서만 packageId → Price ID 매핑 */
+  stripeCreditPackStarterPriceId: process.env.STRIPE_CREDIT_PACK_STARTER_PRICE_ID ?? "",
+  stripeCreditPackStandardPriceId: process.env.STRIPE_CREDIT_PACK_STANDARD_PRICE_ID ?? "",
+  stripeCreditPackProPriceId: process.env.STRIPE_CREDIT_PACK_PRO_PRICE_ID ?? "",
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
 };
 
@@ -67,10 +70,12 @@ export function getJwtSecret() {
 export function validateServerEnv() {
   getJwtSecret();
 
-  if (ENV.isProduction && !ENV.databaseUrl?.trim()) {
-    throw new Error(
-      "운영(production) 환경에서는 크레딧·사용자 영속화를 위해 DATABASE_URL 이 필요합니다."
-    );
+  if (ENV.isProduction) {
+    if (!ENV.supabaseUrl.trim() || !ENV.supabaseServiceRoleKey.trim()) {
+      throw new Error(
+        "운영(production) 환경에서는 크레딧·작업 기록을 위해 SUPABASE_URL 및 SUPABASE_SERVICE_ROLE_KEY가 필요합니다."
+      );
+    }
   }
 
   if (ENV.authProvider === "legacy-manus" && (!ENV.appId || !ENV.oAuthServerUrl)) {
@@ -103,7 +108,13 @@ export function validateServerEnv() {
 
   if (ENV.authProvider === "clerk" && !ENV.databaseUrl?.trim() && !ENV.isProduction) {
     console.warn(
-      "[env] clerk 모드인데 DATABASE_URL 없음 — Clerk 인증은 동작하며 사용자 행은 DB 연결 후 동기화됩니다."
+      "[env] clerk 모드인데 DATABASE_URL 없음 — MySQL users 동기화는 생략되며, Clerk 인증·Supabase profiles 크레딧은 동작할 수 있습니다."
+    );
+  }
+
+  if (!ENV.isProduction && (!ENV.supabaseUrl.trim() || !ENV.supabaseServiceRoleKey.trim())) {
+    console.warn(
+      "[env] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY 없음 — 크레딧·분석 과금 API는 해당 기능 호출 시 한국어 안내와 함께 실패할 수 있습니다."
     );
   }
 }

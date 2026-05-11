@@ -1,24 +1,45 @@
 // =============================================================
-// /api/billing — Stripe Checkout 구독 골격 (test mode 기준)
+// /api/billing — Stripe Checkout mode=payment (크레딧 팩) + webhook
 // =============================================================
 //
-// - create-checkout-session: Clerk(등) 인증 필수, plan만 받고 서버가 Price ID 선택
-// - webhook: raw body + Stripe-Signature 검증 필수
-// - quota·DB 영구 반영은 TODO (스키마 변경 없이 주석만)
+// - subscription mode / Clerk Billing 미사용
+// - credits 증가는 checkout.session.completed webhook + Supabase RPC 만
 
 import type { Express, Request, Response } from "express";
 import express, { Router } from "express";
 import Stripe from "stripe";
 import { z } from "zod";
 import { ENV } from "./_core/env";
+import { addCreditsFromStripeWebhook, walletSubjectFromAuthUser } from "./creditService";
 import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
 } from "./middleware/requireAnalyzeAuth";
 
-const checkoutBodySchema = z.object({
-  plan: z.enum(["basic", "premium"]),
+export const checkoutPackageBodySchema = z.object({
+  packageId: z.enum(["starter", "standard", "pro"]),
 });
+
+export type CreditPackId = z.infer<typeof checkoutPackageBodySchema>["packageId"];
+
+const PACK_TO_PRICE_ENV: Record<
+  CreditPackId,
+  keyof Pick<
+    typeof ENV,
+    "stripeCreditPackStarterPriceId" | "stripeCreditPackStandardPriceId" | "stripeCreditPackProPriceId"
+  >
+> = {
+  starter: "stripeCreditPackStarterPriceId",
+  standard: "stripeCreditPackStandardPriceId",
+  pro: "stripeCreditPackProPriceId",
+};
+
+/** 서버 전용 — 클라이언트는 packageId 만 전달 */
+export const CREDIT_PACK_CREDITS: Record<CreditPackId, number> = {
+  starter: 50,
+  standard: 120,
+  pro: 300,
+};
 
 let stripeClient: Stripe | null | undefined;
 
@@ -68,21 +89,54 @@ function stripeWebhookHandler(req: Request, res: Response): void {
     }
 
     try {
-      switch (event.type) {
-        case "checkout.session.completed":
-          // TODO: users 테이블(또는 별도 subscriptions 테이블)에 plan·stripeCustomerId·stripeSubscriptionId 저장 후 quota 연동
-          break;
-        case "customer.subscription.created":
-        case "customer.subscription.updated":
-        case "customer.subscription.deleted":
-          // TODO: Stripe subscription status → 앱 구독 상태 동기화 (DB 스키마 확정 후)
-          break;
-        default:
-          break;
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.mode !== "payment") {
+          res.json({ received: true });
+          return;
+        }
+        if (session.payment_status !== "paid") {
+          res.json({ received: true });
+          return;
+        }
+
+        const meta = session.metadata ?? {};
+        const clerkUserId = meta.clerkUserId ?? meta.clerk_user_id;
+        const creditAmountRaw = meta.creditAmount ?? meta.credit_amount;
+        const packId = meta.creditPackageId ?? meta.credit_package_id;
+
+        if (typeof clerkUserId !== "string" || !clerkUserId.trim()) {
+          console.error("[billing/webhook] missing clerkUserId in session metadata");
+          res.status(400).json({ received: false });
+          return;
+        }
+        const creditAmount =
+          typeof creditAmountRaw === "string"
+            ? parseInt(creditAmountRaw, 10)
+            : typeof creditAmountRaw === "number"
+              ? creditAmountRaw
+              : NaN;
+        if (!Number.isFinite(creditAmount) || creditAmount < 1) {
+          console.error("[billing/webhook] invalid creditAmount in metadata");
+          res.status(400).json({ received: false });
+          return;
+        }
+
+        await addCreditsFromStripeWebhook({
+          clerkUserId: clerkUserId.trim(),
+          amount: creditAmount,
+          stripeEventId: typeof event.id === "string" ? event.id : null,
+          stripeSessionId: typeof session.id === "string" ? session.id : null,
+          description:
+            typeof packId === "string"
+              ? `Stripe 크레딧 팩 충전 (${packId})`
+              : "Stripe 크레딧 팩 충전",
+        });
       }
+      // customer.subscription.* 등 구독 이벤트는 크레딧 모델에서 사용하지 않음
       res.json({ received: true });
     } catch (e) {
-      console.error("[billing/webhook]", e);
+      console.error("[billing/webhook] handler error");
       res.status(500).json({ received: false });
     }
   })();
@@ -91,6 +145,21 @@ function stripeWebhookHandler(req: Request, res: Response): void {
 function createCheckoutSession(req: Request, res: Response): void {
   void (async () => {
     try {
+      const user = req.katatalkUser;
+      if (!user) {
+        res.status(401).json({ success: false, message: ANALYZE_AUTH_REQUIRED_MESSAGE });
+        return;
+      }
+
+      const parsed = checkoutPackageBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: "packageId는 starter, standard, pro 중 하나여야 합니다.",
+        });
+        return;
+      }
+
       const stripe = getStripe();
       if (!stripe) {
         res.status(503).json({
@@ -100,49 +169,31 @@ function createCheckoutSession(req: Request, res: Response): void {
         return;
       }
 
-      const user = req.katatalkUser;
-      if (!user) {
-        res.status(401).json({ success: false, message: ANALYZE_AUTH_REQUIRED_MESSAGE });
-        return;
-      }
-
-      const parsed = checkoutBodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          message: "plan은 basic 또는 premium 이어야 합니다.",
-        });
-        return;
-      }
-
-      const { plan } = parsed.data;
-      const priceId =
-        plan === "basic"
-          ? ENV.stripeBasicPriceId.trim()
-          : ENV.stripePremiumPriceId.trim();
+      const { packageId } = parsed.data;
+      const creditAmount = CREDIT_PACK_CREDITS[packageId];
+      const envKey = PACK_TO_PRICE_ENV[packageId];
+      const priceId = ENV[envKey].trim();
       if (!priceId) {
         res.status(503).json({
           success: false,
-          message: "요금제 가격이 서버에 설정되지 않았습니다.",
+          message: "해당 크레딧 팩의 Stripe Price ID가 서버에 설정되지 않았습니다.",
         });
         return;
       }
 
       const base = ENV.appBaseUrl.replace(/\/$/, "");
-      const clerkUserId = user.openId.startsWith("clerk:")
-        ? user.openId.slice("clerk:".length)
-        : user.openId;
+      const clerkUserId = walletSubjectFromAuthUser(user);
 
       const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
+        mode: "payment",
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: `${base}/?billing=success`,
         cancel_url: `${base}/?billing=cancel`,
         customer_email: user.email ?? undefined,
         metadata: {
-          clerk_user_id: clerkUserId,
-          app_user_id: String(user.id),
-          plan,
+          clerkUserId,
+          creditPackageId: packageId,
+          creditAmount: String(creditAmount),
         },
       });
 
@@ -156,7 +207,7 @@ function createCheckoutSession(req: Request, res: Response): void {
 
       res.json({ success: true, url: session.url });
     } catch (e) {
-      console.error("[billing/create-checkout-session]", e);
+      console.error("[billing/create-checkout-session] error");
       res.status(500).json({
         success: false,
         message: "결제 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -171,15 +222,17 @@ function getBillingStatus(req: Request, res: Response): void {
     res.status(401).json({ success: false, message: ANALYZE_AUTH_REQUIRED_MESSAGE });
     return;
   }
-  // TODO: Stripe/DB 기반 실제 구독 상태 조회로 교체
   res.json({
     success: true,
-    mock: true,
-    message: "결제 골격 단계입니다. 구독·quota는 webhook·DB 연동 후 반영됩니다.",
-    userId: user.id,
+    message: "구독 상태 대신 Supabase profiles.credits 를 사용합니다. (GET /api/credits/me)",
+    userId: walletSubjectFromAuthUser(user),
   });
 }
 
 export const billingRouter = Router();
-billingRouter.post("/api/billing/create-checkout-session", requireAnalyzeAuth, createCheckoutSession);
+billingRouter.post(
+  "/api/billing/create-checkout-session",
+  requireAnalyzeAuth,
+  createCheckoutSession
+);
 billingRouter.get("/api/billing/status", requireAnalyzeAuth, getBillingStatus);

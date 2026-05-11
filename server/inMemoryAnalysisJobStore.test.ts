@@ -23,7 +23,7 @@ describe("InMemoryAnalysisJobStore", () => {
       payload,
       ownerClerkSubject: "owner-1",
       ownerAppUserId: 1,
-      creditLedgerId: 1,
+      creditLedgerId: "00000000-0000-0000-0000-000000000001",
     });
 
     expect(store.toPublicGetResponse(jobId)?.status).toBe("queued");

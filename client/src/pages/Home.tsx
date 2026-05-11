@@ -47,8 +47,44 @@ export default function Home() {
     };
   }, []);
 
-  // Fetch subscription info if authenticated
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    const billing = params.get("billing");
+    if (!billing) return;
+
+    void (async () => {
+      if (billing === "success") {
+        try {
+          const h = await getAnalyzeAuthHeaders();
+          const me = await fetch("/api/credits/me", { headers: { ...h }, credentials: "include" });
+          if (!me.ok) {
+            toast.error("결제 직후 크레딧을 확인하지 못했습니다.", {
+              description: "잠시 후 다시 시도해 주세요.",
+            });
+          } else {
+            toast.success("결제가 완료되었습니다.", {
+              description:
+                "Stripe 웹훅으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 화면의 크레딧이 갱신되는지 확인해 주세요.",
+            });
+          }
+        } catch {
+          toast.error("크레딧 새로고침 중 오류가 발생했습니다.");
+        }
+        await utils.profile.getSubscription.invalidate();
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+      if (billing === "cancel") {
+        toast.message("결제를 취소했습니다.");
+        window.history.replaceState({}, "", window.location.pathname || "/");
+      }
+    })();
+  }, [isAuthenticated, utils]);
+
+  // Fetch subscription info if authenticated
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -140,6 +176,7 @@ export default function Home() {
         message?: string;
         code?: string;
         creditBalance?: number;
+        remainingCredits?: number;
       };
 
       if (response.status === 402 || createPayload.code === "INSUFFICIENT_CREDITS") {
@@ -162,7 +199,10 @@ export default function Home() {
         throw new Error(msg);
       }
 
-      if (typeof createPayload.creditBalance === "number") {
+      if (
+        typeof createPayload.creditBalance === "number" ||
+        typeof createPayload.remainingCredits === "number"
+      ) {
         void utils.profile.getSubscription.invalidate();
       }
 

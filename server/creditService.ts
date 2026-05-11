@@ -1,20 +1,9 @@
 import type { AuthenticatedUser } from "./_core/sdk";
-import { ENV } from "./_core/env";
-import {
-  dbEnsureWalletWithSignupBonus,
-  dbGetWalletBalance,
-  dbRefundSpendForJob,
-  dbSpendCreditForJob,
-} from "./creditDb";
-import {
-  memoryEnsureWalletWithSignupBonus,
-  memoryGetWalletBalance,
-  memoryRefundSpendForJob,
-  memorySpendCredit,
-} from "./creditMemoryStore";
+import { getSupabaseAdmin } from "./_core/supabaseAdmin";
 
 const DEFAULT_ANALYSIS_COST = 1;
 
+/** profiles.id 및 analysis_jobs.user_id — Clerk면 `sub`, 그 외 `non-clerk:` 접두사. */
 export function walletSubjectFromAuthUser(user: AuthenticatedUser): string {
   if (user.openId.startsWith("clerk:")) {
     return user.openId.slice("clerk:".length);
@@ -22,62 +11,128 @@ export function walletSubjectFromAuthUser(user: AuthenticatedUser): string {
   return `non-clerk:${user.openId}`;
 }
 
-function useMysqlWallet(): boolean {
-  return Boolean(ENV.databaseUrl?.trim());
+export type EnsureProfileResult = {
+  credits: number;
+  signupBonusRows: number;
+};
+
+export type CreditLogRow = {
+  id: string;
+  user_id: string;
+  amount: number;
+  type: string;
+  description: string | null;
+  stripe_event_id: string | null;
+  stripe_session_id: string | null;
+  analysis_job_id: string | null;
+  idempotency_key: string | null;
+  metadata: unknown;
+  created_at: string;
+};
+
+function parseRpcJson(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
 }
 
-function useMemoryWallet(): boolean {
-  return !useMysqlWallet() && !ENV.isProduction;
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-export async function ensureWalletWithSignupBonus(user: AuthenticatedUser): Promise<void> {
-  const subject = walletSubjectFromAuthUser(user);
-  const appUserId = user.id > 0 ? user.id : null;
-  if (useMysqlWallet()) {
-    await dbEnsureWalletWithSignupBonus(subject, appUserId);
-    return;
-  }
-  if (useMemoryWallet()) {
-    await memoryEnsureWalletWithSignupBonus(subject, appUserId);
-    return;
-  }
-  throw new Error("운영 환경에서는 크레딧 지갑을 위해 DATABASE_URL 이 필요합니다.");
+function str(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
 }
 
-export async function getWalletBalance(user: AuthenticatedUser): Promise<number> {
-  const subject = walletSubjectFromAuthUser(user);
-  if (useMysqlWallet()) {
-    await ensureWalletWithSignupBonus(user);
-    return dbGetWalletBalance(subject);
+/** Supabase RPC: 프로필 없으면 2크레딧 + signup_bonus 로그, 있으면 email/name만 갱신. */
+export async function ensureProfileForClerkUser(user: AuthenticatedUser): Promise<EnsureProfileResult> {
+  const sb = getSupabaseAdmin();
+  const userId = walletSubjectFromAuthUser(user);
+  const { data, error } = await sb.rpc("ensure_profile_with_signup_bonus", {
+    p_user_id: userId,
+    p_email: user.email ?? null,
+    p_name: user.name ?? null,
+  });
+  if (error) {
+    throw new Error(error.message);
   }
-  if (useMemoryWallet()) {
-    await memoryEnsureWalletWithSignupBonus(subject, user.id > 0 ? user.id : null);
-    return memoryGetWalletBalance(subject);
+  const row = parseRpcJson(data);
+  const credits = num(row?.credits);
+  const signupBonusRows = num(row?.signup_bonus_rows);
+  if (credits == null) {
+    throw new Error("ensure_profile_with_signup_bonus: invalid response");
   }
-  throw new Error("운영 환경에서는 크레딧 조회를 위해 DATABASE_URL 이 필요합니다.");
+  return { credits, signupBonusRows: signupBonusRows ?? 0 };
+}
+
+export async function getCreditBalance(clerkProfileId: string): Promise<number> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("profiles")
+    .select("credits")
+    .eq("id", clerkProfileId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  const row = data as { credits?: number } | null;
+  return typeof row?.credits === "number" ? row.credits : 0;
+}
+
+export async function getCreditLogs(clerkProfileId: string, limit = 20): Promise<CreditLogRow[]> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("credit_logs")
+    .select(
+      "id, user_id, amount, type, description, stripe_event_id, stripe_session_id, analysis_job_id, idempotency_key, metadata, created_at"
+    )
+    .eq("user_id", clerkProfileId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as CreditLogRow[];
 }
 
 export type SpendForAnalysisResult =
-  | { ok: true; balanceAfter: number; ledgerId: number }
-  | { ok: false; code: "INSUFFICIENT_CREDITS" };
+  | { ok: true; balanceAfter: number; ledgerId: string }
+  | { ok: false; code: "INSUFFICIENT_CREDITS" | "PROFILE_NOT_FOUND" };
 
 export async function spendCreditForAnalysisJob(
   user: AuthenticatedUser,
   jobId: string,
   cost: number = DEFAULT_ANALYSIS_COST
 ): Promise<SpendForAnalysisResult> {
-  const subject = walletSubjectFromAuthUser(user);
-  if (useMysqlWallet()) {
-    const r = await dbSpendCreditForJob(subject, jobId, cost);
-    if (!r.ok) return r;
-    return { ok: true, balanceAfter: r.balanceAfter, ledgerId: r.ledgerId };
+  const sb = getSupabaseAdmin();
+  const userId = walletSubjectFromAuthUser(user);
+  const { data, error } = await sb.rpc("spend_credit_for_analysis", {
+    p_user_id: userId,
+    p_analysis_job_id: jobId,
+    p_cost: cost,
+  });
+  if (error) {
+    throw new Error(error.message);
   }
-  if (useMemoryWallet()) {
-    const r = await memorySpendCredit(subject, jobId, cost);
-    if (!r.ok) return r;
-    return { ok: true, balanceAfter: r.balanceAfter, ledgerId: r.ledgerId };
+  const row = parseRpcJson(data);
+  const ok = row?.ok === true;
+  const code = str(row?.code);
+  const credits = num(row?.credits);
+  const logId = row?.log_id;
+  const logStr = typeof logId === "string" ? logId : null;
+
+  if (!ok) {
+    if (code === "INSUFFICIENT_CREDITS" || code === "PROFILE_NOT_FOUND") {
+      return { ok: false, code };
+    }
+    return { ok: false, code: "INSUFFICIENT_CREDITS" };
   }
-  throw new Error("운영 환경에서는 크레딧 차감을 위해 DATABASE_URL 이 필요합니다.");
+
+  if (credits == null || !logStr) {
+    throw new Error("spend_credit_for_analysis: invalid success response");
+  }
+  return { ok: true, balanceAfter: credits, ledgerId: logStr };
 }
 
 export async function refundCreditIfJobFailed(
@@ -85,12 +140,85 @@ export async function refundCreditIfJobFailed(
   jobId: string,
   cost: number = DEFAULT_ANALYSIS_COST
 ): Promise<void> {
-  const subject = walletSubjectFromAuthUser(user);
-  if (useMysqlWallet()) {
-    await dbRefundSpendForJob(subject, jobId, cost);
-    return;
+  const sb = getSupabaseAdmin();
+  const userId = walletSubjectFromAuthUser(user);
+  const { error } = await sb.rpc("refund_credit_for_analysis", {
+    p_user_id: userId,
+    p_analysis_job_id: jobId,
+    p_amount: cost,
+  });
+  if (error) {
+    console.error("[creditService] refund_credit_for_analysis", error.message);
   }
-  if (useMemoryWallet()) {
-    await memoryRefundSpendForJob(subject, jobId, cost);
+}
+
+export async function addCreditsFromStripeWebhook(args: {
+  clerkUserId: string;
+  amount: number;
+  stripeEventId: string | null;
+  stripeSessionId: string | null;
+  description: string | null;
+}): Promise<{ ok: boolean; duplicate: boolean; credits: number | null }> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.rpc("add_credits_from_stripe", {
+    p_user_id: args.clerkUserId,
+    p_amount: args.amount,
+    p_stripe_event_id: args.stripeEventId,
+    p_stripe_session_id: args.stripeSessionId,
+    p_description: args.description,
+  });
+  if (error) {
+    throw new Error(error.message);
   }
+  const row = parseRpcJson(data);
+  return {
+    ok: row?.ok === true,
+    duplicate: row?.duplicate === true,
+    credits: num(row?.credits),
+  };
+}
+
+export async function insertAnalysisJobQueued(args: {
+  jobId: string;
+  profileId: string;
+  fileName: string;
+  language: string;
+  creditLogId: string | null;
+  creditCost?: number;
+}): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { error } = await sb.from("analysis_jobs").insert({
+    id: args.jobId,
+    user_id: args.profileId,
+    status: "queued",
+    file_name: args.fileName,
+    language: args.language,
+    credit_cost: args.creditCost ?? 1,
+    credit_log_id: args.creditLogId,
+    is_mock: true,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<string | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.from("analysis_jobs").select("user_id").eq("id", jobId).maybeSingle();
+  if (error) {
+    console.error("[creditService] getAnalysisJobOwnerProfileId", error.message);
+    return null;
+  }
+  const row = data as { user_id?: string } | null;
+  return typeof row?.user_id === "string" ? row.user_id : null;
+}
+
+/** @deprecated 이름 호환 — ensureProfileForClerkUser 사용 권장 */
+export async function ensureWalletWithSignupBonus(user: AuthenticatedUser): Promise<void> {
+  await ensureProfileForClerkUser(user);
+}
+
+export async function getWalletBalance(user: AuthenticatedUser): Promise<number> {
+  await ensureProfileForClerkUser(user);
+  return getCreditBalance(walletSubjectFromAuthUser(user));
 }

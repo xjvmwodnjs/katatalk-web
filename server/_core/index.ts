@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { analyzeRouter } from "../analyzeRoute";
 import { attachBillingWebhook, billingRouter } from "../billingRoute";
+import { creditsRouter } from "../creditsRoute";
 import { createContext } from "./context";
 import { ENV, validateServerEnv } from "./env";
 import { serveStatic, setupVite } from "./vite";
@@ -49,6 +50,7 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Custom API routes
   app.use(billingRouter);
+  app.use(creditsRouter);
   app.use(analyzeRouter);
   // tRPC API
   app.use(

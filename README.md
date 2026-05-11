@@ -1,6 +1,6 @@
 # KataTalk
 
-React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. 현재 SGF 업로드 후 **mock 분석**만 제공하며, Clerk 로그인으로 `/api/analyze` 가 보호됩니다.
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Stripe Checkout(크레딧 팩·webhook 충전)** 골격이 있으며, SGF 업로드 후 **mock 분석**만 제공합니다.
 
 ## 로컬 실행
 
@@ -40,7 +40,7 @@ pnpm start
 | `CLERK_SECRET_KEY` | 서버만 | Secret key — **저장소·프론트 번들에 포함 금지** |
 | `JWT_SECRET` | 서버 | 세션 쿠키 등 (운영에서는 필수) |
 
-`DATABASE_URL` 은 **로컬 개발** 에서는 없어도 Clerk 로그인·mock 분석(메모리 크레딧)이 동작할 수 있습니다. **운영(production)** 에서는 크레딧·사용자 영속화를 위해 **필수**입니다(서버 기동 시 검증).
+`DATABASE_URL` 은 **선택**입니다. 있으면 Drizzle/MySQL `users` 동기화 등에 사용합니다. **크레딧 잔액·원장·분석 job 메타**는 **Supabase**(`profiles`, `credit_logs`, `analysis_jobs`)를 사용합니다. **운영(production)** 에서는 `SUPABASE_URL` 과 `SUPABASE_SERVICE_ROLE_KEY`(서비스 롤)가 **필수**입니다. **Supabase Auth는 사용하지 않으며**, 브라우저에서 Supabase DB에 직접 접근하지 않고 **Express 서버 API + service role** 로만 접근합니다.
 
 ## Clerk Dashboard 설정
 
@@ -71,59 +71,47 @@ pnpm start
 - 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답  
 - `AUTH_PROVIDER=local-dev` 는 로컬 편의용이며, **운영 배포에서는 사용하지 마세요** (기존 가드 유지)
 
-## 크레딧 지갑·분석 차감 (BM: 구독제 아님)
+## 크레딧·결제·DB (확정 아키텍처 요약)
 
-- KataTalk 비즈니스 모델은 **월 구독이 아니라 “충전 후 분석 1회당 크레딧 차감”** 입니다.  
-- **첫 인증 요청 시**(Clerk `sub` 기준) `user_wallets` + `credit_ledger` 에 **가입 보너스 2 크레딧**이 **idempotent** 하게 한 번만 지급됩니다. (`idempotencyKey = signup_bonus:<clerkSub>`)  
-- `POST /api/analyze` 는 SGF 검증 후 **서버에서만** 잔액을 확인하고, **원자적 `UPDATE … WHERE balance >= 1`** 으로 1 크레딧을 차감한 뒤 mock 분석 job 을 만듭니다. 부족하면 **HTTP 402**, `code: INSUFFICIENT_CREDITS` 입니다.  
-- `GET /api/analyze/:jobId` 는 **job 소유자(Clerk sub)** 와 요청자가 다르면 **403** 입니다.  
-- **운영(production)** 에서는 `DATABASE_URL` 과 `AUTH_PROVIDER=clerk` 등이 **필수**이며, 크레딧은 **DB + ledger** 로만 관리합니다. **프론트 잔액만으로는 절대 신뢰하지 마세요.**  
-- `DATABASE_URL` 이 없는 **로컬 개발** 에서는 Clerk 인증은 유지하되, 크레딧은 **프로세스 내 메모리 구현**으로만 동작합니다(운영에서 in-memory 크레딧 사용 금지).
+- **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
+- **Payment = Stripe** — **Checkout `mode=payment`** 로 **크레딧 팩**만 판매합니다. **Stripe subscription mode·Clerk Billing은 사용하지 않습니다.**  
+- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**(VITE\_ 접두사 금지, 프론트·로그 노출 금지).  
+- **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
+- **SGF 분석 1회당 1 credit** — 차감은 **Supabase RPC `spend_credit_for_analysis`** 로만 수행합니다(select 후 update 패턴 금지). 부족 시 **HTTP 402**, `INSUFFICIENT_CREDITS`.  
+- **`credit_logs`** 에 `signup_bonus` / `refill` / `usage` / `refund` / `admin_adjustment` 를 기록합니다.  
+- **크레딧 증가(충전)** 는 **Stripe `checkout.session.completed` webhook** 에서만 **`add_credits_from_stripe` RPC** 로 반영합니다. **success URL에서 크레딧을 올리지 않습니다.**  
+- 결제 UI에서는 **환불 정책 동의 체크박스**가 필요합니다(문구는 법적 검토 TODO).  
+- **Vercel·serverless** 에서 **in-memory job store만으로 운영하면 안 됩니다.** 현재는 **mock 파이프라인용 인메모리**와 **`analysis_jobs` DB insert**를 병행하며, 운영 완성도를 위해 **DB-backed job/큐**가 필요합니다.
 
-## 현재 DB 구현과 향후 Supabase 로드맵
+상세 TODO는 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
 
-1. **크레딧 모델**은 **충전식**이며, 월 정액 구독이 아닙니다.  
-2. **회원가입/첫 인증 요청** 시 서버가 wallet 을 만들고 **2 credits** 를 한 번만 지급합니다.  
-3. **SGF 분석 1회당 1 credit** 을 서버에서 차감합니다.  
-4. **현재 구현**은 **Drizzle + MySQL** 의 `user_wallets`, `credit_ledger` 테이블입니다.  
-5. **최종 운영 DB** 는 **Supabase** 를 전제로 하며, 예: **`profiles`**(사용자·크레딧 잔액 등), **`credit_logs`**(원장) 형태로 **전환 예정**입니다. (이 저장소의 MySQL 스키마는 과도기 구현입니다.)  
-6. Supabase 전환 시 **`profiles.id` 는 Clerk `userId`(JWT `sub`)** 와 정렬하는 것을 권장합니다.  
-7. `credit_logs` 는 **refill**(충전) / **usage**(차감) / **refund** / **admin_adjustment** 등 유형을 기록합니다.  
-8. **Stripe 결제 완료 후 크레딧 증가**는 success 페이지가 아니라 **반드시 webhook** 에서만 처리해야 합니다(클라이언트 조작 방지).  
-9. **Vercel·serverless** 환경에서는 **in-memory job store** 를 사용하면 안 됩니다(인스턴스 간 공유 불가).  
-10. **운영**에서는 **DB-backed job 테이블** 또는 **메시지 큐 + 워커** 가 필요합니다.
+## Drizzle/MySQL 크레딧 (레거시)
 
-상세 TODO 목록은 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
+- 과거 구현인 `user_wallets` / `credit_ledger` 기반 코드는 **`server/creditDb.legacy.ts`** 로만 보관합니다. **기본 크레딧 경로는 Supabase** 입니다.
 
 ## in-memory 분석 job 저장소 (로컬·개발 전용)
 
-- 현재 분석 job 은 **인메모리** 로만 보관되며, **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다. SGF 원문은 job 레코드에 **저장하지 않습니다**(검증 후 mock 결과만 생성).  
-- **Vercel·serverless** 등 인스턴스가 자주 바뀌는 환경에서는 **이 구조를 사용하면 안 됩니다.** 운영에서는 **DB 기반 job 테이블 + 워커/큐** 가 필요합니다.
+- mock 분석 파이프라인은 **인메모리 job**으로 진행 상태를 유지합니다. **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다.  
+- **차감·소유권 검증**은 Supabase `profiles` / `credit_logs` / `analysis_jobs` 와 연동합니다. **Vercel·serverless** 에서 인메모리만으로 운영하면 안 되며, **DB-backed 큐/워커**가 필요합니다.
 
-## Stripe 결제(Checkout) 테스트 골격
+## Stripe 크레딧 팩 (Checkout `mode=payment`)
 
-현재 저장소에는 **Stripe Checkout 구독 세션 생성**과 **webhook 수신 골격**만 있습니다. **실제 quota 차감·구독 상태 DB 반영은 다음 단계**이며, test mode 기준으로 설정합니다. **`.env`·시크릿 키는 절대 커밋하지 마세요.**
+**`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-1. [Stripe Dashboard](https://dashboard.stripe.com/) → **Developers**에서 **Test mode** 인지 확인합니다.  
-2. **Product**를 만들고 각 플랜(Basic/Premium)에 **Recurring Price**를 만듭니다. Price ID(`price_...`)를 복사합니다.  
-3. 로컬 `.env`에 다음을 채웁니다(값은 README에 적지 마세요).  
-   - `STRIPE_SECRET_KEY` — **Secret key**, 서버 전용  
-   - `STRIPE_WEBHOOK_SECRET` — Webhook 엔드포인트 서명용 **Signing secret**, 서버 전용  
-   - `STRIPE_BASIC_PRICE_ID` / `STRIPE_PREMIUM_PRICE_ID` — 위에서 만든 **Price ID** (서버가 `plan`에 따라 선택)  
-   - `APP_BASE_URL` — 실제 앱 오리진(예: `http://localhost:3000`). Checkout 완료/취소 리다이렉트에 사용됩니다.  
-4. Webhook 로컬 검증: [Stripe CLI](https://stripe.com/docs/stripe-cli) 설치 후 예시처럼 포워딩합니다.  
-   `stripe listen --forward-to localhost:3000/api/billing/webhook`  
-   CLI가 출력하는 **webhook signing secret**을 `STRIPE_WEBHOOK_SECRET`에 넣습니다.  
-5. (선택) 서버 API `POST /api/billing/create-checkout-session` 으로 Checkout URL 을 직접 검증할 수 있습니다. UI 의 유료 카드는 **크레딧 팩 결제 준비 중** 안내만 표시할 수 있습니다.
+1. [Stripe Dashboard](https://dashboard.stripe.com/) → **Test mode**  
+2. 크레딧 팩용 **Product + one-time Price** 3종(Starter / Standard / Pro)을 만들고 Price ID(`price_...`)를 복사합니다.  
+3. `.env` 예시는 [`.env.example`](.env.example) — `STRIPE_CREDIT_PACK_*_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `APP_BASE_URL` 등.  
+4. Webhook: `stripe listen --forward-to localhost:3000/api/billing/webhook` → 출력 signing secret 을 `STRIPE_WEBHOOK_SECRET` 에 설정.  
+5. 클라이언트는 **`packageId`만** `POST /api/billing/create-checkout-session` 에 전달합니다. **가격 ID·크레딧 수량은 서버 매핑**입니다.
 
-`VITE_STRIPE_*_PRICE_ID`는 `.env.example`에만 예시로 두었으며, UI 표시용 참고일 뿐 **결제 생성은 서버의 `STRIPE_*_PRICE_ID`만 사용**합니다.
+## Supabase 마이그레이션
+
+- SQL: [`supabase/migrations/001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql) — Supabase SQL Editor 또는 `supabase db push` 등으로 적용합니다.
 
 ## 아직 구현되지 않은 것
 
-- KataGo 실분석 워커  
-- **Stripe Checkout 으로 크레딧 팩(예: 50/120 credits) 구매** 및 결제 webhook → ledger `purchase` 반영  
-- 분석 job 의 **DB/큐 영속화** 및 멀티 인스턴스 안전한 워커  
-- `DATABASE_URL` 없이도 **운영** 베타를 돌리는 구성(현재 운영은 DB 필수)
+- **KataGo / LLM** 실분석 워커 (현재 mock만)  
+- 분석 job **완전한 DB/큐 기반** 파이프라인 (현재는 mock + `analysis_jobs` insert 병행)
 
 ## 보안·Git
 
