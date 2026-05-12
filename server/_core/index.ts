@@ -12,6 +12,8 @@ import { creditsRouter } from "../creditsRoute";
 import { createContext } from "./context";
 import { ENV, validateServerEnv } from "./env";
 import { serveStatic, setupVite } from "./vite";
+import { setServerListenPort } from "./serverListenPort";
+import { warnIfAppBaseUrlListenPortMismatch } from "./appBaseUrlPortGuard";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -76,6 +78,9 @@ async function startServer() {
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
+
+  setServerListenPort(port);
+  warnIfAppBaseUrlListenPortMismatch();
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);

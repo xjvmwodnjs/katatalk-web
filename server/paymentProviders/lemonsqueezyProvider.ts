@@ -327,6 +327,12 @@ export const lemonsqueezyProvider: PaymentProvider = {
         ? String(attrs.checkout_id).trim()
         : null;
 
+    /**
+     * Idempotency / RPC 안정 키 (add_credits_from_payment 의 payment:<provider>:<stable>).
+     * 우선순위: meta.webhook_id → data.id(주문 id) → attributes.identifier → attributes.checkout_id.
+     * 실제 order_created 페이로드에서 webhook_id 가 주문마다 고유·안정적인지는 Lemon 대시보드/ngrok
+     * Inspector 로 redaction 후 fixture 를 추가해 검증할 것 (README·docs/TODO 참고).
+     */
     const stableOrderKey = orderIdStr ?? identifierStr ?? checkoutIdStr ?? null;
     const paymentEventId = webhookId ?? stableOrderKey;
     const paymentOrderId = stableOrderKey ?? webhookId;

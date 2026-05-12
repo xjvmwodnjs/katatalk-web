@@ -12,6 +12,7 @@ vi.mock("./_core/resolveRequestUser", () => ({
 import { attachPaymentWebhooks, billingRouter } from "./billingRoute";
 import { analyzeRouter } from "./analyzeRoute";
 import { creditsRouter } from "./creditsRoute";
+import { setServerListenPort, clearServerListenPort } from "./_core/serverListenPort";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import type { AuthenticatedUser } from "./_core/sdk";
 
@@ -64,12 +65,15 @@ describe("HTTP credits / analyze ownership / billing", () => {
     const r = await listen(app);
     server = r.server;
     port = r.port;
+    setServerListenPort(port);
+    process.env.APP_BASE_URL = `http://127.0.0.1:${port}`;
   });
 
   afterAll(async () => {
     await new Promise<void>((res, rej) => {
       server.close(err => (err ? rej(err) : res()));
     });
+    clearServerListenPort();
   });
 
   beforeEach(() => {
@@ -171,6 +175,22 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { message?: string };
     expect(body.message).toMatch(/Toss/);
+  });
+
+  it("POST /api/billing/create-checkout returns 503 APP_BASE_URL_PORT_MISMATCH when local APP_BASE_URL port mismatches listen port", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const prev = process.env.APP_BASE_URL;
+    process.env.APP_BASE_URL = "http://127.0.0.1:1";
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", locale: "ko" }),
+    });
+    process.env.APP_BASE_URL = prev ?? `http://127.0.0.1:${port}`;
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { code?: string; message?: string };
+    expect(body.code).toBe("APP_BASE_URL_PORT_MISMATCH");
+    expect(body.message).toMatch(/APP_BASE_URL/);
   });
 
   it("POST /api/billing/create-checkout defaults to lemon and returns checkout url", async () => {

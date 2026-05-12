@@ -1,6 +1,6 @@
 # KataTalk — 이후 작업 TODO
 
-> 베타에서는 결제 UI가 **Lemon Squeezy** 만 사용합니다. **Toss** 는 **향후 국내 결제 옵션**으로 검토하며(`tossProvider` 스켈레톤). Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
+> 베타에서는 결제 UI가 **Lemon Squeezy** 만 사용합니다( **일회성 크레딧 팩 구매** , 구독 모델 아님). **Toss** 는 **향후 국내 결제 옵션**으로 검토하며(`tossProvider` 스켈레톤) **현재 checkout UI 에는 노출하지 않습니다**. Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
 
 ## 결제·법무
 
@@ -13,6 +13,7 @@
 
 - [ ] Supabase **`002` 마이그레이션** 적용 후 `add_credits_from_payment` RPC 검증
 - [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지
+- [ ] **Lemon `order_created`**: redacted JSON fixture 추가 후 `lemonsqueezyProvider` idempotency 키 우선순위 고정 테스트
 
 ## 분석
 

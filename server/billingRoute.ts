@@ -20,6 +20,7 @@ import {
 } from "./middleware/requireAnalyzeAuth";
 import { billingCheckoutIpLimit, billingCheckoutUserLimit } from "./middleware/apiRateLimit";
 import { ENV } from "./_core/env";
+import { getLocalAppBaseUrlListenPortMismatch } from "./_core/appBaseUrlPortGuard";
 import {
   getPaymentProvider,
   resolveCheckoutProvider,
@@ -374,6 +375,12 @@ function createCheckoutHandler(req: Request, res: Response): void {
       const user = req.katatalkUser;
       if (!user) {
         res.status(401).json({ success: false, message: ANALYZE_AUTH_REQUIRED_MESSAGE });
+        return;
+      }
+
+      const portMismatch = getLocalAppBaseUrlListenPortMismatch();
+      if (portMismatch) {
+        sendBillingError(res, 503, portMismatch.message, portMismatch.code);
         return;
       }
 

@@ -2,7 +2,8 @@
  * API rate limiting (in-memory; 단일 인스턴스 기준).
  * 멀티 인스턴스·수평 확장 시 Redis/Upstash 등 외부 저장소 기반 limiter 필요.
  *
- * Vitest 기본: server/vitestSetup 에서 VITEST_RATE_LIMIT_OFF 로 비활성화해 기존 테스트와 호환.
+ * Vitest 기본: server/vitestSetup 에서 NODE_ENV=test + VITEST_RATE_LIMIT_OFF 로만 비활성화.
+ * production 에서는 VITEST_RATE_LIMIT_OFF 가 있어도 rate limit 을 끄지 않는다.
  */
 import rateLimit from "express-rate-limit";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
@@ -14,8 +15,13 @@ export const RATE_LIMIT_JSON = {
   message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 };
 
+/** 테스트 전용 bypass (NODE_ENV=test 일 때만) */
+export function isRateLimitVitestBypassActive(): boolean {
+  return process.env.NODE_ENV === "test" && process.env.VITEST_RATE_LIMIT_OFF === "true";
+}
+
 function rateLimitDisabled(): boolean {
-  return process.env.VITEST_RATE_LIMIT_OFF === "true";
+  return isRateLimitVitestBypassActive();
 }
 
 function bypassWhenDisabled(mw: RequestHandler): RequestHandler {

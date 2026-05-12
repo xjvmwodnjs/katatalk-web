@@ -34,7 +34,7 @@ pnpm start
 
 앱은 **장시간 실행되는 Express 프로세스**(`pnpm start`) 한 개에서 정적 파일·REST API·**raw body 웹훅**을 함께 제공하는 구조를 기준으로 합니다.
 
-**Vercel 순수 static / 짧은 serverless 함수**에 그대로 올리면 API·웹훅·동작 보장이 어렵습니다. Vercel을 쓰려면 **별도 Node 배포(serverless adapter·웹훅 raw body 검증)** 등 추가 설계가 필요합니다.
+**Vercel 순수 static / 짧은 serverless 함수**에 그대로 올리면 API·웹훅·동작 보장이 어렵습니다. Vercel을 쓰려면 **별도 Node 배포(serverless adapter·웹훅 raw body 검증)** 등 추가 설계가 필요합니다. 현재 구조(`server.listen` 단일 프로세스·**raw body 웹훅**·in-process mock 타이머·**메모리 rate limit**)는 **미확정**이며, adapter·queue·외부 rate limit 설계가 선행되어야 합니다.
 
 **초기 추천 호스팅**(예): **Railway**, **Render**, **Fly.io**, **일반 VPS**(Docker/systemd 등).
 
@@ -49,6 +49,19 @@ pnpm start
 **멀티 인스턴스**에서는 프로세스 내 **in-memory rate limit**·mock 분석 타이머가 공유되지 않습니다. 운영에서는 **Redis/Upstash 등 외부 저장소 기반 rate limit**, **DB-backed queue/worker** 가 필요합니다.
 
 **KataGo** 연동 시 Express와 **분리된 worker 프로세스**(큐 소비) 구성을 권장합니다.
+
+### 로컬 Lemon Squeezy / ngrok 체크리스트
+
+로컬에서 결제·리다이렉트·웹훅이 꼬이지 않으려면 **실제 listen 포트**와 **`APP_BASE_URL`** 포트가 **반드시 일치**해야 합니다(`pnpm dev` 가 선호 포트가 아닐 때 자동으로 다음 포트를 쓰는 경우 포함).
+
+1. **`PORT=3000`**(또는 사용 중인 포트)로 서버를 띄운 뒤, **`.env` 의 `APP_BASE_URL`** 을 동일 포트로 맞춥니다. 예: `APP_BASE_URL=http://localhost:3000`  
+2. **ngrok** 예: `ngrok http 3000` — 터널이 앞단에서 받는 포트와 위 포트가 같아야 합니다.  
+3. Lemon Dashboard 웹훅 URL: `https://<ngrok-host>/api/billing/webhook/lemonsqueezy`  
+4. 포트 불일치 시 `POST /api/billing/create-checkout` 는 **`APP_BASE_URL_PORT_MISMATCH`**(503)로 막을 수 있습니다.
+
+### Lemon `order_created` idempotency·payload 검증 TODO
+
+웹훅 **idempotency 키**는 `server/paymentProviders/lemonsqueezyProvider.ts` 의 주석 우선순위를 따릅니다. **`meta.webhook_id` 가 주문마다 안정적인지** 등은 Lemon 실제 payload 로만 확정할 수 있으므로, **ngrok Inspector 또는 Lemon Dashboard** 에서 수집한 **`order_created` JSON 을 개인정보·카드 정보 제거(redaction)한 fixture** 를 저장소에 추가하고, 그 fixture 기준으로 idempotency 우선순위·테스트를 고정하는 작업이 남아 있습니다(확실하지 않은 필드는 코드 주석으로 “확인 필요” 유지).
 
 ### API Rate limiting
 
@@ -130,7 +143,7 @@ pnpm start
 ### 시스템
 
 - **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
-- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토합니다. **Clerk Billing·Stripe·구독형 결제 미사용.**  
+- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드, **일회성 크레딧 팩 구매**). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토하며 **현재 checkout UI 에는 노출하지 않습니다**. **Clerk Billing·Stripe·구독형 결제 미사용.**  
 - **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.  
 - **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
 - **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.  

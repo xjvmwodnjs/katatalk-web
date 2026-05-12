@@ -1,18 +1,18 @@
 /**
  * Rate limit 미들웨어 검증 — Vitest 기본의 VITEST_RATE_LIMIT_OFF 를 이 파일에서만 해제합니다.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import http from "http";
-import { analyzePostIpLimit, RATE_LIMIT_JSON } from "./middleware/apiRateLimit";
+import { analyzePostIpLimit, isRateLimitVitestBypassActive, RATE_LIMIT_JSON } from "./middleware/apiRateLimit";
 
 function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolvePromise, reject) => {
     const server = http.createServer(app);
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
-      const port = typeof addr === "object" && addr ? addr.port : 0;
-      resolvePromise({ server, port });
+      const p = typeof addr === "object" && addr ? addr.port : 0;
+      resolvePromise({ server, port: p });
     });
     server.on("error", reject);
   });
@@ -67,5 +67,26 @@ describe("apiRateLimit", () => {
     } finally {
       await new Promise<void>((res, rej) => server.close(err => (err ? rej(err) : res())));
     }
+  });
+});
+
+describe("isRateLimitVitestBypassActive", () => {
+  afterEach(() => {
+    process.env.NODE_ENV = "test";
+    process.env.VITEST_RATE_LIMIT_OFF = "true";
+  });
+
+  it("is true only when NODE_ENV=test and VITEST_RATE_LIMIT_OFF=true", () => {
+    process.env.NODE_ENV = "test";
+    process.env.VITEST_RATE_LIMIT_OFF = "true";
+    expect(isRateLimitVitestBypassActive()).toBe(true);
+    process.env.VITEST_RATE_LIMIT_OFF = "false";
+    expect(isRateLimitVitestBypassActive()).toBe(false);
+  });
+
+  it("is false in production even when VITEST_RATE_LIMIT_OFF=true", () => {
+    process.env.NODE_ENV = "production";
+    process.env.VITEST_RATE_LIMIT_OFF = "true";
+    expect(isRateLimitVitestBypassActive()).toBe(false);
   });
 });
