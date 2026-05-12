@@ -12,7 +12,7 @@ vi.mock("./_core/resolveRequestUser", () => ({
 import { attachPaymentWebhooks, billingRouter } from "./billingRoute";
 import { analyzeRouter } from "./analyzeRoute";
 import { creditsRouter } from "./creditsRoute";
-import { analysisJobStore } from "./inMemoryAnalysisJobStore";
+import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import type { AuthenticatedUser } from "./_core/sdk";
 
 function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
@@ -73,6 +73,7 @@ describe("HTTP credits / analyze ownership / billing", () => {
   });
 
   beforeEach(() => {
+    vitestAnalysisJobsStore.clear();
     vi.mocked(resolve.tryResolveUserFromRequest).mockReset();
   });
 
@@ -98,14 +99,20 @@ describe("HTTP credits / analyze ownership / billing", () => {
   });
 
   it("GET /api/analyze/:jobId returns 403 for another user's job", async () => {
-    vi.useFakeTimers();
     const jobId = "job-ownership-http-test";
-    analysisJobStore.createAndEnqueueMock({
-      jobId,
-      payload: { fileName: "x.sgf", language: "ko" },
-      ownerClerkSubject: "user_a",
-      ownerAppUserId: 1,
-      creditLedgerId: "00000000-0000-0000-0000-00000000cc01",
+    vitestSeedAnalysisJob({
+      id: jobId,
+      user_id: "user_a",
+      status: "queued",
+      file_name: "x.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000cc01",
+      is_mock: true,
+      progress: 0,
+      result: null,
+      error_message: null,
+      completed_at: null,
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userB);
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${encodeURIComponent(jobId)}`, {

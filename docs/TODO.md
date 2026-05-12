@@ -16,5 +16,7 @@
 
 ## 분석
 
-- [ ] DB/큐 기반 job (인메모리 mock 대체)
-- [ ] KataGo / LLM (현재 mock)
+- [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용). mock 파이프라인은 동일 테이블만 갱신.
+- [ ] **운영 배포 전**: DB-backed **queue/worker** 전환 (Vercel/serverless 에서 in-process mock 타이머 비권장).
+- [ ] **KataGo / LLM** (현재 mock 유지).
+- [ ] **KataGo worker·큐** 설계 및 연동.

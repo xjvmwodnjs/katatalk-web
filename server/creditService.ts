@@ -235,6 +235,25 @@ export async function fetchCreditLogIdByIdempotencyKey(idempotencyKey: string): 
   return typeof row?.id === "string" ? row.id : null;
 }
 
+/** Supabase analysis_jobs 행 (서비스 롤 조회) */
+export type AnalysisJobDbRow = {
+  id: string;
+  user_id: string;
+  status: string;
+  file_name: string | null;
+  language: string | null;
+  credit_cost: number;
+  credit_log_id: string | null;
+  result: unknown | null;
+  error_message: string | null;
+  is_mock: boolean;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  /** 마이그레이션 003 이전 DB 에서는 없을 수 있음 */
+  progress?: number | null;
+};
+
 export async function insertAnalysisJobQueued(args: {
   jobId: string;
   profileId: string;
@@ -253,21 +272,43 @@ export async function insertAnalysisJobQueued(args: {
     credit_cost: args.creditCost ?? 1,
     credit_log_id: args.creditLogId,
     is_mock: true,
+    progress: 0,
   });
   if (error) {
     throw new Error(error.message);
   }
 }
 
-export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<string | null> {
+export async function getAnalysisJobRow(jobId: string): Promise<AnalysisJobDbRow | null> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.from("analysis_jobs").select("user_id").eq("id", jobId).maybeSingle();
+  const { data, error } = await sb.from("analysis_jobs").select("*").eq("id", jobId).maybeSingle();
   if (error) {
-    console.error("[creditService] getAnalysisJobOwnerProfileId", error.message);
+    throw new Error(error.message);
+  }
+  return data != null ? (data as AnalysisJobDbRow) : null;
+}
+
+export async function updateAnalysisJobRow(
+  jobId: string,
+  patch: Partial<
+    Pick<AnalysisJobDbRow, "status" | "progress" | "result" | "error_message" | "completed_at">
+  >
+): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { error } = await sb.from("analysis_jobs").update(patch).eq("id", jobId);
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<string | null> {
+  try {
+    const row = await getAnalysisJobRow(jobId);
+    return row?.user_id ?? null;
+  } catch (e) {
+    console.error("[creditService] getAnalysisJobOwnerProfileId", e);
     return null;
   }
-  const row = data as { user_id?: string } | null;
-  return typeof row?.user_id === "string" ? row.user_id : null;
 }
 
 /** @deprecated 이름 호환 — ensureProfileForClerkUser 사용 권장 */

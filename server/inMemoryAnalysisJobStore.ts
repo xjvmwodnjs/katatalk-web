@@ -1,105 +1,22 @@
-import type { AnalysisJobGetResponse } from "@shared/analysisJob";
-import type {
-  AnalysisJobEnqueuePayload,
-  AnalysisJobInternal,
-  AnalysisJobStore,
-} from "./analysisJobStore.types";
+import type { AnalysisJobEnqueuePayload } from "./analysisJobStore.types";
 import { buildMockAnalysisReport } from "./mockAnalysisResult";
-
-const TERMINAL_TTL_MS = 60 * 60 * 1000;
-
-function toIso(d: Date): string {
-  return d.toISOString();
-}
-
-function toPublicRow(job: AnalysisJobInternal): AnalysisJobGetResponse {
-  const base = {
-    success: true as const,
-    jobId: job.jobId,
-    status: job.status,
-    progress: job.progress,
-    createdAt: toIso(job.createdAt),
-    updatedAt: toIso(job.updatedAt),
-  };
-
-  if (job.status === "failed") {
-    return {
-      ...base,
-      error: { message: job.errorMessage ?? "Analysis failed." },
-    };
-  }
-
-  if (job.status === "completed" && job.resultData !== undefined) {
-    return {
-      ...base,
-      data: job.resultData,
-      meta: job.meta,
-    };
-  }
-
-  return base;
-}
+import { updateAnalysisJobRow } from "./creditService";
 
 /**
- * In-memory job store for local dev.
- * 운영(Vercel/serverless 등)에서는 인스턴스 간 공유가 되지 않으므로 사용하면 안 된다.
+ * Mock 분석 파이프라인 스케줄러.
+ * 상태·결과의 authoritative source 는 Supabase `analysis_jobs` 이며,
+ * 이 모듈은 비동기 타이머로 DB 행만 갱신한다 (인스턴스 간 공유 데이터 없음).
+ *
+ * 운영(Vercel/serverless)에서는 프로세스 내 타이머가 불안정할 수 있어,
+ * 추후 queue/worker 로 교체해야 한다.
  */
-export class InMemoryAnalysisJobStore implements AnalysisJobStore {
-  private readonly jobs = new Map<string, AnalysisJobInternal>();
-
-  private sweepExpiredTerminalJobs() {
-    const now = Date.now();
-    for (const [id, job] of Array.from(this.jobs.entries())) {
-      if (job.status !== "completed" && job.status !== "failed") continue;
-      const t = job.terminalAt?.getTime() ?? job.updatedAt.getTime();
-      if (now - t > TERMINAL_TTL_MS) {
-        this.jobs.delete(id);
-      }
-    }
-  }
-
+export class InMemoryAnalysisJobStore {
   createAndEnqueueMock(args: {
     jobId: string;
     payload: AnalysisJobEnqueuePayload;
-    ownerClerkSubject: string;
-    ownerAppUserId: number;
-    creditLedgerId: string;
     onJobFailed?: () => void | Promise<void>;
   }): void {
-    this.sweepExpiredTerminalJobs();
-    const now = new Date();
-    const row: AnalysisJobInternal = {
-      jobId: args.jobId,
-      status: "queued",
-      progress: 0,
-      createdAt: now,
-      updatedAt: now,
-      ownerClerkSubject: args.ownerClerkSubject,
-      ownerAppUserId: args.ownerAppUserId,
-      creditLedgerId: args.creditLedgerId,
-      payload: args.payload,
-    };
-    this.jobs.set(args.jobId, row);
-    void this.runMockPipeline(args.jobId, args.onJobFailed);
-  }
-
-  getInternal(jobId: string): AnalysisJobInternal | null {
-    this.sweepExpiredTerminalJobs();
-    return this.jobs.get(jobId) ?? null;
-  }
-
-  toPublicGetResponse(jobId: string): AnalysisJobGetResponse | null {
-    this.sweepExpiredTerminalJobs();
-    const job = this.jobs.get(jobId);
-    if (!job) return null;
-    return toPublicRow(job);
-  }
-
-  private patch(jobId: string, patch: Partial<AnalysisJobInternal>) {
-    const job = this.jobs.get(jobId);
-    if (!job) return;
-    const next = { ...job, ...patch, updatedAt: new Date() };
-    this.jobs.set(jobId, next);
+    void this.runMockPipeline(args.jobId, args.payload, args.onJobFailed);
   }
 
   private sleep(ms: number): Promise<void> {
@@ -108,43 +25,40 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
 
   private async runMockPipeline(
     jobId: string,
+    payload: AnalysisJobEnqueuePayload,
     onJobFailed?: () => void | Promise<void>
   ): Promise<void> {
     try {
       await this.sleep(350);
-      this.patch(jobId, { status: "running", progress: 25 });
+      await updateAnalysisJobRow(jobId, { status: "running", progress: 25 });
 
       await this.sleep(450);
-      this.patch(jobId, { status: "running", progress: 55 });
+      await updateAnalysisJobRow(jobId, { status: "running", progress: 55 });
 
       await this.sleep(400);
-      this.patch(jobId, { status: "running", progress: 85 });
+      await updateAnalysisJobRow(jobId, { status: "running", progress: 85 });
 
       await this.sleep(300);
 
-      const job = this.jobs.get(jobId);
-      if (!job) return;
-
-      const data = buildMockAnalysisReport(job.payload);
-      this.patch(jobId, {
+      const data = buildMockAnalysisReport(payload);
+      await updateAnalysisJobRow(jobId, {
         status: "completed",
         progress: 100,
-        resultData: data,
-        meta: {
-          mock: true,
-          message:
-            "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
-        },
-        terminalAt: new Date(),
+        result: data,
+        completed_at: new Date().toISOString(),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown error";
-      this.patch(jobId, {
-        status: "failed",
-        progress: null,
-        errorMessage: message,
-        terminalAt: new Date(),
-      });
+      try {
+        await updateAnalysisJobRow(jobId, {
+          status: "failed",
+          progress: null,
+          error_message: message,
+          completed_at: new Date().toISOString(),
+        });
+      } catch (patchErr) {
+        console.error("[inMemoryAnalysisJobStore] failed to persist failure state", patchErr);
+      }
       try {
         await onJobFailed?.();
       } catch (refundErr) {
@@ -154,5 +68,5 @@ export class InMemoryAnalysisJobStore implements AnalysisJobStore {
   }
 }
 
-/** Singleton for the Express app until DI / DB wiring exists. */
+/** Singleton for the Express app until DI / queue wiring exists. */
 export const analysisJobStore = new InMemoryAnalysisJobStore();

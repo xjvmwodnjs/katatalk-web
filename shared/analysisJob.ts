@@ -1,8 +1,8 @@
 /**
  * Analysis job API contracts (POST enqueue + GET poll).
  *
- * Replace `InMemoryAnalysisJobStore` on the server with a DB-backed row +
- * queue producer; workers update status/progress/result the same shape.
+ * 서버는 Supabase `analysis_jobs` 를 authoritative source 로 두고,
+ * mock 파이프라인은 동일 테이블을 갱신한다. 운영 규모에서는 queue/worker 가 필요하다.
  */
 
 /** Terminal and in-progress states exposed to the client. */

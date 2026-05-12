@@ -1,5 +1,5 @@
 // =============================================================
-// /api/analyze — SGF upload + job enqueue (mock worker, in-memory store)
+// /api/analyze — SGF upload + job enqueue (mock worker, DB-backed analysis_jobs)
 // =============================================================
 //
 // SECURITY NOTE: requireAnalyzeAuth 로 서버 측 인증 필수.
@@ -8,21 +8,69 @@
 import { nanoid } from "nanoid";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
-import type { AnalysisJobCreateResponse } from "@shared/analysisJob";
+import type {
+  AnalysisJobCreateResponse,
+  AnalysisJobGetResponse,
+  AnalysisJobStatus,
+} from "@shared/analysisJob";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
 import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
+import type { AnalysisJobDbRow } from "./creditService";
 import {
   ensureWalletWithSignupBonus,
-  getAnalysisJobOwnerProfileId,
+  getAnalysisJobRow,
   insertAnalysisJobQueued,
   refundCreditIfJobFailed,
   spendCreditForAnalysisJob,
   walletSubjectFromAuthUser,
 } from "./creditService";
+
+function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetResponse {
+  const progress =
+    row.progress ??
+    (row.status === "queued"
+      ? 0
+      : row.status === "completed"
+        ? 100
+        : row.status === "failed"
+          ? null
+          : 40);
+
+  const base = {
+    success: true as const,
+    jobId: row.id,
+    status: row.status as AnalysisJobStatus,
+    progress,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+
+  if (row.status === "failed") {
+    return {
+      ...base,
+      error: { message: row.error_message ?? "Analysis failed." },
+    };
+  }
+
+  if (row.status === "completed" && row.result != null) {
+    return {
+      ...base,
+      data: row.result,
+      meta: row.is_mock
+        ? {
+            mock: true,
+            message: "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
+          }
+        : undefined,
+    };
+  }
+
+  return base;
+}
 
 const SUPPORTED_LANGUAGES = new Set<AnalysisJobLanguage>(["ko", "en", "zh", "ja"]);
 
@@ -97,31 +145,10 @@ analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res:
     }
 
     const viewer = walletSubjectFromAuthUser(user);
-    const internal = analysisJobStore.getInternal(jobId);
 
-    if (internal) {
-      if (internal.ownerClerkSubject !== viewer) {
-        res.status(403).json({
-          success: false,
-          message: "이 분석 결과에 접근할 권한이 없습니다.",
-        });
-        return;
-      }
-      const row = analysisJobStore.toPublicGetResponse(jobId);
-      if (!row) {
-        sendUploadError(res, 404, "Job not found. It may have expired or the ID is invalid.");
-        return;
-      }
-      if (row.status === "completed" && row.meta?.mock) {
-        res.set("X-KataTalk-Mock", "true");
-      }
-      res.json(row);
-      return;
-    }
-
-    let dbOwner: string | null = null;
+    let row: AnalysisJobDbRow | null = null;
     try {
-      dbOwner = await getAnalysisJobOwnerProfileId(jobId);
+      row = await getAnalysisJobRow(jobId);
     } catch (e) {
       if (e instanceof SupabaseAdminUnavailableError) {
         sendUploadError(
@@ -131,31 +158,32 @@ analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res:
         );
         return;
       }
-      console.error("[analyze] getAnalysisJobOwnerProfileId", e);
-      sendUploadError(res, 500, "작업 소유자를 확인하지 못했습니다.");
+      console.error("[analyze] getAnalysisJobRow", e);
+      sendUploadError(res, 500, "작업을 불러오지 못했습니다.");
       return;
     }
 
-    if (dbOwner != null) {
-      if (dbOwner !== viewer) {
-        res.status(403).json({
-          success: false,
-          message: "이 분석 결과에 접근할 권한이 없습니다.",
-        });
-        return;
-      }
+    if (row == null) {
       res.status(404).json({
         success: false,
-        message:
-          "작업을 찾을 수 없습니다. 서버가 재시작되었거나 인메모리 작업이 만료되었을 수 있습니다. 잠시 후 다시 분석을 요청해 주세요.",
+        message: "Job not found. It may have expired or the ID is invalid.",
       });
       return;
     }
 
-    res.status(404).json({
-      success: false,
-      message: "Job not found. It may have expired or the ID is invalid.",
-    });
+    if (row.user_id !== viewer) {
+      res.status(403).json({
+        success: false,
+        message: "이 분석 결과에 접근할 권한이 없습니다.",
+      });
+      return;
+    }
+
+    const payload = analysisJobDbRowToGetResponse(row);
+    if (payload.status === "completed" && payload.meta?.mock) {
+      res.set("X-KataTalk-Mock", "true");
+    }
+    res.json(payload);
   })();
 });
 
@@ -268,9 +296,6 @@ analyzeRouter.post(
         analysisJobStore.createAndEnqueueMock({
           jobId,
           payload: { fileName, language },
-          ownerClerkSubject: profileId,
-          ownerAppUserId: user.id,
-          creditLedgerId: spend.ledgerId,
           onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
         });
       } catch (e) {

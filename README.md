@@ -99,10 +99,11 @@ pnpm start
 
 - 과거 구현인 `user_wallets` / `credit_ledger` 기반 코드는 **`server/creditDb.legacy.ts`** 로만 보관합니다. **기본 크레딧 경로는 Supabase** 입니다.
 
-## in-memory 분석 job 저장소 (로컬·개발 전용)
+## 분석 job (`analysis_jobs`)
 
-- mock 분석 파이프라인은 **인메모리 job**으로 진행 상태를 유지합니다. **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다.  
-- **차감·소유권 검증**은 Supabase `profiles` / `credit_logs` / `analysis_jobs` 와 연동합니다. **Vercel·serverless** 에서 인메모리만으로 운영하면 안 되며, **DB-backed 큐/워커**가 필요합니다.
+- **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
+- mock 분석은 여전히 **KataGo·LLM 없이** 동일 테이블을 갱신합니다. 프로세스 안에서는 **`setTimeout` 기반 mock 파이프라인**만 돌아가며, 이는 **인스턴스 로컬 스케줄러**일 뿐입니다.
+- **운영 배포 전**에는 **DB-backed queue/worker** 로 바꿔야 합니다. **Vercel·serverless·수평 확장** 환경에서는 프로세스 내 장시간 mock 파이프라인에 의존하면 안 되며, 다음 단계로 **KataGo worker·큐 설계**가 필요합니다.
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
