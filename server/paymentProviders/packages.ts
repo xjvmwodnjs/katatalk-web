@@ -10,11 +10,8 @@ export function getCreditAmountForPackage(packageId: CreditPackId): number {
   return CREDIT_PACK_CREDITS[packageId];
 }
 
-/** UI locale 기준 기본 결제사: 한국어 → Toss, 그 외 → Lemon Squeezy */
-export function defaultPaymentProviderForLocale(locale?: UiLocale): PaymentProviderId {
-  if (locale === "ko") {
-    return "toss";
-  }
+/** 현재 단계에서는 모든 locale 에 대해 Lemon Squeezy 만 사용합니다. */
+export function defaultPaymentProviderForLocale(_locale?: UiLocale): PaymentProviderId {
   return "lemonsqueezy";
 }
 

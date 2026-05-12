@@ -150,6 +150,12 @@ function createCheckoutHandler(req: Request, res: Response): void {
 
       const { packageId, provider: bodyProvider, locale } = parsed.data;
       const uiLocale: UiLocale = locale ?? "en";
+
+      if (bodyProvider === "toss") {
+        sendBillingError(res, 400, "Toss 결제는 아직 준비 중입니다. Lemon Squeezy 로 결제해 주세요.");
+        return;
+      }
+
       const providerId = resolveCheckoutProvider(bodyProvider, uiLocale);
 
       const baseUrl = ENV.appBaseUrl.replace(/\/$/, "");

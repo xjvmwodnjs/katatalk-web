@@ -156,6 +156,9 @@ export interface Translations {
   // Pricing
   pricingTitle: string;
   pricingSubtitle: string;
+  pricingCheckoutButton: string;
+  pricingCheckoutUrlError: string;
+  creditRefundPolicyAck: string;
   free: string;
   basic: string;
   premium: string;
@@ -226,8 +229,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "새 기보 분석하기",
     severity: { critical: "치명적 패착", major: "중요 실수", moderate: "경미한 실수" },
     
-    pricingTitle: "요금제",
-    pricingSubtitle: "나에게 맞는 플랜을 선택하세요",
+    pricingTitle: "크레딧 충전",
+    pricingSubtitle: "안전한 글로벌 카드 결제로 크레딧을 충전합니다.",
+    pricingCheckoutButton: "결제 페이지로 이동",
+    pricingCheckoutUrlError: "결제 URL 생성에 실패했습니다.",
+    creditRefundPolicyAck:
+      "디지털 분석 크레딧은 사용 즉시 차감되며, 이미 사용한 크레딧은 환불되지 않는다는 점에 동의합니다.",
     free: "무료 체험",
     basic: "Basic",
     premium: "Premium",
@@ -294,8 +301,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "Analyze New Game",
     severity: { critical: "Critical Mistake", major: "Major Error", moderate: "Minor Error" },
     
-    pricingTitle: "Pricing",
-    pricingSubtitle: "Choose the plan that fits your needs",
+    pricingTitle: "Buy Credits",
+    pricingSubtitle: "Secure global card checkout to top up your credits.",
+    pricingCheckoutButton: "Proceed to Checkout",
+    pricingCheckoutUrlError: "Could not create checkout URL.",
+    creditRefundPolicyAck:
+      "I understand that digital analysis credits are deducted immediately upon use and that credits already used are non-refundable.",
     free: "Free Trial",
     basic: "Basic",
     premium: "Premium",
@@ -362,8 +373,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "分析新棋谱",
     severity: { critical: "致命失误", major: "重大错误", moderate: "轻微失误" },
     
-    pricingTitle: "价格方案",
-    pricingSubtitle: "选择适合您的方案",
+    pricingTitle: "购买积分",
+    pricingSubtitle: "通过安全的全球银行卡结账为账户充值。",
+    pricingCheckoutButton: "前往结账",
+    pricingCheckoutUrlError: "无法生成结账链接。",
+    creditRefundPolicyAck:
+      "本人知晓数字分析积分在使用后立即扣除，已使用的积分不予退款。",
     free: "免费体验",
     basic: "Basic",
     premium: "Premium",
@@ -430,8 +445,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "新しい棋譜を解析する",
     severity: { critical: "致命的な悪手", major: "重大なミス", moderate: "軽微なミス" },
     
-    pricingTitle: "料金プラン",
-    pricingSubtitle: "あなたに合ったプランをお選びください",
+    pricingTitle: "クレジット購入",
+    pricingSubtitle: "安全なグローバルカード決済でクレジットをチャージします。",
+    pricingCheckoutButton: "決済ページへ進む",
+    pricingCheckoutUrlError: "決済URLを作成できませんでした。",
+    creditRefundPolicyAck:
+      "デジタル解析クレジットは利用と同時に消費され、一度使用したクレジットは返金されないことに同意します。",
     free: "無料体験",
     basic: "Basic",
     premium: "Premium",

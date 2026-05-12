@@ -386,31 +386,42 @@ export default function Home() {
               </>
             )}
 
-            {/* Credit top-up (결제 연동 전 안내) */}
-            <button
-              type="button"
-              onClick={() => {
-                toast.info(
-                  lang === "ko"
-                    ? "크레딧 충전 기능은 준비 중입니다."
-                    : lang === "en"
-                      ? "Credit top-up is coming soon."
-                      : lang === "zh"
-                        ? "积分充值功能即将推出。"
-                        : "クレジットチャージは準備中です。"
-                );
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
-              style={{
-                background: "linear-gradient(135deg, #C9A84C, #A08030)",
-                color: "#0c0a09",
-                boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
-                fontFamily: "'Noto Sans KR', sans-serif",
-              }}
-            >
-              <Crown className="w-3.5 h-3.5" />
-              {t.subscribe}
-            </button>
+            {/* Credit top-up → /pricing (Lemon Squeezy), 비로그인 시 로그인 안내 */}
+            {isAuthenticated ? (
+              <Link href="/pricing">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
+                  style={{
+                    background: "linear-gradient(135deg, #C9A84C, #A08030)",
+                    color: "#0c0a09",
+                    boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
+                    fontFamily: "'Noto Sans KR', sans-serif",
+                  }}
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  {t.subscribe}
+                </button>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.info(t.loginRequired);
+                  window.location.href = getLoginUrl();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 opacity-70"
+                style={{
+                  background: "linear-gradient(135deg, #C9A84C, #A08030)",
+                  color: "#0c0a09",
+                  boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
+                  fontFamily: "'Noto Sans KR', sans-serif",
+                }}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                {t.subscribe}
+              </button>
+            )}
 
             {/* Divider */}
             <div className="w-px h-5 mx-1" style={{ background: "rgba(255,255,255,0.1)" }} />

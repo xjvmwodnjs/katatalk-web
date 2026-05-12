@@ -31,4 +31,12 @@ describe("createCheckoutBodySchema", () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it("accepts packageId only (provider optional)", () => {
+    const r = createCheckoutBodySchema.safeParse({
+      packageId: "starter",
+      locale: "ko",
+    });
+    expect(r.success).toBe(true);
+  });
 });

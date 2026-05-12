@@ -18,6 +18,22 @@ if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET?.trim()) {
   process.env.LEMONSQUEEZY_WEBHOOK_SECRET = "vitest-lemon-webhook-secret-32chars___";
 }
 
+if (!process.env.LEMONSQUEEZY_API_KEY?.trim()) {
+  process.env.LEMONSQUEEZY_API_KEY = "vitest-lemon-api-key-placeholder";
+}
+if (!process.env.LEMONSQUEEZY_STORE_ID?.trim()) {
+  process.env.LEMONSQUEEZY_STORE_ID = "999";
+}
+if (!process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID?.trim()) {
+  process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID = "vitest-variant-starter";
+}
+if (!process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID?.trim()) {
+  process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID = "vitest-variant-standard";
+}
+if (!process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID?.trim()) {
+  process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID = "vitest-variant-pro";
+}
+
 function queryBuilder(table: string) {
   const builder: Record<string, unknown> = {
     select() {

@@ -84,7 +84,7 @@ pnpm start
 ### 시스템
 
 - **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
-- **Payment = Toss Payments + Lemon Squeezy** — `server/paymentProviders/` 추상화, **`POST /api/billing/create-checkout`**. **Clerk Billing·Stripe·구독형 결제 미사용.**  
+- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토합니다. **Clerk Billing·Stripe·구독형 결제 미사용.**  
 - **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.  
 - **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
 - **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.  
@@ -104,11 +104,12 @@ pnpm start
 - mock 분석 파이프라인은 **인메모리 job**으로 진행 상태를 유지합니다. **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다.  
 - **차감·소유권 검증**은 Supabase `profiles` / `credit_logs` / `analysis_jobs` 와 연동합니다. **Vercel·serverless** 에서 인메모리만으로 운영하면 안 되며, **DB-backed 큐/워커**가 필요합니다.
 
-## 결제 (Toss / Lemon Squeezy)
+## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
 **`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-- **Toss**: 아직 **실결제 연동 전**(스켈레톤만). `TOSS_*` 키는 향후 연동 시 서버 전용으로 유지 (**`VITE_` 접두사 금지**).  
+- **베타 UI**: 크레딧 충전은 **Lemon Squeezy만** 사용합니다.  
+- **Toss**: **실결제 연동 전**(스켈레톤만). 국내 결제 UX 확보 시 연동 검토. `TOSS_*` 는 서버 전용 (**`VITE_` 접두사 금지**).  
 - **Lemon Squeezy 상품(표시 가격·크레딧)** — 실제 과금은 Lemon 대시보드 variant와 일치해야 합니다.  
   - Starter **$4.99** → **20** credits  
   - Standard **$9.99** → **50** credits  

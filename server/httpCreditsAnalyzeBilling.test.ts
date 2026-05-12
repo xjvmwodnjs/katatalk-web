@@ -149,27 +149,89 @@ describe("HTTP credits / analyze ownership / billing", () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
-      body: JSON.stringify({ packageId: "starter", provider: "toss", locale: "ko", creditAmount: 9999 }),
+      body: JSON.stringify({ packageId: "starter", provider: "lemonsqueezy", locale: "ko", creditAmount: 9999 }),
     });
     expect(res.status).toBe(400);
   });
 
-  it("POST /api/billing/create-checkout returns toss payload for ko + toss", async () => {
+  it("POST /api/billing/create-checkout returns 400 for provider toss", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
       body: JSON.stringify({ packageId: "starter", provider: "toss", locale: "ko" }),
     });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { message?: string };
+    expect(body.message).toMatch(/Toss/);
+  });
+
+  it("POST /api/billing/create-checkout defaults to lemon and returns checkout url", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const originalFetch = global.fetch.bind(global);
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("api.lemonsqueezy.com")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              jsonapi: { version: "1.0" },
+              data: {
+                type: "checkouts",
+                attributes: {
+                  url: "https://example.lemonsqueezy.com/checkout/test-checkout-id",
+                },
+              },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      return originalFetch(input as RequestInfo, init);
+    });
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", locale: "ko" }),
+    });
+    fetchSpy.mockRestore();
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      success?: boolean;
-      checkoutPayload?: { metadata?: { creditAmount?: string } };
-      creditAmount?: number;
-    };
+    const body = (await res.json()) as { success?: boolean; url?: string; creditAmount?: number };
     expect(body.success).toBe(true);
+    expect(body.url).toBe("https://example.lemonsqueezy.com/checkout/test-checkout-id");
     expect(body.creditAmount).toBe(20);
-    expect(body.checkoutPayload?.metadata?.creditAmount).toBe("20");
+  });
+
+  it("POST /api/billing/create-checkout with lemonsqueezy returns checkout url", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const originalFetch = global.fetch.bind(global);
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("api.lemonsqueezy.com")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                attributes: {
+                  url: "https://example.lemonsqueezy.com/checkout/explicit",
+                },
+              },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      return originalFetch(input as RequestInfo, init);
+    });
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", provider: "lemonsqueezy", locale: "ko" }),
+    });
+    fetchSpy.mockRestore();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url?: string };
+    expect(body.url).toBe("https://example.lemonsqueezy.com/checkout/explicit");
   });
 });
 
