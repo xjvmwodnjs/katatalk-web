@@ -168,8 +168,8 @@ describe("HTTP credits / analyze ownership / billing", () => {
       creditAmount?: number;
     };
     expect(body.success).toBe(true);
-    expect(body.creditAmount).toBe(50);
-    expect(body.checkoutPayload?.metadata?.creditAmount).toBe("50");
+    expect(body.creditAmount).toBe(20);
+    expect(body.checkoutPayload?.metadata?.creditAmount).toBe("20");
   });
 });
 
@@ -229,7 +229,7 @@ describe("Payment webhooks HTTP", () => {
           custom_data: {
             clerkUserId: "user_a",
             creditPackageId: "starter",
-            creditAmount: "50",
+            creditAmount: "20",
             paymentProvider: "lemonsqueezy",
           },
         },

@@ -108,10 +108,15 @@ pnpm start
 
 **`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-- **Toss**: `TOSS_CLIENT_KEY`(프론트 SDK 시 필요), `TOSS_SECRET_KEY`, `TOSS_WEBHOOK_SECRET`, `TOSS_SUCCESS_URL`, `TOSS_FAIL_URL` — **secret 에 `VITE_` 접두사 금지**.  
-- **Lemon Squeezy**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, variant id 3종.  
-- **웹훅 URL**: `POST /api/billing/webhook/toss`, `POST /api/billing/webhook/lemonsqueezy` (서명 검증 후에만 크레딧 반영).  
-- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` + `locale` 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.
+- **Toss**: 아직 **실결제 연동 전**(스켈레톤만). `TOSS_*` 키는 향후 연동 시 서버 전용으로 유지 (**`VITE_` 접두사 금지**).  
+- **Lemon Squeezy 상품(표시 가격·크레딧)** — 실제 과금은 Lemon 대시보드 variant와 일치해야 합니다.  
+  - Starter **$4.99** → **20** credits  
+  - Standard **$9.99** → **50** credits  
+  - Pro **$29.99** → **200** credits  
+- **환경 변수**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`(대시보드 **Webhook Signing secret** 과 동일해야 함), `LEMONSQUEEZY_CREDIT_PACK_*_VARIANT_ID` 3종, 결제 후 복귀 URL용 **`APP_BASE_URL`** (예: 로컬 `http://localhost:3000`).  
+- **웹훅 URL**: `https://<공개호스트>/api/billing/webhook/lemonsqueezy` — 로컬에서 Lemon 대시보드가 서버에 접근하려면 **ngrok 등 터널**이 필요합니다.  
+- **크레딧 증가는 success 리다이렉트가 아니라 웹훅(`order_created`)에서만** `add_credits_from_payment` 로 반영됩니다.  
+- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.
 
 ## Supabase 마이그레이션
 

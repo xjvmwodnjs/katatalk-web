@@ -20,14 +20,16 @@ interface PricingTableProps {
 
 type PackId = "starter" | "standard" | "pro";
 
+/** 크레딧 수량은 서버 `server/paymentProviders/packages.ts` 와 동일해야 함 */
 const PACKS: {
   id: PackId;
   credits: number;
   labelKo: string;
+  priceUsd: string;
 }[] = [
-  { id: "starter", credits: 50, labelKo: "Starter" },
-  { id: "standard", credits: 120, labelKo: "Standard" },
-  { id: "pro", credits: 300, labelKo: "Pro" },
+  { id: "starter", credits: 20, labelKo: "Starter", priceUsd: "$4.99" },
+  { id: "standard", credits: 50, labelKo: "Standard", priceUsd: "$9.99" },
+  { id: "pro", credits: 200, labelKo: "Pro", priceUsd: "$29.99" },
 ];
 
 function defaultProviderForLang(lang: Language): BillingProviderChoice {
@@ -103,10 +105,18 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
         return;
       }
 
-      if (body.checkoutPayload) {
+      if (provider === "toss" && body.checkoutPayload) {
         toast.message("테스트 결제 준비 중", {
           description:
             "Toss 결제창·승인 API 연동은 다음 단계에서 완료됩니다. success URL 만으로 크레딧이 오르지 않으며, 웹훅으로만 반영됩니다.",
+        });
+        return;
+      }
+
+      if (provider === "lemonsqueezy") {
+        toast.error("Lemon Squeezy 결제 주소를 받지 못했습니다.", {
+          description:
+            "서버의 Lemon Squeezy·APP_BASE_URL 설정을 확인하거나 잠시 후 다시 시도해 주세요. (크레딧 반영은 웹훅으로만 처리됩니다.)",
         });
         return;
       }
@@ -165,7 +175,7 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
           </label>
         </div>
         <p className="text-[11px] text-slate-500 pt-1">
-          기본값: UI 언어가 한국어이면 Toss, 그 외에는 Lemon Squeezy 가 선택됩니다. 연동은 단계적으로 켜집니다.
+          기본값: UI 언어가 한국어이면 Toss, 그 외에는 Lemon Squeezy입니다. 해외 카드(Lemon Squeezy)는 결제창으로 이동합니다. Toss 실제 결제는 준비 중입니다.
         </p>
       </div>
 
@@ -243,8 +253,14 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
                   </span>
                   <span className="text-xs text-slate-500">credits</span>
                 </div>
+                <p
+                  className="text-sm font-medium text-slate-300 mb-1"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  {pack.priceUsd}
+                </p>
                 <p className="text-[11px] text-slate-500 mb-6" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                  결제 금액은 각 결제사(Toss / Lemon Squeezy) 확인 화면에서 표시됩니다.
+                  Lemon Squeezy 결제 화면에서 동일 상품 가격이 표시됩니다. (Toss 연동 시 별도 안내)
                 </p>
 
                 <ul className="space-y-2.5 mb-6">

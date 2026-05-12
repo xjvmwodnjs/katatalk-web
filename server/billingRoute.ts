@@ -97,8 +97,7 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         const unauthorized =
           v.reason === "MISSING_SIGNATURE" ||
           v.reason === "INVALID_SIGNATURE" ||
-          v.reason === "MISSING_LEMONSQUEEZY_WEBHOOK_SECRET" ||
-          v.reason === "LEMONSQUEEZY_WEBHOOK_NOT_CONFIGURED";
+          v.reason === "MISSING_LEMONSQUEEZY_WEBHOOK_SECRET";
         const status = unauthorized ? 401 : v.reason === "IGNORED_EVENT" ? 200 : 400;
         if (status === 200) {
           res.status(200).json({ received: true, ignored: true });
@@ -174,11 +173,22 @@ function createCheckoutHandler(req: Request, res: Response): void {
         });
       } catch (e) {
         const code = e instanceof Error ? e.message : "";
-        if (code === "LEMONSQUEEZY_NOT_CONFIGURED" || code.startsWith("LEMONSQUEEZY_CHECKOUT")) {
+        if (code.startsWith("LEMON_ENV_MISSING:")) {
           sendBillingError(
             res,
             503,
-            "Lemon Squeezy 결제 설정이 완료되지 않았습니다. 관리자에게 문의하거나 다른 결제 수단을 선택해 주세요."
+            "Lemon Squeezy 결제에 필요한 서버 설정이 누락되었습니다. APP_BASE_URL·API 키·스토어 ID·variant ID를 확인하거나 관리자에게 문의해 주세요."
+          );
+          return;
+        }
+        if (
+          code === "LEMONSQUEEZY_CHECKOUT_NO_URL" ||
+          code.startsWith("LEMONSQUEEZY_CHECKOUT_FAILED:")
+        ) {
+          sendBillingError(
+            res,
+            503,
+            "Lemon Squeezy 결제 세션을 만들 수 없습니다. 상품·variant 설정을 확인하거나 잠시 후 다시 시도해 주세요."
           );
           return;
         }

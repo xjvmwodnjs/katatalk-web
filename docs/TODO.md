@@ -5,7 +5,7 @@
 ## 결제·법무
 
 - [ ] **Toss** 실결제창·결제 승인 API·웹훅 서명 검증 완성 (`tossProvider.ts` TODO)
-- [ ] **Lemon Squeezy** Checkout API 필드·실주문 payload 검증 (운영 variant·store 연동)
+- [ ] **Lemon Squeezy** 운영 주문·웹훅 payload 와 `custom_data` 필드 최종 검증 (Checkout URL·redirect_url 연동됨)
 - [ ] **환불 정책·이용약관** 법무 검토
 - [ ] 운영 웹훅 엔드포인트 URL·시크릿 로테이션 절차
 

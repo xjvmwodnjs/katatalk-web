@@ -37,7 +37,7 @@ describe("Lemon Squeezy webhook verify", () => {
           custom_data: {
             clerkUserId: "user_test_sub",
             creditPackageId: "starter",
-            creditAmount: "50",
+            creditAmount: "20",
             paymentProvider: "lemonsqueezy",
           },
         },
@@ -52,7 +52,7 @@ describe("Lemon Squeezy webhook verify", () => {
     expect(v.ok).toBe(true);
     if (v.ok) {
       expect(v.event.clerkUserId).toBe("user_test_sub");
-      expect(v.event.creditAmount).toBe(50);
+      expect(v.event.creditAmount).toBe(20);
     }
   });
 
@@ -81,5 +81,31 @@ describe("Lemon Squeezy webhook verify", () => {
     });
     expect(v.ok).toBe(false);
     if (!v.ok) expect(v.reason).toBe("CREDIT_AMOUNT_MISMATCH");
+  });
+
+  it("order_created event name can come from X-Event-Name header", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { webhook_id: "wh_ls_hdr_1" },
+      data: {
+        type: "orders",
+        id: "order_ls_hdr_1",
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_test_sub",
+            creditPackageId: "starter",
+            creditAmount: "20",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const v = await lemonsqueezyProvider.verifyWebhookAndExtractEvent({
+      rawBody: Buffer.from(rawStr, "utf8"),
+      headers: { "x-signature": sig, "x-event-name": "order_created" },
+    });
+    expect(v.ok).toBe(true);
   });
 });

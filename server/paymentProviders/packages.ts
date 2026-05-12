@@ -1,9 +1,9 @@
 import type { CreditPackId, PaymentProviderId, UiLocale } from "./types";
 
 export const CREDIT_PACK_CREDITS: Record<CreditPackId, number> = {
-  starter: 50,
-  standard: 120,
-  pro: 300,
+  starter: 20,
+  standard: 50,
+  pro: 200,
 };
 
 export function getCreditAmountForPackage(packageId: CreditPackId): number {
