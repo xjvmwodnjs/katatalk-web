@@ -176,6 +176,7 @@ export default function Pricing() {
         {/* Pricing Table */}
         <PricingTable
           t={t}
+          locale={lang}
           isAuthenticated={isAuthenticated}
           onRequireLogin={() => {
             window.location.href = getLoginUrl();

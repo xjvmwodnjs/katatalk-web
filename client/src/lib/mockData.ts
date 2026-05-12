@@ -167,7 +167,6 @@ export interface Translations {
   pricingPriceCheckoutNote: string;
   creditBulletPerSgf: string;
   creditBulletBalancePersistent: string;
-  creditRefundLegalTodo: string;
   creditRefundMustAgree: string;
   creditCheckoutLoginTitle: string;
   creditCheckoutLoginDesc: string;
@@ -179,7 +178,8 @@ export interface Translations {
   pricingCheckoutRedirecting: string;
   pricing401Description: string;
   billingPaidTitle: string;
-  billingPaidWebhookDelay: string;
+  billingCreditsAppliedNotice: string;
+  billingCreditDelayedMessage: string;
   billingCreditsCheckFail: string;
   billingCreditsRefreshError: string;
   billingCancelled: string;
@@ -267,7 +267,6 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingPriceCheckoutNote: "결제 금액은 결제 확인 화면에 표시됩니다.",
     creditBulletPerSgf: "SGF 분석 1회당 1 크레딧 차감",
     creditBulletBalancePersistent: "충전 크레딧은 만료 없이 잔액으로 유지합니다 (정책 변경 시 별도 고지).",
-    creditRefundLegalTodo: "TODO: 정식 출시 전 환불 정책 문구는 법적 검토가 필요합니다.",
     creditRefundMustAgree: "환불 정책에 동의해야 결제를 진행할 수 있습니다.",
     creditCheckoutLoginTitle: "로그인 후 크레딧 충전 가능",
     creditCheckoutLoginDesc: "로그인 페이지로 이동합니다.",
@@ -280,8 +279,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingCheckoutRedirecting: "결제 페이지로 이동 중입니다…",
     pricing401Description: "/login 에서 로그인한 뒤 다시 시도해 주세요.",
     billingPaidTitle: "결제가 완료되었습니다.",
-    billingPaidWebhookDelay:
-      "결제 웹훅(Lemon Squeezy)으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 크레딧이 갱신되는지 확인해 주세요.",
+    billingCreditsAppliedNotice: "크레딧이 계정에 반영되었습니다.",
+    billingCreditDelayedMessage:
+      "결제는 완료되었지만 크레딧 반영이 지연되고 있습니다. 잠시 후 새로고침하거나 문의해 주세요.",
     billingCreditsCheckFail: "결제 직후 크레딧을 확인하지 못했습니다.",
     billingCreditsRefreshError: "크레딧 새로고침 중 오류가 발생했습니다.",
     billingCancelled: "결제를 취소했습니다.",
@@ -366,7 +366,6 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     creditBulletPerSgf: "1 credit per SGF analysis run",
     creditBulletBalancePersistent:
       "Purchased credits stay on your balance with no expiry (policy changes will be announced separately).",
-    creditRefundLegalTodo: "TODO: Have refund copy reviewed by legal before launch.",
     creditRefundMustAgree: "You must agree to the refund policy before continuing to checkout.",
     creditCheckoutLoginTitle: "Sign in to purchase credits",
     creditCheckoutLoginDesc: "Redirecting you to the sign-in page.",
@@ -379,8 +378,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingCheckoutRedirecting: "Opening checkout…",
     pricing401Description: "Please sign in at /login and try again.",
     billingPaidTitle: "Payment completed.",
-    billingPaidWebhookDelay:
-      "Credits may take up to a minute to appear while Lemon Squeezy webhooks process. Please refresh shortly.",
+    billingCreditsAppliedNotice: "Credits have been added to your account.",
+    billingCreditDelayedMessage:
+      "Your payment went through, but credits are taking longer to appear. Please refresh in a moment or contact support.",
     billingCreditsCheckFail: "Could not verify credits right after payment.",
     billingCreditsRefreshError: "Something went wrong while refreshing credits.",
     billingCancelled: "Checkout was cancelled.",
@@ -462,7 +462,6 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingPriceCheckoutNote: "具体金额以支付确认页显示为准。",
     creditBulletPerSgf: "每次SGF分析消耗1点",
     creditBulletBalancePersistent: "充值点数不设有效期，余额长期保留（政策如有变更将另行通知）。",
-    creditRefundLegalTodo: "TODO：正式发布前需完成退款条款的法务审核。",
     creditRefundMustAgree: "需同意退款说明后方可继续支付。",
     creditCheckoutLoginTitle: "登录后即可充值点数",
     creditCheckoutLoginDesc: "将前往登录页面。",
@@ -474,8 +473,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingCheckoutRedirecting: "正在前往支付页面…",
     pricing401Description: "请在 /login 登录后重试。",
     billingPaidTitle: "支付已完成。",
-    billingPaidWebhookDelay:
-      "点数入账可能需要数十秒（等待 Lemon Squeezy 回调）。请稍后刷新页面查看余额。",
+    billingCreditsAppliedNotice: "点数已计入账户。",
+    billingCreditDelayedMessage:
+      "支付已成功，但点数入账有所延迟。请稍后刷新页面或联系支持。",
     billingCreditsCheckFail: "支付完成后暂时无法验证点数。",
     billingCreditsRefreshError: "刷新点数时出错。",
     billingCancelled: "已取消支付。",
@@ -560,7 +560,6 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     creditBulletPerSgf: "SGF解析1回につきクレジット1を消費",
     creditBulletBalancePersistent:
       "チャージしたクレジットに有効期限はなく残高として保持されます（変更時は別途お知らせします）。",
-    creditRefundLegalTodo: "TODO：正式リリース前に返金ポリシーの法務確認が必要です。",
     creditRefundMustAgree: "返金ポリシーに同意しないと決済に進めません。",
     creditCheckoutLoginTitle: "ログイン後にクレジットを購入できます",
     creditCheckoutLoginDesc: "ログインページへ移動します。",
@@ -573,8 +572,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pricingCheckoutRedirecting: "決済ページへ移動しています…",
     pricing401Description: "/login でログインしてから再度お試しください。",
     billingPaidTitle: "お支払いが完了しました。",
-    billingPaidWebhookDelay:
-      "クレジット反映まで数十秒かかることがあります（Lemon Squeezy のWebhook処理）。しばらくしてから残高をご確認ください。",
+    billingCreditsAppliedNotice: "クレジットがアカウントに反映されました。",
+    billingCreditDelayedMessage:
+      "お支払いは完了していますが、クレジット反映が遅れています。しばらくしてから更新するか、サポートへお問い合わせください。",
     billingCreditsCheckFail: "直後にクレジットを確認できませんでした。",
     billingCreditsRefreshError: "クレジットの更新中にエラーが発生しました。",
     billingCancelled: "決済をキャンセルしました。",

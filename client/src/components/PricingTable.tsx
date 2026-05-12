@@ -5,24 +5,22 @@
 import { useState } from "react";
 import { Check, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { Translations } from "@/lib/mockData";
+import { Translations, type Language } from "@/lib/mockData";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { isCreditChargeCheckoutDisabled } from "@shared/billingUiRules";
+import { creditPackRowsForDisplay } from "@shared/creditPackCatalog";
 
 interface PricingTableProps {
   t: Translations;
+  /** 서버 checkout locale 및 표시 언어 */
+  locale: Language;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }
 
 type PackId = "starter" | "standard" | "pro";
 
-/** 크레딧 수량·USD 가격은 서버 `server/paymentProviders/packages.ts` 와 일치해야 함 */
-const PACKS: { id: PackId; credits: number; priceUsd: string }[] = [
-  { id: "starter", credits: 20, priceUsd: "$4.99" },
-  { id: "standard", credits: 50, priceUsd: "$9.99" },
-  { id: "pro", credits: 200, priceUsd: "$29.99" },
-];
+const PACKS = creditPackRowsForDisplay();
 
 function packDisplayName(id: PackId, t: Translations): string {
   switch (id) {
@@ -37,7 +35,7 @@ function packDisplayName(id: PackId, t: Translations): string {
   }
 }
 
-export default function PricingTable({ t, isAuthenticated, onRequireLogin }: PricingTableProps) {
+export default function PricingTable({ t, locale, isAuthenticated, onRequireLogin }: PricingTableProps) {
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -61,30 +59,49 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
           "Content-Type": "application/json",
           ...headers,
         },
-        body: JSON.stringify({ packageId, provider: "lemonsqueezy" }),
+        body: JSON.stringify({ packageId, provider: "lemonsqueezy", locale }),
       });
-      const body = (await res.json().catch(() => ({}))) as {
+      const raw = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         url?: string;
         message?: string;
+        code?: string;
       };
       if (res.status === 401) {
         toast.error(t.loginRequired, { description: t.pricing401Description });
         onRequireLogin();
         return;
       }
-      if (!res.ok || body.success === false) {
-        const msg =
-          typeof body.message === "string" && body.message.trim()
-            ? body.message
-            : t.pricingCheckoutFailedDesc;
-        toast.error(t.pricingCheckoutFailedTitle, { description: msg });
+      if (!res.ok || raw.success === false) {
+        const serverMsg = typeof raw.message === "string" && raw.message.trim() ? raw.message : "";
+        const desc =
+          raw.code === "CHECKOUT_LEMON_CONFIG" || raw.code === "CHECKOUT_LEMON_API"
+            ? t.pricingCheckoutServerErrorDetail
+            : serverMsg || t.pricingCheckoutFailedDesc;
+        toast.error(t.pricingCheckoutFailedTitle, { description: desc });
         return;
       }
 
-      if (typeof body.url === "string" && body.url) {
+      if (typeof raw.url === "string" && raw.url) {
+        try {
+          const cr = await fetch("/api/credits/me", {
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              ...headers,
+            },
+          });
+          if (cr.ok) {
+            const j = (await cr.json()) as { credits?: unknown };
+            if (typeof j.credits === "number") {
+              sessionStorage.setItem("katatalk_billing_baseline_credits", String(j.credits));
+            }
+          }
+        } catch {
+          /* 결제 직전 잔액 저장 실패 시에도 checkout 진행 */
+        }
         toast.message(t.pricingCheckoutRedirecting);
-        window.location.href = body.url;
+        window.location.href = raw.url;
         return;
       }
 
@@ -125,10 +142,7 @@ export default function PricingTable({ t, isAuthenticated, onRequireLogin }: Pri
             checked={policyAccepted}
             onChange={e => setPolicyAccepted(e.target.checked)}
           />
-          <span>
-            <span className="text-slate-200">{t.creditRefundPolicyAck}</span>
-            <span className="block mt-2 text-slate-500">{t.creditRefundLegalTodo}</span>
-          </span>
+          <span className="text-slate-200">{t.creditRefundPolicyAck}</span>
         </label>
       </div>
 

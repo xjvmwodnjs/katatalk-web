@@ -67,33 +67,84 @@ export default function Home() {
     const billing = params.get("billing");
     if (!billing) return;
 
+    if (billing === "cancel") {
+      toast.message(TRANSLATIONS[lang].billingCancelled);
+      window.history.replaceState({}, "", window.location.pathname || "/");
+      return;
+    }
+
+    if (billing !== "success") return;
+
+    let cancelled = false;
+    const POLL_MS = 2000;
+    const MAX_MS = 30_000;
+
     void (async () => {
       const bt = TRANSLATIONS[lang];
-      if (billing === "success") {
-        try {
-          const h = await getAnalyzeAuthHeaders();
-          const me = await fetch("/api/credits/me", { headers: { ...h }, credentials: "include" });
-          if (!me.ok) {
-            toast.error(bt.billingCreditsCheckFail, {
-              description: bt.pricingCheckoutFailedDesc,
-            });
-          } else {
-            toast.success(bt.billingPaidTitle, {
-              description: bt.billingPaidWebhookDelay,
-            });
-          }
-        } catch {
-          toast.error(bt.billingCreditsRefreshError);
-        }
+      const h = await getAnalyzeAuthHeaders().catch(() => null as null);
+      if (!h) {
+        toast.error(bt.billingCreditsRefreshError);
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+
+      const baselineStored = sessionStorage.getItem("katatalk_billing_baseline_credits");
+      sessionStorage.removeItem("katatalk_billing_baseline_credits");
+
+      async function readCredits(): Promise<number | null> {
+        const r = await fetch("/api/credits/me", {
+          headers: { ...h },
+          credentials: "include",
+        });
+        if (!r.ok) return null;
+        const j = (await r.json()) as { credits?: unknown };
+        return typeof j.credits === "number" ? j.credits : null;
+      }
+
+      const c0 = await readCredits();
+      if (cancelled || c0 === null) {
+        toast.error(bt.billingCreditsCheckFail, { description: bt.pricingCheckoutFailedDesc });
         await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
         return;
       }
-      if (billing === "cancel") {
-        toast.message(TRANSLATIONS[lang].billingCancelled);
+
+      let baseline: number;
+      if (baselineStored != null && baselineStored !== "" && !Number.isNaN(Number(baselineStored))) {
+        baseline = Number(baselineStored);
+      } else {
+        baseline = c0;
+      }
+
+      if (c0 > baseline) {
+        toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+        await utils.profile.getSubscription.invalidate();
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+
+      const deadline = Date.now() + MAX_MS;
+      while (!cancelled && Date.now() < deadline) {
+        await sleep(POLL_MS);
+        const c = await readCredits();
+        if (c !== null && c > baseline) {
+          toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+          await utils.profile.getSubscription.invalidate();
+          window.history.replaceState({}, "", window.location.pathname || "/");
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        toast.message(bt.billingCreditDelayedMessage);
+        await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, utils, lang]);
 
   // Fetch subscription info if authenticated

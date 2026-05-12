@@ -307,4 +307,70 @@ describe("Payment webhooks HTTP", () => {
     expect(res.status).toBe(200);
     expect(spy).toHaveBeenCalled();
   });
+
+  it("Lemon webhook returns 500 when addCredits returns ok false", async () => {
+    vi.spyOn(creditService, "addCreditsFromPaymentWebhook").mockResolvedValue({
+      ok: false,
+      duplicate: false,
+      credits: null,
+    });
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_http_fail" },
+      data: {
+        type: "orders",
+        id: "order_http_fail",
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_a",
+            creditPackageId: "starter",
+            creditAmount: "20",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(500);
+  });
+
+  it("Lemon webhook returns 200 with duplicate when addCredits marks duplicate", async () => {
+    vi.spyOn(creditService, "addCreditsFromPaymentWebhook").mockResolvedValue({
+      ok: true,
+      duplicate: true,
+      credits: 72,
+    });
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_http_dup" },
+      data: {
+        type: "orders",
+        id: "order_http_dup",
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_a",
+            creditPackageId: "starter",
+            creditAmount: "20",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { duplicate?: boolean };
+    expect(json.duplicate).toBe(true);
+  });
 });

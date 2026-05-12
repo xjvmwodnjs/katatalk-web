@@ -1,10 +1,7 @@
 import type { CreditPackId, PaymentProviderId, UiLocale } from "./types";
+import { CREDIT_PACK_CREDITS } from "@shared/creditPackCatalog";
 
-export const CREDIT_PACK_CREDITS: Record<CreditPackId, number> = {
-  starter: 20,
-  standard: 50,
-  pro: 200,
-};
+export { CREDIT_PACK_CREDITS };
 
 export function getCreditAmountForPackage(packageId: CreditPackId): number {
   return CREDIT_PACK_CREDITS[packageId];

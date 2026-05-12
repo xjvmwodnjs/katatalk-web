@@ -2,7 +2,9 @@ import type { AuthenticatedUser } from "../_core/sdk";
 
 export type PaymentProviderId = "toss" | "lemonsqueezy";
 
-export type CreditPackId = "starter" | "standard" | "pro";
+import type { CreditPackId } from "@shared/creditPackCatalog";
+
+export type { CreditPackId };
 
 export type UiLocale = "ko" | "en" | "zh" | "ja";
 

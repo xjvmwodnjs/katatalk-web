@@ -15,7 +15,8 @@ describe("credit checkout i18n (mockData)", () => {
       expect(t.creditPackStarter.length).toBeGreaterThan(0);
       expect(t.creditsUnit.length).toBeGreaterThan(0);
       expect(t.pricingCheckoutUrlError.length).toBeGreaterThan(0);
-      expect(t.billingPaidWebhookDelay.length).toBeGreaterThan(0);
+      expect(t.billingCreditsAppliedNotice.length).toBeGreaterThan(0);
+      expect(t.billingCreditDelayedMessage.length).toBeGreaterThan(0);
     }
   });
 
@@ -24,5 +25,13 @@ describe("credit checkout i18n (mockData)", () => {
     expect(TRANSLATIONS.en.pricingCheckoutButton.toLowerCase()).toContain("checkout");
     expect(TRANSLATIONS.ja.pricingCheckoutButton).toContain("決済");
     expect(TRANSLATIONS.zh.pricingCheckoutButton.length).toBeGreaterThan(0);
+  });
+
+  it("does not expose legal TODO lines on user-facing refund copy", () => {
+    for (const lang of LANGS) {
+      const t = TRANSLATIONS[lang];
+      expect(t.creditRefundPolicyAck.toUpperCase()).not.toContain("TODO");
+      expect(t.creditBulletBalancePersistent.toUpperCase()).not.toContain("법무");
+    }
   });
 });

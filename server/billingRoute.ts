@@ -35,8 +35,10 @@ function paymentIdempotencyKey(provider: PaymentProviderId, stableId: string): s
   return `payment:${provider}:${stableId}`;
 }
 
-function sendBillingError(res: Response, status: number, message: string): void {
-  res.status(status).json({ success: false, message });
+function sendBillingError(res: Response, status: number, message: string, code?: string): void {
+  const body: { success: false; message: string; code?: string } = { success: false, message };
+  if (code) body.code = code;
+  res.status(status).json(body);
 }
 
 /** Lemon Squeezy / Toss 웹훅 — raw body 로 서명 검증 */
@@ -111,7 +113,7 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
       const stable = ev.paymentEventId ?? ev.paymentOrderId ?? "unknown";
       const idem = paymentIdempotencyKey("lemonsqueezy", stable);
 
-      await addCreditsFromPaymentWebhook({
+      const grant = await addCreditsFromPaymentWebhook({
         clerkUserId: ev.clerkUserId,
         amount: ev.creditAmount,
         idempotencyKey: idem,
@@ -122,7 +124,24 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         description: ev.description,
       });
 
-      res.status(200).json({ received: true });
+      if (grant.duplicate) {
+        res.status(200).json({ received: true, duplicate: true });
+        return;
+      }
+
+      if (grant.ok === true && grant.credits !== null) {
+        res.status(200).json({ received: true });
+        return;
+      }
+
+      console.error("[billing webhook lemonsqueezy] credit grant not applied", {
+        provider: "lemonsqueezy",
+        payment_event_id: ev.paymentEventId,
+        payment_order_id: ev.paymentOrderId,
+        clerk_user_id: ev.clerkUserId,
+        reason: "ADD_CREDITS_NOT_OK",
+      });
+      res.status(500).json({ received: false });
     } catch {
       res.status(500).json({ received: false });
     }
@@ -143,7 +162,8 @@ function createCheckoutHandler(req: Request, res: Response): void {
         sendBillingError(
           res,
           400,
-          "packageId·provider·locale 형식이 올바르지 않습니다. 임의의 금액·variant 필드는 전송할 수 없습니다."
+          "packageId·provider·locale 형식이 올바르지 않습니다. 임의의 금액·variant 필드는 전송할 수 없습니다.",
+          "CHECKOUT_VALIDATION"
         );
         return;
       }
@@ -152,7 +172,12 @@ function createCheckoutHandler(req: Request, res: Response): void {
       const uiLocale: UiLocale = locale ?? "en";
 
       if (bodyProvider === "toss") {
-        sendBillingError(res, 400, "Toss 결제는 아직 준비 중입니다. Lemon Squeezy 로 결제해 주세요.");
+        sendBillingError(
+          res,
+          400,
+          "Toss 결제는 아직 준비 중입니다. Lemon Squeezy 로 결제해 주세요.",
+          "CHECKOUT_TOSS_DISABLED"
+        );
         return;
       }
 
@@ -183,7 +208,8 @@ function createCheckoutHandler(req: Request, res: Response): void {
           sendBillingError(
             res,
             503,
-            "Lemon Squeezy 결제에 필요한 서버 설정이 누락되었습니다. APP_BASE_URL·API 키·스토어 ID·variant ID를 확인하거나 관리자에게 문의해 주세요."
+            "Lemon Squeezy 결제에 필요한 서버 설정이 누락되었습니다. APP_BASE_URL·API 키·스토어 ID·variant ID를 확인하거나 관리자에게 문의해 주세요.",
+            "CHECKOUT_LEMON_CONFIG"
           );
           return;
         }
@@ -194,14 +220,15 @@ function createCheckoutHandler(req: Request, res: Response): void {
           sendBillingError(
             res,
             503,
-            "Lemon Squeezy 결제 세션을 만들 수 없습니다. 상품·variant 설정을 확인하거나 잠시 후 다시 시도해 주세요."
+            "Lemon Squeezy 결제 세션을 만들 수 없습니다. 상품·variant 설정을 확인하거나 잠시 후 다시 시도해 주세요.",
+            "CHECKOUT_LEMON_API"
           );
           return;
         }
-        sendBillingError(res, 503, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+        sendBillingError(res, 503, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", "CHECKOUT_GENERIC");
       }
     } catch {
-      sendBillingError(res, 500, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+      sendBillingError(res, 500, "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", "CHECKOUT_INTERNAL");
     }
   })();
 }
