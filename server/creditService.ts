@@ -206,12 +206,33 @@ export async function addCreditsFromPaymentWebhook(args: {
   }
   const row = parseRpcJson(data);
   const errCode = str(row?.error);
+  const duplicate = row?.duplicate === true;
+  const credits = num(row?.credits);
+  let ok = row?.ok === true;
+  if (ok && !duplicate && credits == null) {
+    ok = false;
+  }
+  let errorOut = errCode;
+  if (!ok && row?.ok === true && !duplicate && credits == null) {
+    errorOut = "RPC_OK_WITHOUT_CREDITS";
+  }
   return {
-    ok: row?.ok === true,
-    duplicate: row?.duplicate === true,
-    credits: num(row?.credits),
-    errorCode: errCode,
+    ok,
+    duplicate,
+    credits,
+    errorCode: ok ? null : errorOut,
   };
+}
+
+/** 웹훅 지급 직후 credit_logs 행 존재 확인(개발 시 RPC·DB 불일치 탐지) */
+export async function fetchCreditLogIdByIdempotencyKey(idempotencyKey: string): Promise<string | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.from("credit_logs").select("id").eq("idempotency_key", idempotencyKey).maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  const row = data as { id?: string } | null;
+  return typeof row?.id === "string" ? row.id : null;
 }
 
 export async function insertAnalysisJobQueued(args: {

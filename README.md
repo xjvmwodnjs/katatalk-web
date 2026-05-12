@@ -120,6 +120,34 @@ pnpm start
 - 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.  
 - 크레딧 결제 UI(`/pricing`) 문구는 **`katatalk-ui-lang`** 저장값과 동일한 네 언어(`mockData` `TRANSLATIONS`)로 표시됩니다.
 - **운영 체크리스트**: Lemon 대시보드 각 variant의 **실제 과금 금액**이 위 표·`shared/creditPackCatalog.ts` 와 일치하는지 배포 전에 확인합니다. **Lemon 호스팅 결제(Hosted Checkout) 화면 언어**는 이 저장소에서 제어하지 않으며, Lemon 설정에서 조정하거나 별도 검토가 필요합니다.
+- **Lemon 대시보드에서 직접 연 결제 링크(앱이 아닌 URL)로 결제**하면 `checkout_data.custom` 이 전달되지 않아 웹훅에 `custom_data`가 없을 수 있으며, 이 경우 **크레딧 지급이 되지 않습니다**. 반드시 앱의 **`/pricing` → `POST /api/billing/create-checkout` 이 돌려준 URL**로 결제하세요.
+
+### 결제·웹훅 문제 조사용 SQL (Supabase)
+
+잔액·충전 기록 확인:
+
+```sql
+select id, credits, email, updated_at
+from profiles
+order by updated_at desc
+limit 10;
+
+select user_id, amount, type, payment_provider, payment_event_id, payment_order_id, idempotency_key, created_at
+from credit_logs
+order by created_at desc
+limit 20;
+```
+
+과거 `payment:lemonsqueezy:unknown` 등 잘못된 idempotency 키가 쌓였는지 확인(필요 시 운영자가 원인 파악 후 정리):
+
+```sql
+select *
+from credit_logs
+where idempotency_key like '%unknown%'
+order by created_at desc;
+```
+
+**수동으로 `credits` 를 올리는 SQL 은 임의로 실행하지 말고**, 먼저 웹훅 응답 `action`·서버 로그·위 쿼리로 원인을 확인하세요.
 
 ## Supabase 마이그레이션
 

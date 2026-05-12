@@ -83,6 +83,26 @@ describe("Lemon Squeezy webhook verify", () => {
     if (!v.ok) expect(v.reason).toBe("CREDIT_AMOUNT_MISMATCH");
   });
 
+  it("order_created with no custom_data yields MISSING_CUSTOM_DATA", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_empty_custom" },
+      data: {
+        type: "orders",
+        id: "order_empty_custom",
+        attributes: {},
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const v = await lemonsqueezyProvider.verifyWebhookAndExtractEvent({
+      rawBody: Buffer.from(rawStr, "utf8"),
+      headers: { "x-signature": sig },
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toBe("MISSING_CUSTOM_DATA");
+  });
+
   it("order_created reads custom_data from meta only (Lemon docs)", async () => {
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
     const body = {

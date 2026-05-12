@@ -202,6 +202,39 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(body.creditAmount).toBe(20);
   });
 
+  it("POST /api/billing/create-checkout calls ensureProfileForClerkUser before Lemon checkout API", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const ensureSpy = vi.spyOn(creditService, "ensureProfileForClerkUser").mockResolvedValue({
+      credits: 2,
+      signupBonusRows: 0,
+    });
+    const originalFetch = global.fetch.bind(global);
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("api.lemonsqueezy.com")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: { attributes: { url: "https://example.lemonsqueezy.com/checkout/ensure-profile" } },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      return originalFetch(input as RequestInfo, init);
+    });
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", locale: "ko" }),
+    });
+    fetchSpy.mockRestore();
+    expect(res.status).toBe(200);
+    expect(ensureSpy).toHaveBeenCalledTimes(1);
+    expect(ensureSpy.mock.calls[0]?.[0]?.openId).toBe(userA.openId);
+    ensureSpy.mockRestore();
+  });
+
   it("POST /api/billing/create-checkout sends Lemon checkout_data.custom fields", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const originalFetch = global.fetch.bind(global);
@@ -273,6 +306,12 @@ describe("Payment webhooks HTTP", () => {
   let server: http.Server;
   let port: number;
 
+  beforeEach(() => {
+    vi.spyOn(creditService, "fetchCreditLogIdByIdempotencyKey").mockResolvedValue(
+      "00000000-0000-0000-0000-000000009999"
+    );
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -340,7 +379,28 @@ describe("Payment webhooks HTTP", () => {
       body: rawStr,
     });
     expect(res.status).toBe(200);
+    const grantedJson = (await res.json()) as { action?: string };
+    expect(grantedJson.action).toBe("granted");
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("Lemon webhook subscription_created returns 200 ignored_non_target_event", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "subscription_created" },
+      data: { type: "subscriptions", id: "1", attributes: {} },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(200);
+    const ign = (await res.json()) as { action?: string; received?: boolean };
+    expect(ign.received).toBe(true);
+    expect(ign.action).toBe("ignored_non_target_event");
   });
 
   it("Lemon webhook returns 500 when addCredits returns ok false", async () => {
@@ -374,6 +434,8 @@ describe("Payment webhooks HTTP", () => {
       body: rawStr,
     });
     expect(res.status).toBe(500);
+    const failJ = (await res.json()) as { action?: string };
+    expect(failJ.action).toBe("grant_failed");
   });
 
   it("Lemon webhook returns 200 with duplicate when addCredits marks duplicate", async () => {
@@ -407,8 +469,9 @@ describe("Payment webhooks HTTP", () => {
       body: rawStr,
     });
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { duplicate?: boolean };
+    const json = (await res.json()) as { duplicate?: boolean; action?: string };
     expect(json.duplicate).toBe(true);
+    expect(json.action).toBe("duplicate");
   });
 
   it("Lemon webhook order_created without custom_data returns 422", async () => {
@@ -429,6 +492,9 @@ describe("Payment webhooks HTTP", () => {
       body: rawStr,
     });
     expect(res.status).toBe(422);
+    const miss = (await res.json()) as { reason?: string; action?: string };
+    expect(miss.reason).toBe("MISSING_CUSTOM_DATA");
+    expect(miss.action).toBe("missing_custom_data");
   });
 
   it("Lemon webhook order_created without stable order/webhook id returns 500", async () => {
@@ -455,5 +521,8 @@ describe("Payment webhooks HTTP", () => {
       body: rawStr,
     });
     expect(res.status).toBe(500);
+    const noId = (await res.json()) as { action?: string; reason?: string };
+    expect(noId.action).toBe("verify_failed");
+    expect(noId.reason).toBe("MISSING_ORDER_IDENTIFIERS");
   });
 });

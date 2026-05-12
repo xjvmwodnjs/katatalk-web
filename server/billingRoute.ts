@@ -11,6 +11,7 @@ import { z } from "zod";
 import {
   addCreditsFromPaymentWebhook,
   ensureProfileForClerkUser,
+  fetchCreditLogIdByIdempotencyKey,
   walletSubjectFromAuthUser,
 } from "./creditService";
 import {
@@ -56,6 +57,7 @@ function lemonWebhookVerifyFailureStatus(reason: string): number {
       return 401;
     case "MISSING_ORDER_IDENTIFIERS":
       return 500;
+    case "MISSING_CUSTOM_DATA":
     case "INVALID_CUSTOM_DATA":
     case "INVALID_CREDIT_AMOUNT":
     case "CREDIT_AMOUNT_MISMATCH":
@@ -64,6 +66,48 @@ function lemonWebhookVerifyFailureStatus(reason: string): number {
     default:
       return 400;
   }
+}
+
+function peekMetaEventNameFromWebhookBody(rawBody: Buffer): string {
+  try {
+    const j = JSON.parse(rawBody.toString("utf8")) as { meta?: { event_name?: string } };
+    return typeof j.meta?.event_name === "string" ? j.meta.event_name : "";
+  } catch {
+    return "";
+  }
+}
+
+/** NODE_ENV=production 이 아닐 때만 응답 body 에 디버그 요약 포함 */
+function lemonWebhookExposeDebugInBody(): boolean {
+  return !ENV.isProduction;
+}
+
+/**
+ * POST /api/billing/webhook/lemonsqueezy 가 200을 반환하는 경우:
+ * - ignored_non_target_event: order_created 가 아닌 Lemon 이벤트
+ * - duplicate: 동일 idempotency 키로 이미 refill 처리됨
+ * - granted: Supabase RPC 성공·잔액 반영
+ *
+ * order_created 인데 custom 불충분·지급 실패·프로필 없음 등은 200 금지.
+ */
+function sendLemonWebhookJson(res: Response, status: number, payload: Record<string, unknown>): void {
+  if (lemonWebhookExposeDebugInBody()) {
+    res.status(status).json(payload);
+    return;
+  }
+  const received = payload.received;
+  const action = payload.action;
+  const minimal: Record<string, unknown> = {
+    received: typeof received === "boolean" ? received : false,
+    action: typeof action === "string" ? action : "system_error",
+  };
+  if (typeof payload.duplicate === "boolean") {
+    minimal.duplicate = payload.duplicate;
+  }
+  if (typeof payload.reason === "string" && payload.reason.length > 0) {
+    minimal.reason = payload.reason;
+  }
+  res.status(status).json(minimal);
 }
 
 function sendBillingError(res: Response, status: number, message: string, code?: string): void {
@@ -128,8 +172,16 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
       });
       if (!v.ok) {
         const status = lemonWebhookVerifyFailureStatus(v.reason);
+        const eventNamePeek = peekMetaEventNameFromWebhookBody(rawBody);
         if (status === 200) {
-          res.status(200).json({ received: true, ignored: true });
+          sendLemonWebhookJson(res, 200, {
+            received: true,
+            action: "ignored_non_target_event",
+            eventName: eventNamePeek || "(unknown)",
+            paymentProvider: "lemonsqueezy",
+            grantOk: false,
+            grantDuplicate: false,
+          });
           return;
         }
         if (v.debug) {
@@ -140,7 +192,22 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         } else {
           console.warn("[billing webhook lemonsqueezy] verify rejected", { reason: v.reason });
         }
-        res.status(status).json({ received: false, reason: v.reason });
+        const verifyAction =
+          v.reason === "MISSING_CUSTOM_DATA" ? "missing_custom_data" : "verify_failed";
+        sendLemonWebhookJson(res, status, {
+          received: false,
+          action: verifyAction,
+          reason: v.reason,
+          eventName: v.debug?.eventName ?? eventNamePeek,
+          paymentProvider: "lemonsqueezy",
+          hasCustomData: Boolean(v.debug?.customDataKeys?.length),
+          customDataKeys: v.debug?.customDataKeys ?? [],
+          hasMetaCustomData: v.debug?.hasMetaCustomData ?? false,
+          hasDataAttributesCustomData: v.debug?.hasDataAttributesCustomData ?? false,
+          hasAttributesCustomData: v.debug?.hasAttributesCustomData ?? false,
+          grantOk: false,
+          grantDuplicate: false,
+        });
         return;
       }
 
@@ -152,7 +219,14 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
           payment_event_id: ev.paymentEventId,
           payment_order_id: ev.paymentOrderId,
         });
-        res.status(500).json({ received: false });
+        sendLemonWebhookJson(res, 500, {
+          received: false,
+          action: "grant_failed",
+          reason: "MISSING_STABLE_PAYMENT_ID",
+          paymentProvider: "lemonsqueezy",
+          grantOk: false,
+          grantDuplicate: false,
+        });
         return;
       }
       const idem = paymentIdempotencyKey("lemonsqueezy", stable.trim());
@@ -175,11 +249,24 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         credit_package_id: ev.creditPackageId,
         credit_amount: ev.creditAmount,
         clerk_user_masked: maskClerkUserId(ev.clerkUserId),
+        idempotency_key: idem,
         grant_ok: grant.ok,
         grant_duplicate: grant.duplicate,
         grant_credits: grant.credits,
         grant_error_code: grant.errorCode,
       });
+
+      const commonDevFields = {
+        eventName: "order_created",
+        paymentProvider: "lemonsqueezy",
+        paymentEventIdPresent: Boolean(ev.paymentEventId?.trim()),
+        paymentOrderIdPresent: Boolean(ev.paymentOrderId?.trim()),
+        idempotencyKeyPreview: idem.length > 56 ? `${idem.slice(0, 28)}…${idem.slice(-14)}` : idem,
+        grantOk: grant.ok,
+        grantDuplicate: grant.duplicate,
+        grantCredits: grant.credits,
+        grantErrorCode: grant.errorCode,
+      };
 
       if (grant.duplicate) {
         console.warn("[billing webhook lemonsqueezy] duplicate idempotency", {
@@ -187,13 +274,54 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
           payment_event_id: ev.paymentEventId,
           payment_order_id: ev.paymentOrderId,
           clerk_user_masked: maskClerkUserId(ev.clerkUserId),
+          idempotency_key: idem,
         });
-        res.status(200).json({ received: true, duplicate: true });
+        sendLemonWebhookJson(res, 200, {
+          received: true,
+          action: "duplicate",
+          duplicate: true,
+          reason: "IDEMPOTENCY_DUPLICATE",
+          ...commonDevFields,
+        });
         return;
       }
 
       if (grant.ok === true && grant.credits !== null) {
-        res.status(200).json({ received: true });
+        if (lemonWebhookExposeDebugInBody()) {
+          let logId: string | null = null;
+          try {
+            logId = await fetchCreditLogIdByIdempotencyKey(idem);
+          } catch (e) {
+            console.error("[billing webhook lemonsqueezy] credit_logs lookup failed", {
+              idempotency_key: idem,
+              message: e instanceof Error ? e.message : String(e),
+            });
+            sendLemonWebhookJson(res, 500, {
+              received: false,
+              action: "grant_failed",
+              reason: "CREDIT_LOG_VERIFY_FAILED",
+              ...commonDevFields,
+            });
+            return;
+          }
+          if (!logId) {
+            console.error("[billing webhook lemonsqueezy] RPC ok but credit_logs row missing", {
+              idempotency_key: idem,
+            });
+            sendLemonWebhookJson(res, 500, {
+              received: false,
+              action: "grant_failed",
+              reason: "CREDIT_LOG_MISSING_AFTER_RPC",
+              ...commonDevFields,
+            });
+            return;
+          }
+        }
+        sendLemonWebhookJson(res, 200, {
+          received: true,
+          action: "granted",
+          ...commonDevFields,
+        });
         return;
       }
 
@@ -202,7 +330,12 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
           clerk_user_masked: maskClerkUserId(ev.clerkUserId),
           payment_order_id: ev.paymentOrderId,
         });
-        res.status(422).json({ received: false });
+        sendLemonWebhookJson(res, 422, {
+          received: false,
+          action: "profile_not_found",
+          reason: "PROFILE_NOT_FOUND",
+          ...commonDevFields,
+        });
         return;
       }
 
@@ -213,10 +346,23 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         clerk_user_masked: maskClerkUserId(ev.clerkUserId),
         reason: "ADD_CREDITS_NOT_OK",
         grant_error_code: grant.errorCode,
+        idempotency_key: idem,
       });
-      res.status(500).json({ received: false });
+      sendLemonWebhookJson(res, 500, {
+        received: false,
+        action: "grant_failed",
+        reason: grant.errorCode ?? "ADD_CREDITS_NOT_OK",
+        ...commonDevFields,
+      });
     } catch {
-      res.status(500).json({ received: false });
+      sendLemonWebhookJson(res, 500, {
+        received: false,
+        action: "system_error",
+        reason: "UNCAUGHT",
+        paymentProvider: "lemonsqueezy",
+        grantOk: false,
+        grantDuplicate: false,
+      });
     }
   })();
 }

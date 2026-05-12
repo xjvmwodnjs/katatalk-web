@@ -259,6 +259,14 @@ export const lemonsqueezyProvider: PaymentProvider = {
 
     const custom = mergeOrderCustomData(body);
 
+    if (Object.keys(custom).length === 0) {
+      return {
+        ok: false,
+        reason: "MISSING_CUSTOM_DATA",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
+    }
+
     const ppRaw = pickCustomString(custom, "paymentProvider", "payment_provider");
     if (ppRaw && ppRaw.toLowerCase() !== "lemonsqueezy") {
       return {
