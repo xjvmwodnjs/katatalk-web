@@ -11,6 +11,7 @@
 
 ## 인프라
 
+- [ ] **초기 베타 호스팅:** long-running **Node**(Railway 우선, Render 차순) — README 배포 절 참고. **Vercel 은 현재 미사용·보류**(Express listen·raw body webhook·in-process mock·memory rate limit·향후 KataGo worker 등으로 serverless adapter 분리 후 재검토).
 - [ ] Supabase **`002` 마이그레이션** 적용 후 `add_credits_from_payment` RPC 검증
 - [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지
 - [ ] **Lemon `order_created`**: redacted JSON fixture 추가 후 `lemonsqueezyProvider` idempotency 키 우선순위 고정 테스트
@@ -18,7 +19,7 @@
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용). mock 파이프라인은 동일 테이블만 갱신.
-- [ ] **운영 배포 전**: DB-backed **queue/worker** 전환 (Vercel/serverless 에서 in-process mock 타이머 비권장).
+- [ ] **운영 배포 전**: DB-backed **queue/worker** 전환 (다중 인스턴스·슬립 가능 호스팅에서 in-process mock 타이머만으로는 비권장).
 - [ ] **KataGo / LLM** (현재 mock 유지).
 - [ ] **KataGo worker·큐** 설계 및 연동.
 

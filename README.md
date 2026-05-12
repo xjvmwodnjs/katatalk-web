@@ -28,17 +28,54 @@ pnpm build
 pnpm start
 ```
 
-`pnpm start` 는 Express 가 빌드된 정적 파일과 API 를 함께 제공하는 형태를 가정합니다. Vercel 등에 올릴 때는 **Node 런타임**에서 동일하게 `pnpm build` 후 `pnpm start` 하거나, 프론트·API 를 분리 배포하는 경우 별도 리버스 프록시 설정이 필요합니다.
+`pnpm start` 는 [`scripts/run-server.mjs`](scripts/run-server.mjs) 가 **`NODE_ENV=production`** 으로 **`node dist/index.js`** 를 실행합니다. `pnpm build` 는 **Vite 정적 자산**과 **esbuild 로 묶은 서버 엔트리(`dist/index.js`)** 를 함께 생성합니다.
 
-### 운영 배포 전략
+#### Railway / Render — Build Command · Start Command
+
+패키지 매니저는 **pnpm** 입니다. Corepack 을 켠 환경에서 아래를 권장합니다.
+
+플랫폼이 **의존성 설치를 자동**으로 하는 경우:
+
+- **Build Command:** `corepack pnpm build`  
+- **Start Command:** `corepack pnpm start`
+
+설치까지 한 줄로 묶고 싶거나, CI와 동일하게 맞추려면:
+
+- **Build Command:** `corepack pnpm install --frozen-lockfile && corepack pnpm build`  
+- **Start Command:** `corepack pnpm start`
+
+Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.json` 이 있는 디렉터리)로 두세요.
+
+### 운영 배포 전략 (장기 실행 Node — Railway 우선)
 
 앱은 **장시간 실행되는 Express 프로세스**(`pnpm start`) 한 개에서 정적 파일·REST API·**raw body 웹훅**을 함께 제공하는 구조를 기준으로 합니다.
 
-**Vercel 순수 static / 짧은 serverless 함수**에 그대로 올리면 API·웹훅·동작 보장이 어렵습니다. Vercel을 쓰려면 **별도 Node 배포(serverless adapter·웹훅 raw body 검증)** 등 추가 설계가 필요합니다. 현재 구조(`server.listen` 단일 프로세스·**raw body 웹훅**·in-process mock 타이머·**메모리 rate limit**)는 **미확정**이며, adapter·queue·외부 rate limit 설계가 선행되어야 합니다.
+| 우선순위 | 플랫폼 |
+|---------|--------|
+| 1순위 | **Railway** (Node Web Service) |
+| 2순위 | **Render** (Web Service) |
+| 추후 검토 | **Fly.io**, **일반 VPS** (Docker/systemd 등) |
 
-**초기 추천 호스팅**(예): **Railway**, **Render**, **Fly.io**, **일반 VPS**(Docker/systemd 등).
+#### Vercel — 현재 미사용·보류
+
+**현재는 Vercel 배포를 사용하지 않으며(보류),** 초기 베타는 **Railway / Render 등 long-running Node** 를 전제로 합니다.
+
+보류 이유:
+
+- 커스텀 **Express `server.listen`** 단일 프로세스 구조
+- Lemon Squeezy 등 **raw body 웹훅 서명 검증**
+- **in-process mock 분석 타이머** 등 프로세스 수명에 묶인 동작
+- **메모리 기반 rate limit** (인스턴스마다 별도 카운터)
+- 향후 **KataGo worker** 가 Express 외부 프로세스로 붙을 가능성
+
+**Vercel(serverless) 적합성은** 위 요소를 **serverless adapter·별도 worker/웹훅 경로**로 나눈 뒤 **별도로 재검토**합니다.
 
 **DB**는 **Supabase**(마이그레이션 적용 프로젝트)입니다.
+
+#### PORT 와 APP_BASE_URL (Railway / Render)
+
+- **PORT:** Railway·Render 는 런타임에 **`PORT`** 환경 변수로 수신 포트를 지정합니다. **플랫폼이 넣어 주는 값을 그대로 쓰고**, 대시보드에서 임의로 **고정 포트에 맞춰 listen 하도록 덮어쓰지 마세요.** Production 에서는 **자동으로 다른 빈 포트로 바꿔 listen 하지 않으며**, 지정 포트 listen 에 실패하면 **프로세스가 종료**됩니다.  
+- **APP_BASE_URL:** 반드시 브라우저·웹훅이 실제로 접속하는 **공개 HTTPS 도메인**(예: `https://your-app.up.railway.app`)을 넣습니다. **`PORT` 나 `http://localhost:…` 를 APP_BASE_URL 로 쓰지 마세요.** (Checkout·리다이렉트·Clerk·Lemon 설정과 불일치합니다.)
 
 **Lemon Squeezy 웹훅**은 반드시 **공개 HTTPS** URL이어야 합니다. 예시:
 
@@ -72,6 +109,75 @@ pnpm start
 `NODE_ENV=production` 이면 기동 시 **`validateServerEnv`** 가 Clerk·Supabase·Lemon·`APP_BASE_URL`(반드시 **`https://`** 로 시작, **`http://localhost` 불가**) 등을 검증합니다. 오류 메시지에는 **변수명만** 포함하고 값은 넣지 않습니다.
 
 **KataGo/LLM이 연결되기 전에는 production에서 유료 공개 mock 분석을 켜면 안 됩니다.** `KATATALK_ALLOW_MOCK_ANALYSIS=true` 가 아니면 production 에서 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 입니다. 스테이징·내부 베타에서만 명시적으로 켜세요.
+
+### Railway / Render — Production 환경 변수 체크리스트
+
+아래 값은 **이름만** 나열합니다. **실제 secret·API 키 값은 README에 적지 말고**, 각 플랫폼 Environment 탭과 `.env`(로컬)에만 넣으세요.
+
+**필수 (production)**
+
+| 변수 | 비고 |
+|------|------|
+| `NODE_ENV` | `production` |
+| `AUTH_PROVIDER` | `clerk` |
+| `VITE_AUTH_PROVIDER` | `clerk` (Vite 클라이언트 번들에 포함) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | 브라우저에 노출되는 Clerk Publishable key |
+| `CLERK_SECRET_KEY` | **서버 전용** — 번들·Git·로그에 넣지 않음 |
+| `JWT_SECRET` | **서버 전용** |
+| `SUPABASE_URL` | Supabase 프로젝트 URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | **서버 전용** — `VITE_` 접두사 금지, 클라이언트 비노출 |
+| `LEMONSQUEEZY_API_KEY` | **서버 전용** |
+| `LEMONSQUEEZY_STORE_ID` | |
+| `LEMONSQUEEZY_WEBHOOK_SECRET` | **서버 전용** — Lemon 대시보드 Webhook Signing secret 과 일치 |
+| `LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID` | |
+| `LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID` | |
+| `LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID` | |
+| `APP_BASE_URL` | **공개 HTTPS 도메인** (예: `https://<배포도메인>`). 포트 번호나 localhost 가 아님 |
+
+**선택**
+
+| 변수 | 비고 |
+|------|------|
+| `KATATALK_ALLOW_MOCK_ANALYSIS` | `true` 일 때만 production 에서 mock 분석 API 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
+
+`PORT` 는 Railway/Render 가 주입합니다. **대시보드에서 임의 고정할 필요 없음**(플랫폼 기본값 사용).
+
+### Railway 배포 절차 (요약)
+
+1. [Railway](https://railway.app/) 에서 **New Project** → **Deploy from GitHub repo** 로 이 저장소 연결  
+2. **Node** 기반 **Web Service** (또는 동등한 서비스) 추가 — **Root** 는 저장소 루트  
+3. **Build Command** / **Start Command** 에 상단 **「Railway / Render — Build Command · Start Command」** 절의 `corepack pnpm …` 명령을 입력  
+4. **Variables** 에 상단 **「Railway / Render — Production 환경 변수 체크리스트」** 의 필수 항목 등록  
+5. 배포가 끝나면 Railway 가 준 **HTTPS 도메인**(예: `*.up.railway.app`)으로 서비스가 열리는지 확인  
+6. **`APP_BASE_URL`** 을 그 **공개 HTTPS URL** 로 설정한 뒤 **재배포**  
+7. **Lemon Squeezy** 대시보드 Webhook URL 을 다음으로 변경:  
+   `https://<railway-도메인>/api/billing/webhook/lemonsqueezy`  
+8. **Clerk** Dashboard 의 **Allowed origins / redirect URLs** 에 production 도메인 추가  
+9. 아래 **「배포 후 스모크 테스트」** 절 수행  
+
+### Render 배포 절차 (요약)
+
+1. Render 대시보드에서 **New** → **Web Service**  
+2. **GitHub** 저장소 연결  
+3. **Runtime:** Node  
+4. **Build Command** / **Start Command** 는 위와 동일하게 `corepack pnpm build` · `corepack pnpm start` (또는 install 포함 한 줄)  
+5. **Environment** 에 동일한 production 변수 등록  
+6. **`APP_BASE_URL`** 을 Render 가 발급한 **HTTPS URL** 로 설정  
+7. Lemon Webhook: `https://<render-도메인>/api/billing/webhook/lemonsqueezy`  
+8. Clerk production URL 허용 목록에 Render 도메인 추가  
+9. **주의:** Render **무료·저가 티어**는 유휴 시 **슬립** 될 수 있어, 첫 요청 지연·웹훅 수신 타이밍·UX 에 영향을 줄 수 있습니다. 결제 웹훅·상시 응답이 중요하면 **유료·상시 구동 플랜** 검토  
+
+### 배포 후 스모크 테스트
+
+별도 **healthcheck API** 는 두지 않습니다. 아래를 **수동**으로 확인합니다.
+
+1. 브라우저에서 **GET /** — 정적 홈이 로드되는지  
+2. **Clerk 로그인** — 세션 후 홈 복귀  
+3. 인증된 상태로 **GET `/api/credits/me`** — 200 및 잔액 JSON  
+4. **`/pricing`** 페이지 로드  
+5. 앱에서 **Lemon checkout** 생성 후 테스트 결제(또는 스테이징 정책에 맞는 흐름)  
+6. Lemon 웹훅 처리 로그·응답에서 **`action=granted`** 에 해당하는 처리 확인  
+7. Supabase **`credit_logs`** 에 **refill** 유형 충전 행이 쌓였는지 SQL/대시보드로 확인  
 
 ### 운영 배포 체크리스트
 
@@ -150,7 +256,7 @@ pnpm start
 - **크레딧 충전**은 **success URL이 아니라** 각 결제사 **웹훅**에서만 **`add_credits_from_payment` RPC** 로 반영 (`payment:<provider>:…` idempotency).  
 - `credit_logs` 의 **`stripe_*` 컬럼은 legacy**(과거 호환). 신규 충전은 **`payment_provider` / `payment_event_id` / `payment_order_id` / `payment_checkout_id`** 를 사용합니다 ([`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql)).  
 - 결제 UI: **환불 정책 동의 체크박스** 필수(운영 전 **법무 검토** TODO).  
-- **Vercel·serverless** 에서 인메모리 job만으로 운영 금지 — DB-backed job/큐 필요.
+- **수평 확장·다중 인스턴스** 환경에서는 인메모리 job만으로 운영하면 안 되며, **DB-backed job/큐** 가 필요합니다. **Vercel 배포는 현재 보류**이며, 초기 베타는 **long-running Node** 호스팅을 전제로 합니다.
 
 상세 TODO는 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
 
@@ -162,7 +268,7 @@ pnpm start
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
 - mock 분석은 여전히 **KataGo·LLM 없이** 동일 테이블을 갱신합니다. 프로세스 안에서는 **`setTimeout` 기반 mock 파이프라인**만 돌아가며, 이는 **인스턴스 로컬 스케줄러**일 뿐입니다.
-- **운영 배포 전**에는 **DB-backed queue/worker** 로 바꿔야 합니다. **Vercel·serverless·수평 확장** 환경에서는 프로세스 내 장시간 mock 파이프라인에 의존하면 안 되며, 다음 단계로 **KataGo worker·큐 설계**가 필요합니다.
+- **운영 배포 전**에는 **DB-backed queue/worker** 로 바꿔야 합니다. **다중 인스턴스** 에서는 프로세스 내 장시간 mock 파이프라인에만 의존하면 안 되며, 다음 단계로 **KataGo worker·큐 설계**가 필요합니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
