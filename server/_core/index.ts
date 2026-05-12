@@ -14,6 +14,7 @@ import { ENV, validateServerEnv } from "./env";
 import { serveStatic, setupVite } from "./vite";
 import { setServerListenPort } from "./serverListenPort";
 import { warnIfAppBaseUrlListenPortMismatch } from "./appBaseUrlPortGuard";
+import { resolveListenPortForServer } from "./listenPort";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -72,19 +73,35 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const preferredPort = parseInt(process.env.PORT || "3000", 10);
+  const port = await resolveListenPortForServer({
+    isProduction: ENV.isProduction,
+    portFromEnv: preferredPort,
+    findAvailablePort,
+  });
 
-  if (port !== preferredPort) {
+  if (!ENV.isProduction && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
   setServerListenPort(port);
   warnIfAppBaseUrlListenPortMismatch();
 
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    console.error(`[server] listen error on port ${port}:`, err?.message ?? err);
+    process.exit(1);
+  });
+
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    if (ENV.isProduction) {
+      console.log(`Server listening on port ${port}`);
+    } else {
+      console.log(`Server running on http://localhost:${port}/`);
+    }
   });
 }
 
-startServer().catch(console.error);
+startServer().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
