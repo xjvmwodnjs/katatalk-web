@@ -34,7 +34,63 @@ if (!process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID?.trim()) {
   process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID = "vitest-variant-pro";
 }
 
-function queryBuilder(table: string) {
+function isoNow() {
+  return new Date().toISOString();
+}
+
+/** Vitest 전용 in-memory analysis_jobs (실제 Supabase 대체) */
+export const vitestAnalysisJobsStore = new Map<string, Record<string, unknown>>();
+
+/** HTTP 테스트 등에서 DB 행을 직접 넣을 때 사용 */
+export function vitestSeedAnalysisJob(row: Record<string, unknown>) {
+  const id = row.id as string;
+  vitestAnalysisJobsStore.set(id, {
+    created_at: isoNow(),
+    updated_at: isoNow(),
+    progress: row.progress ?? 0,
+    ...row,
+  });
+}
+
+function analysisJobsTableBuilder() {
+  return {
+    select(_cols?: string) {
+      return {
+        eq(col: string, val: string) {
+          return {
+            maybeSingle() {
+              const row = vitestAnalysisJobsStore.get(val) ?? null;
+              return Promise.resolve({ data: row, error: null });
+            },
+          };
+        },
+      };
+    },
+    insert(row: Record<string, unknown>) {
+      const id = row.id as string;
+      vitestAnalysisJobsStore.set(id, {
+        ...row,
+        created_at: (row.created_at as string) ?? isoNow(),
+        updated_at: (row.updated_at as string) ?? isoNow(),
+        progress: row.progress ?? 0,
+      });
+      return Promise.resolve({ error: null });
+    },
+    update(patch: Record<string, unknown>) {
+      return {
+        eq(col: string, id: string) {
+          const existing = vitestAnalysisJobsStore.get(id);
+          if (existing) {
+            Object.assign(existing, patch, { updated_at: isoNow() });
+          }
+          return Promise.resolve({ error: null });
+        },
+      };
+    },
+  };
+}
+
+function legacyQueryBuilder(table: string) {
   const builder: Record<string, unknown> = {
     select() {
       return builder;
@@ -54,9 +110,6 @@ function queryBuilder(table: string) {
     maybeSingle() {
       if (table === "profiles") {
         return Promise.resolve({ data: { credits: 2 }, error: null });
-      }
-      if (table === "analysis_jobs") {
-        return Promise.resolve({ data: null, error: null });
       }
       return Promise.resolve({ data: null, error: null });
     },
@@ -108,7 +161,12 @@ vi.mock("./_core/supabaseAdmin", () => {
     }
   );
 
-  const mockFrom = vi.fn((table: string) => queryBuilder(table));
+  const mockFrom = vi.fn((table: string) => {
+    if (table === "analysis_jobs") {
+      return analysisJobsTableBuilder();
+    }
+    return legacyQueryBuilder(table);
+  });
 
   return {
     SupabaseAdminUnavailableError: class SupabaseAdminUnavailableError extends Error {
