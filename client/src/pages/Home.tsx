@@ -4,7 +4,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl, getSignUpUrl, persistUiLang, readStoredUiLang } from "@/const";
+import {
+  getLoginUrl,
+  getSignUpUrl,
+  persistUiLang,
+  readStoredUiLang,
+  KATATALK_UI_LANG_EVENT,
+} from "@/const";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +53,12 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    const syncLang = () => setLang(readStoredUiLang());
+    window.addEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+    return () => window.removeEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+  }, []);
+
   const utils = trpc.useUtils();
 
   useEffect(() => {
@@ -56,33 +68,33 @@ export default function Home() {
     if (!billing) return;
 
     void (async () => {
+      const bt = TRANSLATIONS[lang];
       if (billing === "success") {
         try {
           const h = await getAnalyzeAuthHeaders();
           const me = await fetch("/api/credits/me", { headers: { ...h }, credentials: "include" });
           if (!me.ok) {
-            toast.error("결제 직후 크레딧을 확인하지 못했습니다.", {
-              description: "잠시 후 다시 시도해 주세요.",
+            toast.error(bt.billingCreditsCheckFail, {
+              description: bt.pricingCheckoutFailedDesc,
             });
           } else {
-            toast.success("결제가 완료되었습니다.", {
-              description:
-                "결제 웹훅(Toss / Lemon Squeezy)으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 화면의 크레딧이 갱신되는지 확인해 주세요.",
+            toast.success(bt.billingPaidTitle, {
+              description: bt.billingPaidWebhookDelay,
             });
           }
         } catch {
-          toast.error("크레딧 새로고침 중 오류가 발생했습니다.");
+          toast.error(bt.billingCreditsRefreshError);
         }
         await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
         return;
       }
       if (billing === "cancel") {
-        toast.message("결제를 취소했습니다.");
+        toast.message(TRANSLATIONS[lang].billingCancelled);
         window.history.replaceState({}, "", window.location.pathname || "/");
       }
     })();
-  }, [isAuthenticated, utils]);
+  }, [isAuthenticated, utils, lang]);
 
   // Fetch subscription info if authenticated
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {

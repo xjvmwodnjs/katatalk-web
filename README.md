@@ -117,7 +117,8 @@ pnpm start
 - **환경 변수**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`(대시보드 **Webhook Signing secret** 과 동일해야 함), `LEMONSQUEEZY_CREDIT_PACK_*_VARIANT_ID` 3종, 결제 후 복귀 URL용 **`APP_BASE_URL`** (예: 로컬 `http://localhost:3000`).  
 - **웹훅 URL**: `https://<공개호스트>/api/billing/webhook/lemonsqueezy` — 로컬에서 Lemon 대시보드가 서버에 접근하려면 **ngrok 등 터널**이 필요합니다.  
 - **크레딧 증가는 success 리다이렉트가 아니라 웹훅(`order_created`)에서만** `add_credits_from_payment` 로 반영됩니다.  
-- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.
+- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.  
+- 크레딧 결제 UI(`/pricing`) 문구는 **`katatalk-ui-lang`** 저장값과 동일한 네 언어(`mockData` `TRANSLATIONS`)로 표시됩니다.
 
 ## Supabase 마이그레이션
 

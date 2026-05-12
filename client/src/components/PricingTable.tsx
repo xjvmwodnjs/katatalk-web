@@ -5,45 +5,47 @@
 import { useState } from "react";
 import { Check, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { Translations, type Language } from "@/lib/mockData";
+import { Translations } from "@/lib/mockData";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { isCreditChargeCheckoutDisabled } from "@shared/billingUiRules";
 
 interface PricingTableProps {
   t: Translations;
-  lang: Language;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }
 
 type PackId = "starter" | "standard" | "pro";
 
-/** 크레딧 수량은 서버 `server/paymentProviders/packages.ts` 와 동일해야 함 */
-const PACKS: {
-  id: PackId;
-  credits: number;
-  labelKo: string;
-  priceUsd: string;
-}[] = [
-  { id: "starter", credits: 20, labelKo: "Starter", priceUsd: "$4.99" },
-  { id: "standard", credits: 50, labelKo: "Standard", priceUsd: "$9.99" },
-  { id: "pro", credits: 200, labelKo: "Pro", priceUsd: "$29.99" },
+/** 크레딧 수량·USD 가격은 서버 `server/paymentProviders/packages.ts` 와 일치해야 함 */
+const PACKS: { id: PackId; credits: number; priceUsd: string }[] = [
+  { id: "starter", credits: 20, priceUsd: "$4.99" },
+  { id: "standard", credits: 50, priceUsd: "$9.99" },
+  { id: "pro", credits: 200, priceUsd: "$29.99" },
 ];
 
-export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin }: PricingTableProps) {
+function packDisplayName(id: PackId, t: Translations): string {
+  switch (id) {
+    case "starter":
+      return t.creditPackStarter;
+    case "standard":
+      return t.creditPackStandard;
+    case "pro":
+      return t.creditPackPro;
+    default:
+      return id;
+  }
+}
+
+export default function PricingTable({ t, isAuthenticated, onRequireLogin }: PricingTableProps) {
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-
-  const refundPolicyNoteKo =
-    "TODO: 정식 출시 전 환불 정책 문구는 법적 검토가 필요합니다.";
 
   const buttonDisabled = isCreditChargeCheckoutDisabled(policyAccepted, checkoutLoading, isAuthenticated);
 
   const startCheckout = async (packageId: PackId) => {
     if (!isAuthenticated) {
-      toast.info(lang === "ko" ? "로그인이 필요합니다." : t.loginRequired, {
-        description: lang === "ko" ? "로그인 페이지로 이동합니다." : undefined,
-      });
+      toast.info(t.creditCheckoutLoginTitle, { description: t.creditCheckoutLoginDesc });
       onRequireLogin();
       return;
     }
@@ -67,9 +69,7 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
         message?: string;
       };
       if (res.status === 401) {
-        toast.error(lang === "ko" ? "로그인이 필요합니다." : t.loginRequired, {
-          description: lang === "ko" ? "/login 에서 로그인한 뒤 다시 시도해 주세요." : undefined,
-        });
+        toast.error(t.loginRequired, { description: t.pricing401Description });
         onRequireLogin();
         return;
       }
@@ -77,26 +77,22 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
         const msg =
           typeof body.message === "string" && body.message.trim()
             ? body.message
-            : lang === "ko"
-              ? "결제를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요."
-              : "Unable to start checkout. Please try again.";
-        toast.error(lang === "ko" ? "결제를 시작할 수 없습니다." : "Checkout failed", { description: msg });
+            : t.pricingCheckoutFailedDesc;
+        toast.error(t.pricingCheckoutFailedTitle, { description: msg });
         return;
       }
 
       if (typeof body.url === "string" && body.url) {
+        toast.message(t.pricingCheckoutRedirecting);
         window.location.href = body.url;
         return;
       }
 
       toast.error(t.pricingCheckoutUrlError, {
-        description:
-          lang === "ko"
-            ? "서버 설정(APP_BASE_URL·Lemon Squeezy)을 확인하거나 잠시 후 다시 시도해 주세요."
-            : "Check server billing configuration or try again later.",
+        description: t.pricingCheckoutServerErrorDetail,
       });
     } catch {
-      toast.error(lang === "ko" ? "네트워크 오류로 결제를 시작하지 못했습니다." : "Network error.");
+      toast.error(t.pricingNetworkError);
     } finally {
       setCheckoutLoading(false);
     }
@@ -111,9 +107,7 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
         >
           {t.pricingTitle}
         </h2>
-        <p className="text-sm text-slate-400" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-          {t.pricingSubtitle}
-        </p>
+        <p className="text-sm text-slate-400">{t.pricingSubtitle}</p>
       </div>
 
       <div
@@ -121,9 +115,9 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
         style={{
           background: "rgba(22, 22, 28, 0.85)",
           border: "1px solid rgba(255,255,255,0.08)",
-          fontFamily: "'Noto Sans KR', sans-serif",
         }}
       >
+        <p className="text-[11px] text-slate-500">{t.creditRefundMustAgree}</p>
         <label className="flex items-start gap-3 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -133,7 +127,7 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
           />
           <span>
             <span className="text-slate-200">{t.creditRefundPolicyAck}</span>
-            <span className="block mt-2 text-slate-500">{refundPolicyNoteKo}</span>
+            <span className="block mt-2 text-slate-500">{t.creditRefundLegalTodo}</span>
           </span>
         </label>
       </div>
@@ -171,11 +165,8 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
               )}
 
               <div className="p-6">
-                <h3
-                  className="text-lg font-bold text-amber-100 mb-1"
-                  style={{ fontFamily: "'Noto Serif KR', serif" }}
-                >
-                  {pack.labelKo}
+                <h3 className="text-lg font-bold text-amber-100 mb-1" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+                  {packDisplayName(pack.id, t)}
                 </h3>
 
                 <div className="flex items-baseline gap-1 mb-2">
@@ -188,17 +179,12 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
                   >
                     {pack.credits}
                   </span>
-                  <span className="text-xs text-slate-500">credits</span>
+                  <span className="text-xs text-slate-500">{t.creditsUnit}</span>
                 </div>
-                <p
-                  className="text-sm font-medium text-slate-300 mb-1"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                >
+                <p className="text-sm font-medium text-slate-300 mb-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                   {pack.priceUsd}
                 </p>
-                <p className="text-[11px] text-slate-500 mb-6" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                  결제 금액은 결제 확인 화면에 표시됩니다.
-                </p>
+                <p className="text-[11px] text-slate-500 mb-6">{t.pricingPriceCheckoutNote}</p>
 
                 <ul className="space-y-2.5 mb-6">
                   <li className="flex items-start gap-2">
@@ -206,18 +192,14 @@ export default function PricingTable({ t, lang, isAuthenticated, onRequireLogin 
                       className="w-4 h-4 flex-shrink-0 mt-0.5"
                       style={{ color: isPopular ? "#C9A84C" : "#4ade80" }}
                     />
-                    <span className="text-sm text-slate-300" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                      SGF 분석 1회당 1 크레딧 차감
-                    </span>
+                    <span className="text-sm text-slate-300">{t.creditBulletPerSgf}</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Check
                       className="w-4 h-4 flex-shrink-0 mt-0.5"
                       style={{ color: isPopular ? "#C9A84C" : "#4ade80" }}
                     />
-                    <span className="text-sm text-slate-300" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                      충전 크레딧은 만료 없이 잔액으로 유지 (정책 변경 시 별도 고지)
-                    </span>
+                    <span className="text-sm text-slate-300">{t.creditBulletBalancePersistent}</span>
                   </li>
                 </ul>
 

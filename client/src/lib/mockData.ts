@@ -159,6 +159,30 @@ export interface Translations {
   pricingCheckoutButton: string;
   pricingCheckoutUrlError: string;
   creditRefundPolicyAck: string;
+  /** 크레딧 팩 이름 (Starter / Standard / Pro 등) */
+  creditPackStarter: string;
+  creditPackStandard: string;
+  creditPackPro: string;
+  creditsUnit: string;
+  pricingPriceCheckoutNote: string;
+  creditBulletPerSgf: string;
+  creditBulletBalancePersistent: string;
+  creditRefundLegalTodo: string;
+  creditRefundMustAgree: string;
+  creditCheckoutLoginTitle: string;
+  creditCheckoutLoginDesc: string;
+  creditCheckoutLoginCta: string;
+  pricingCheckoutFailedTitle: string;
+  pricingCheckoutFailedDesc: string;
+  pricingCheckoutServerErrorDetail: string;
+  pricingNetworkError: string;
+  pricingCheckoutRedirecting: string;
+  pricing401Description: string;
+  billingPaidTitle: string;
+  billingPaidWebhookDelay: string;
+  billingCreditsCheckFail: string;
+  billingCreditsRefreshError: string;
+  billingCancelled: string;
   free: string;
   basic: string;
   premium: string;
@@ -230,11 +254,37 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     severity: { critical: "치명적 패착", major: "중요 실수", moderate: "경미한 실수" },
     
     pricingTitle: "크레딧 충전",
-    pricingSubtitle: "안전한 글로벌 카드 결제로 크레딧을 충전합니다.",
+    pricingSubtitle:
+      "원하는 크레딧 팩을 선택한 뒤 환불 정책에 동의하고 안전한 글로벌 카드 결제로 진행하세요.",
     pricingCheckoutButton: "결제 페이지로 이동",
     pricingCheckoutUrlError: "결제 URL 생성에 실패했습니다.",
     creditRefundPolicyAck:
       "디지털 분석 크레딧은 사용 즉시 차감되며, 이미 사용한 크레딧은 환불되지 않는다는 점에 동의합니다.",
+    creditPackStarter: "Starter",
+    creditPackStandard: "Standard",
+    creditPackPro: "Pro",
+    creditsUnit: "크레딧",
+    pricingPriceCheckoutNote: "결제 금액은 결제 확인 화면에 표시됩니다.",
+    creditBulletPerSgf: "SGF 분석 1회당 1 크레딧 차감",
+    creditBulletBalancePersistent: "충전 크레딧은 만료 없이 잔액으로 유지합니다 (정책 변경 시 별도 고지).",
+    creditRefundLegalTodo: "TODO: 정식 출시 전 환불 정책 문구는 법적 검토가 필요합니다.",
+    creditRefundMustAgree: "환불 정책에 동의해야 결제를 진행할 수 있습니다.",
+    creditCheckoutLoginTitle: "로그인 후 크레딧 충전 가능",
+    creditCheckoutLoginDesc: "로그인 페이지로 이동합니다.",
+    creditCheckoutLoginCta: "로그인하고 충전하기",
+    pricingCheckoutFailedTitle: "결제를 시작할 수 없습니다.",
+    pricingCheckoutFailedDesc: "잠시 후 다시 시도해 주세요.",
+    pricingCheckoutServerErrorDetail:
+      "서버 설정(APP_BASE_URL·Lemon Squeezy)을 확인하거나 잠시 후 다시 시도해 주세요.",
+    pricingNetworkError: "네트워크 오류로 결제를 시작하지 못했습니다.",
+    pricingCheckoutRedirecting: "결제 페이지로 이동 중입니다…",
+    pricing401Description: "/login 에서 로그인한 뒤 다시 시도해 주세요.",
+    billingPaidTitle: "결제가 완료되었습니다.",
+    billingPaidWebhookDelay:
+      "결제 웹훅(Lemon Squeezy)으로 크레딧이 반영되기까지 수십 초 걸릴 수 있습니다. 잠시 후 크레딧이 갱신되는지 확인해 주세요.",
+    billingCreditsCheckFail: "결제 직후 크레딧을 확인하지 못했습니다.",
+    billingCreditsRefreshError: "크레딧 새로고침 중 오류가 발생했습니다.",
+    billingCancelled: "결제를 취소했습니다.",
     free: "무료 체험",
     basic: "Basic",
     premium: "Premium",
@@ -302,11 +352,38 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     severity: { critical: "Critical Mistake", major: "Major Error", moderate: "Minor Error" },
     
     pricingTitle: "Buy Credits",
-    pricingSubtitle: "Secure global card checkout to top up your credits.",
+    pricingSubtitle:
+      "Choose a credit pack, agree to the refund policy, and continue to secure global card checkout.",
     pricingCheckoutButton: "Proceed to Checkout",
     pricingCheckoutUrlError: "Could not create checkout URL.",
     creditRefundPolicyAck:
-      "I understand that digital analysis credits are deducted immediately upon use and that credits already used are non-refundable.",
+      "I understand that digital analysis credits are deducted when used, and used credits are non-refundable.",
+    creditPackStarter: "Starter",
+    creditPackStandard: "Standard",
+    creditPackPro: "Pro",
+    creditsUnit: "credits",
+    pricingPriceCheckoutNote: "The charge amount is shown on the payment confirmation screen.",
+    creditBulletPerSgf: "1 credit per SGF analysis run",
+    creditBulletBalancePersistent:
+      "Purchased credits stay on your balance with no expiry (policy changes will be announced separately).",
+    creditRefundLegalTodo: "TODO: Have refund copy reviewed by legal before launch.",
+    creditRefundMustAgree: "You must agree to the refund policy before continuing to checkout.",
+    creditCheckoutLoginTitle: "Sign in to purchase credits",
+    creditCheckoutLoginDesc: "Redirecting you to the sign-in page.",
+    creditCheckoutLoginCta: "Sign in to continue",
+    pricingCheckoutFailedTitle: "Could not start checkout.",
+    pricingCheckoutFailedDesc: "Please try again in a moment.",
+    pricingCheckoutServerErrorDetail:
+      "Check billing configuration (APP_BASE_URL / Lemon Squeezy) or try again later.",
+    pricingNetworkError: "Network error. Could not start checkout.",
+    pricingCheckoutRedirecting: "Opening checkout…",
+    pricing401Description: "Please sign in at /login and try again.",
+    billingPaidTitle: "Payment completed.",
+    billingPaidWebhookDelay:
+      "Credits may take up to a minute to appear while Lemon Squeezy webhooks process. Please refresh shortly.",
+    billingCreditsCheckFail: "Could not verify credits right after payment.",
+    billingCreditsRefreshError: "Something went wrong while refreshing credits.",
+    billingCancelled: "Checkout was cancelled.",
     free: "Free Trial",
     basic: "Basic",
     premium: "Premium",
@@ -373,12 +450,35 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "分析新棋谱",
     severity: { critical: "致命失误", major: "重大错误", moderate: "轻微失误" },
     
-    pricingTitle: "购买积分",
-    pricingSubtitle: "通过安全的全球银行卡结账为账户充值。",
-    pricingCheckoutButton: "前往结账",
-    pricingCheckoutUrlError: "无法生成结账链接。",
-    creditRefundPolicyAck:
-      "本人知晓数字分析积分在使用后立即扣除，已使用的积分不予退款。",
+    pricingTitle: "购买点数",
+    pricingSubtitle: "请选择点数方案，同意退款说明后，使用安全的全球银行卡完成支付。",
+    pricingCheckoutButton: "前往支付页面",
+    pricingCheckoutUrlError: "无法生成支付链接。",
+    creditRefundPolicyAck: "我同意：数字分析点数在使用后立即扣除，已使用的点数不予退款。",
+    creditPackStarter: "Starter",
+    creditPackStandard: "Standard",
+    creditPackPro: "Pro",
+    creditsUnit: "点",
+    pricingPriceCheckoutNote: "具体金额以支付确认页显示为准。",
+    creditBulletPerSgf: "每次SGF分析消耗1点",
+    creditBulletBalancePersistent: "充值点数不设有效期，余额长期保留（政策如有变更将另行通知）。",
+    creditRefundLegalTodo: "TODO：正式发布前需完成退款条款的法务审核。",
+    creditRefundMustAgree: "需同意退款说明后方可继续支付。",
+    creditCheckoutLoginTitle: "登录后即可充值点数",
+    creditCheckoutLoginDesc: "将前往登录页面。",
+    creditCheckoutLoginCta: "登录并充值",
+    pricingCheckoutFailedTitle: "无法开始结账。",
+    pricingCheckoutFailedDesc: "请稍后重试。",
+    pricingCheckoutServerErrorDetail: "请检查账单配置（APP_BASE_URL / Lemon Squeezy）或稍后重试。",
+    pricingNetworkError: "网络异常，无法开始结账。",
+    pricingCheckoutRedirecting: "正在前往支付页面…",
+    pricing401Description: "请在 /login 登录后重试。",
+    billingPaidTitle: "支付已完成。",
+    billingPaidWebhookDelay:
+      "点数入账可能需要数十秒（等待 Lemon Squeezy 回调）。请稍后刷新页面查看余额。",
+    billingCreditsCheckFail: "支付完成后暂时无法验证点数。",
+    billingCreditsRefreshError: "刷新点数时出错。",
+    billingCancelled: "已取消支付。",
     free: "免费体验",
     basic: "Basic",
     premium: "Premium",
@@ -445,12 +545,39 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     backToUpload: "新しい棋譜を解析する",
     severity: { critical: "致命的な悪手", major: "重大なミス", moderate: "軽微なミス" },
     
-    pricingTitle: "クレジット購入",
-    pricingSubtitle: "安全なグローバルカード決済でクレジットをチャージします。",
+    pricingTitle: "クレジットを購入",
+    pricingSubtitle:
+      "プランを選び、返金ポリシーに同意したうえで、安全なグローバルカード決済に進んでください。",
     pricingCheckoutButton: "決済ページへ進む",
     pricingCheckoutUrlError: "決済URLを作成できませんでした。",
     creditRefundPolicyAck:
-      "デジタル解析クレジットは利用と同時に消費され、一度使用したクレジットは返金されないことに同意します。",
+      "デジタル解析クレジットは使用時に差し引かれ、使用済みのクレジットは返金されないことに同意します。",
+    creditPackStarter: "Starter",
+    creditPackStandard: "Standard",
+    creditPackPro: "Pro",
+    creditsUnit: "クレジット",
+    pricingPriceCheckoutNote: "請求金額は決済確認画面に表示されます。",
+    creditBulletPerSgf: "SGF解析1回につきクレジット1を消費",
+    creditBulletBalancePersistent:
+      "チャージしたクレジットに有効期限はなく残高として保持されます（変更時は別途お知らせします）。",
+    creditRefundLegalTodo: "TODO：正式リリース前に返金ポリシーの法務確認が必要です。",
+    creditRefundMustAgree: "返金ポリシーに同意しないと決済に進めません。",
+    creditCheckoutLoginTitle: "ログイン後にクレジットを購入できます",
+    creditCheckoutLoginDesc: "ログインページへ移動します。",
+    creditCheckoutLoginCta: "ログインして購入する",
+    pricingCheckoutFailedTitle: "決済を開始できませんでした。",
+    pricingCheckoutFailedDesc: "しばらくしてから再度お試しください。",
+    pricingCheckoutServerErrorDetail:
+      "請求設定（APP_BASE_URL / Lemon Squeezy）を確認するか、時間をおいて再試行してください。",
+    pricingNetworkError: "ネットワークエラーで決済を開始できませんでした。",
+    pricingCheckoutRedirecting: "決済ページへ移動しています…",
+    pricing401Description: "/login でログインしてから再度お試しください。",
+    billingPaidTitle: "お支払いが完了しました。",
+    billingPaidWebhookDelay:
+      "クレジット反映まで数十秒かかることがあります（Lemon Squeezy のWebhook処理）。しばらくしてから残高をご確認ください。",
+    billingCreditsCheckFail: "直後にクレジットを確認できませんでした。",
+    billingCreditsRefreshError: "クレジットの更新中にエラーが発生しました。",
+    billingCancelled: "決済をキャンセルしました。",
     free: "無料体験",
     basic: "Basic",
     premium: "Premium",
