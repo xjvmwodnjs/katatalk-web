@@ -14,6 +14,12 @@ import type {
   AnalysisJobStatus,
 } from "@shared/analysisJob";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
+import {
+  analyzeGetUserLimit,
+  analyzePostIpLimit,
+  analyzePostUserLimit,
+} from "./middleware/apiRateLimit";
+import { requireMockAnalysisAllowed } from "./middleware/mockAnalysisGuard";
 import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
@@ -130,7 +136,11 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
   });
 }
 
-analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res: Response) => {
+analyzeRouter.get(
+  "/api/analyze/:jobId",
+  requireAnalyzeAuth,
+  analyzeGetUserLimit,
+  (req: Request, res: Response) => {
   void (async () => {
     const user = req.katatalkUser;
     if (!user) {
@@ -189,7 +199,10 @@ analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res:
 
 analyzeRouter.post(
   "/api/analyze",
+  analyzePostIpLimit,
   requireAnalyzeAuth,
+  analyzePostUserLimit,
+  requireMockAnalysisAllowed,
   handleMulterUpload,
   (req: Request, res: Response) => {
     void (async () => {

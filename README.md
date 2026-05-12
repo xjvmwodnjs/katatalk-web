@@ -30,6 +30,51 @@ pnpm start
 
 `pnpm start` 는 Express 가 빌드된 정적 파일과 API 를 함께 제공하는 형태를 가정합니다. Vercel 등에 올릴 때는 **Node 런타임**에서 동일하게 `pnpm build` 후 `pnpm start` 하거나, 프론트·API 를 분리 배포하는 경우 별도 리버스 프록시 설정이 필요합니다.
 
+### 운영 배포 전략
+
+앱은 **장시간 실행되는 Express 프로세스**(`pnpm start`) 한 개에서 정적 파일·REST API·**raw body 웹훅**을 함께 제공하는 구조를 기준으로 합니다.
+
+**Vercel 순수 static / 짧은 serverless 함수**에 그대로 올리면 API·웹훅·동작 보장이 어렵습니다. Vercel을 쓰려면 **별도 Node 배포(serverless adapter·웹훅 raw body 검증)** 등 추가 설계가 필요합니다.
+
+**초기 추천 호스팅**(예): **Railway**, **Render**, **Fly.io**, **일반 VPS**(Docker/systemd 등).
+
+**DB**는 **Supabase**(마이그레이션 적용 프로젝트)입니다.
+
+**Lemon Squeezy 웹훅**은 반드시 **공개 HTTPS** URL이어야 합니다. 예시:
+
+`https://your-domain.com/api/billing/webhook/lemonsqueezy`
+
+웹훅은 `server/_core/index.ts` 의 **`attachPaymentWebhooks`** 로 등록되며, **`billingRouter`에 붙은 일반 rate limit 미들웨어를 거치지 않습니다**(서명 검증으로 보호).
+
+**멀티 인스턴스**에서는 프로세스 내 **in-memory rate limit**·mock 분석 타이머가 공유되지 않습니다. 운영에서는 **Redis/Upstash 등 외부 저장소 기반 rate limit**, **DB-backed queue/worker** 가 필요합니다.
+
+**KataGo** 연동 시 Express와 **분리된 worker 프로세스**(큐 소비) 구성을 권장합니다.
+
+### API Rate limiting
+
+주요 REST 경로에 **express-rate-limit**(메모리 저장)을 적용했습니다. **단일 인스턴스**에서만 의미가 일관되며, 초과 시 **429** 및 JSON `code: "RATE_LIMITED"` 를 반환합니다. **수평 확장** 시에는 **Redis/Upstash** 등으로 교체해야 합니다.
+
+### Production 환경 변수·mock 분석 가드
+
+`NODE_ENV=production` 이면 기동 시 **`validateServerEnv`** 가 Clerk·Supabase·Lemon·`APP_BASE_URL`(반드시 **`https://`** 로 시작, **`http://localhost` 불가**) 등을 검증합니다. 오류 메시지에는 **변수명만** 포함하고 값은 넣지 않습니다.
+
+**KataGo/LLM이 연결되기 전에는 production에서 유료 공개 mock 분석을 켜면 안 됩니다.** `KATATALK_ALLOW_MOCK_ANALYSIS=true` 가 아니면 production 에서 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 입니다. 스테이징·내부 베타에서만 명시적으로 켜세요.
+
+### 운영 배포 체크리스트
+
+- [ ] Supabase 마이그레이션 **001 / 002 / 003** 적용
+- [ ] Clerk **production** 도메인·Redirect URL
+- [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
+- [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
+- [ ] `APP_BASE_URL` 이 production 공개 URL(`https://`)인지 확인
+- [ ] Variant 실제 가격: Starter **$4.99 / 20** · Standard **$9.99 / 50** · Pro **$29.99 / 200** credits
+- [ ] 결제 후 웹훅으로 **credits 증가** 수동 테스트
+- [ ] `credit_logs` 충전 기록 확인
+- [ ] Rate limit **429** 동작 확인
+- [ ] Production 에서 **mock 분석 비활성**(또는 스테이징만 `KATATALK_ALLOW_MOCK_ANALYSIS=true`) 확인
+- [ ] **KataGo·LLM 미구현** 상태 표시 확인
+- [ ] 환불 정책·약관 **법무 검토**
+
 ## Clerk 환경 변수
 
 | 변수 | 사용 위치 | 설명 |
@@ -70,6 +115,7 @@ pnpm start
 - `Authorization: Bearer <Clerk 세션 토큰>` 으로 `POST /api/analyze` 및 `GET /api/analyze/:jobId` 호출  
 - 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답  
 - `AUTH_PROVIDER=local-dev` 는 로컬 편의용이며, **운영 배포에서는 사용하지 마세요** (기존 가드 유지)
+- **Production** 에서는 `KATATALK_ALLOW_MOCK_ANALYSIS=true` 가 없으면 mock 분석 API 가 **503** 으로 차단됩니다. **KataGo/LLM 연동 전에는 유료 트래픽에 mock 결과를 노출하지 마세요.**
 
 ## 크레딧·결제·DB (확정 아키텍처 요약)
 

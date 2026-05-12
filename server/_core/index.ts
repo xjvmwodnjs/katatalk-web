@@ -36,6 +36,9 @@ async function startServer() {
   validateServerEnv();
 
   const app = express();
+  if (ENV.isProduction) {
+    app.set("trust proxy", 1);
+  }
   const server = createServer(app);
   // 결제 웹훅: 반드시 express.json() 앞에서 raw body 로 수신
   attachPaymentWebhooks(app);

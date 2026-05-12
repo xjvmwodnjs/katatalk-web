@@ -20,3 +20,17 @@
 - [ ] **운영 배포 전**: DB-backed **queue/worker** 전환 (Vercel/serverless 에서 in-process mock 타이머 비권장).
 - [ ] **KataGo / LLM** (현재 mock 유지).
 - [ ] **KataGo worker·큐** 설계 및 연동.
+
+## 운영 배포 체크리스트
+
+- [ ] Supabase 마이그레이션 **001 / 002 / 003** 적용
+- [ ] Clerk production 도메인·Redirect URL
+- [ ] Lemon Squeezy live API key·store·webhook signing secret
+- [ ] Lemon live variant ID 3종
+- [ ] `APP_BASE_URL` production 공개 HTTPS URL
+- [ ] Variant 가격·크레딧: Starter $4.99 / 20 · Standard $9.99 / 50 · Pro $29.99 / 200
+- [ ] 결제 후 credits 증가 수동 테스트·`credit_logs` 확인
+- [ ] Rate limit 429 동작 확인 (멀티 인스턴스 시 Redis/Upstash 등 검토)
+- [ ] Production 에서 mock 분석 비활성(`KATATALK_ALLOW_MOCK_ANALYSIS`) 확인
+- [ ] KataGo·LLM 미구현 상태 UI/문서 표시
+- [ ] 환불 정책·약관 법무 검토

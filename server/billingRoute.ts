@@ -18,6 +18,7 @@ import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
 } from "./middleware/requireAnalyzeAuth";
+import { billingCheckoutIpLimit, billingCheckoutUserLimit } from "./middleware/apiRateLimit";
 import { ENV } from "./_core/env";
 import {
   getPaymentProvider,
@@ -467,5 +468,11 @@ function getBillingStatus(req: Request, res: Response): void {
 }
 
 export const billingRouter = Router();
-billingRouter.post("/api/billing/create-checkout", requireAnalyzeAuth, createCheckoutHandler);
+billingRouter.post(
+  "/api/billing/create-checkout",
+  billingCheckoutIpLimit,
+  requireAnalyzeAuth,
+  billingCheckoutUserLimit,
+  createCheckoutHandler
+);
 billingRouter.get("/api/billing/status", requireAnalyzeAuth, getBillingStatus);
