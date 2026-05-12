@@ -9,7 +9,7 @@ describe("InMemoryAnalysisJobStore ownership", () => {
       payload: { fileName: "x.sgf", language: "ko" },
       ownerClerkSubject: "user_sub_abc",
       ownerAppUserId: 5,
-      creditLedgerId: 99,
+      creditLedgerId: "00000000-0000-0000-0000-000000000099",
     });
     const internal = store.getInternal("jid-owner");
     expect(internal?.ownerClerkSubject).toBe("user_sub_abc");

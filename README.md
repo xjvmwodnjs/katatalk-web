@@ -1,6 +1,6 @@
 # KataTalk
 
-React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. 현재 SGF 업로드 후 **mock 분석**만 제공하며, Clerk 로그인으로 `/api/analyze` 가 보호됩니다.
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 **mock 분석**만 제공합니다. **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
 
 ## 로컬 실행
 
@@ -40,7 +40,7 @@ pnpm start
 | `CLERK_SECRET_KEY` | 서버만 | Secret key — **저장소·프론트 번들에 포함 금지** |
 | `JWT_SECRET` | 서버 | 세션 쿠키 등 (운영에서는 필수) |
 
-`DATABASE_URL` 은 **로컬 개발** 에서는 없어도 Clerk 로그인·mock 분석(메모리 크레딧)이 동작할 수 있습니다. **운영(production)** 에서는 크레딧·사용자 영속화를 위해 **필수**입니다(서버 기동 시 검증).
+`DATABASE_URL` 은 **선택**입니다. 있으면 Drizzle/MySQL `users` 동기화 등에 사용합니다. **크레딧 잔액·원장·분석 job 메타**는 **Supabase**(`profiles`, `credit_logs`, `analysis_jobs`)를 사용합니다. **운영(production)** 에서는 `SUPABASE_URL` 과 `SUPABASE_SERVICE_ROLE_KEY`(서비스 롤)가 **필수**입니다. **Supabase Auth는 사용하지 않으며**, 브라우저에서 Supabase DB에 직접 접근하지 않고 **Express 서버 API + service role** 로만 접근합니다.
 
 ## Clerk Dashboard 설정
 
@@ -71,59 +71,93 @@ pnpm start
 - 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답  
 - `AUTH_PROVIDER=local-dev` 는 로컬 편의용이며, **운영 배포에서는 사용하지 마세요** (기존 가드 유지)
 
-## 크레딧 지갑·분석 차감 (BM: 구독제 아님)
+## 크레딧·결제·DB (확정 아키텍처 요약)
 
-- KataTalk 비즈니스 모델은 **월 구독이 아니라 “충전 후 분석 1회당 크레딧 차감”** 입니다.  
-- **첫 인증 요청 시**(Clerk `sub` 기준) `user_wallets` + `credit_ledger` 에 **가입 보너스 2 크레딧**이 **idempotent** 하게 한 번만 지급됩니다. (`idempotencyKey = signup_bonus:<clerkSub>`)  
-- `POST /api/analyze` 는 SGF 검증 후 **서버에서만** 잔액을 확인하고, **원자적 `UPDATE … WHERE balance >= 1`** 으로 1 크레딧을 차감한 뒤 mock 분석 job 을 만듭니다. 부족하면 **HTTP 402**, `code: INSUFFICIENT_CREDITS` 입니다.  
-- `GET /api/analyze/:jobId` 는 **job 소유자(Clerk sub)** 와 요청자가 다르면 **403** 입니다.  
-- **운영(production)** 에서는 `DATABASE_URL` 과 `AUTH_PROVIDER=clerk` 등이 **필수**이며, 크레딧은 **DB + ledger** 로만 관리합니다. **프론트 잔액만으로는 절대 신뢰하지 마세요.**  
-- `DATABASE_URL` 이 없는 **로컬 개발** 에서는 Clerk 인증은 유지하되, 크레딧은 **프로세스 내 메모리 구현**으로만 동작합니다(운영에서 in-memory 크레딧 사용 금지).
+### Stripe에서 전환한 이유 (요약)
 
-## 현재 DB 구현과 향후 Supabase 로드맵
+- 한국 기반 판매자에게 **Stripe 사업자 온보딩·정산**이 불확실할 수 있음.  
+- **한국 유저**에게는 **Toss Payments**가 익숙함.  
+- **해외 유저**에게는 **Lemon Squeezy**(글로벌 카드)를 사용.  
+- Stripe에 더 깊게 묶일수록 이후 교체 비용이 커져, **초기에 provider 추상화**로 전환.  
+- **Paddle** 등은 추후 fallback 후보로 문서·운영에서만 검토 (코드 미구현).
 
-1. **크레딧 모델**은 **충전식**이며, 월 정액 구독이 아닙니다.  
-2. **회원가입/첫 인증 요청** 시 서버가 wallet 을 만들고 **2 credits** 를 한 번만 지급합니다.  
-3. **SGF 분석 1회당 1 credit** 을 서버에서 차감합니다.  
-4. **현재 구현**은 **Drizzle + MySQL** 의 `user_wallets`, `credit_ledger` 테이블입니다.  
-5. **최종 운영 DB** 는 **Supabase** 를 전제로 하며, 예: **`profiles`**(사용자·크레딧 잔액 등), **`credit_logs`**(원장) 형태로 **전환 예정**입니다. (이 저장소의 MySQL 스키마는 과도기 구현입니다.)  
-6. Supabase 전환 시 **`profiles.id` 는 Clerk `userId`(JWT `sub`)** 와 정렬하는 것을 권장합니다.  
-7. `credit_logs` 는 **refill**(충전) / **usage**(차감) / **refund** / **admin_adjustment** 등 유형을 기록합니다.  
-8. **Stripe 결제 완료 후 크레딧 증가**는 success 페이지가 아니라 **반드시 webhook** 에서만 처리해야 합니다(클라이언트 조작 방지).  
-9. **Vercel·serverless** 환경에서는 **in-memory job store** 를 사용하면 안 됩니다(인스턴스 간 공유 불가).  
-10. **운영**에서는 **DB-backed job 테이블** 또는 **메시지 큐 + 워커** 가 필요합니다.
+### 시스템
 
-상세 TODO 목록은 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
+- **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
+- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토합니다. **Clerk Billing·Stripe·구독형 결제 미사용.**  
+- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.  
+- **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
+- **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.  
+- **크레딧 충전**은 **success URL이 아니라** 각 결제사 **웹훅**에서만 **`add_credits_from_payment` RPC** 로 반영 (`payment:<provider>:…` idempotency).  
+- `credit_logs` 의 **`stripe_*` 컬럼은 legacy**(과거 호환). 신규 충전은 **`payment_provider` / `payment_event_id` / `payment_order_id` / `payment_checkout_id`** 를 사용합니다 ([`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql)).  
+- 결제 UI: **환불 정책 동의 체크박스** 필수(운영 전 **법무 검토** TODO).  
+- **Vercel·serverless** 에서 인메모리 job만으로 운영 금지 — DB-backed job/큐 필요.
+
+상세 TODO는 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
+
+## Drizzle/MySQL 크레딧 (레거시)
+
+- 과거 구현인 `user_wallets` / `credit_ledger` 기반 코드는 **`server/creditDb.legacy.ts`** 로만 보관합니다. **기본 크레딧 경로는 Supabase** 입니다.
 
 ## in-memory 분석 job 저장소 (로컬·개발 전용)
 
-- 현재 분석 job 은 **인메모리** 로만 보관되며, **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다. SGF 원문은 job 레코드에 **저장하지 않습니다**(검증 후 mock 결과만 생성).  
-- **Vercel·serverless** 등 인스턴스가 자주 바뀌는 환경에서는 **이 구조를 사용하면 안 됩니다.** 운영에서는 **DB 기반 job 테이블 + 워커/큐** 가 필요합니다.
+- mock 분석 파이프라인은 **인메모리 job**으로 진행 상태를 유지합니다. **완료·실패 job 은 TTL(기본 1시간) 후 삭제** 됩니다.  
+- **차감·소유권 검증**은 Supabase `profiles` / `credit_logs` / `analysis_jobs` 와 연동합니다. **Vercel·serverless** 에서 인메모리만으로 운영하면 안 되며, **DB-backed 큐/워커**가 필요합니다.
 
-## Stripe 결제(Checkout) 테스트 골격
+## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
-현재 저장소에는 **Stripe Checkout 구독 세션 생성**과 **webhook 수신 골격**만 있습니다. **실제 quota 차감·구독 상태 DB 반영은 다음 단계**이며, test mode 기준으로 설정합니다. **`.env`·시크릿 키는 절대 커밋하지 마세요.**
+**`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-1. [Stripe Dashboard](https://dashboard.stripe.com/) → **Developers**에서 **Test mode** 인지 확인합니다.  
-2. **Product**를 만들고 각 플랜(Basic/Premium)에 **Recurring Price**를 만듭니다. Price ID(`price_...`)를 복사합니다.  
-3. 로컬 `.env`에 다음을 채웁니다(값은 README에 적지 마세요).  
-   - `STRIPE_SECRET_KEY` — **Secret key**, 서버 전용  
-   - `STRIPE_WEBHOOK_SECRET` — Webhook 엔드포인트 서명용 **Signing secret**, 서버 전용  
-   - `STRIPE_BASIC_PRICE_ID` / `STRIPE_PREMIUM_PRICE_ID` — 위에서 만든 **Price ID** (서버가 `plan`에 따라 선택)  
-   - `APP_BASE_URL` — 실제 앱 오리진(예: `http://localhost:3000`). Checkout 완료/취소 리다이렉트에 사용됩니다.  
-4. Webhook 로컬 검증: [Stripe CLI](https://stripe.com/docs/stripe-cli) 설치 후 예시처럼 포워딩합니다.  
-   `stripe listen --forward-to localhost:3000/api/billing/webhook`  
-   CLI가 출력하는 **webhook signing secret**을 `STRIPE_WEBHOOK_SECRET`에 넣습니다.  
-5. (선택) 서버 API `POST /api/billing/create-checkout-session` 으로 Checkout URL 을 직접 검증할 수 있습니다. UI 의 유료 카드는 **크레딧 팩 결제 준비 중** 안내만 표시할 수 있습니다.
+- **베타 UI**: 크레딧 충전은 **Lemon Squeezy만** 사용합니다.  
+- **Toss**: **실결제 연동 전**(스켈레톤만). 국내 결제 UX 확보 시 연동 검토. `TOSS_*` 는 서버 전용 (**`VITE_` 접두사 금지**).  
+- **Lemon Squeezy 상품(표시 가격·크레딧)** — 실제 과금은 Lemon 대시보드 variant와 일치해야 합니다.  
+  - Starter **$4.99** → **20** credits  
+  - Standard **$9.99** → **50** credits  
+  - Pro **$29.99** → **200** credits  
+- **환경 변수**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`(대시보드 **Webhook Signing secret** 과 동일해야 함), `LEMONSQUEEZY_CREDIT_PACK_*_VARIANT_ID` 3종, 결제 후 복귀 URL용 **`APP_BASE_URL`** (예: 로컬 `http://localhost:3000`).  
+- **웹훅 URL**: `https://<공개호스트>/api/billing/webhook/lemonsqueezy` — 로컬에서 Lemon 대시보드가 서버에 접근하려면 **ngrok 등 터널**이 필요합니다.  
+- **크레딧 증가는 success 리다이렉트가 아니라 웹훅(`order_created`)에서만** `add_credits_from_payment` 로 반영됩니다.  
+- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.  
+- 크레딧 결제 UI(`/pricing`) 문구는 **`katatalk-ui-lang`** 저장값과 동일한 네 언어(`mockData` `TRANSLATIONS`)로 표시됩니다.
+- **운영 체크리스트**: Lemon 대시보드 각 variant의 **실제 과금 금액**이 위 표·`shared/creditPackCatalog.ts` 와 일치하는지 배포 전에 확인합니다. **Lemon 호스팅 결제(Hosted Checkout) 화면 언어**는 이 저장소에서 제어하지 않으며, Lemon 설정에서 조정하거나 별도 검토가 필요합니다.
+- **Lemon 대시보드에서 직접 연 결제 링크(앱이 아닌 URL)로 결제**하면 `checkout_data.custom` 이 전달되지 않아 웹훅에 `custom_data`가 없을 수 있으며, 이 경우 **크레딧 지급이 되지 않습니다**. 반드시 앱의 **`/pricing` → `POST /api/billing/create-checkout` 이 돌려준 URL**로 결제하세요.
 
-`VITE_STRIPE_*_PRICE_ID`는 `.env.example`에만 예시로 두었으며, UI 표시용 참고일 뿐 **결제 생성은 서버의 `STRIPE_*_PRICE_ID`만 사용**합니다.
+### 결제·웹훅 문제 조사용 SQL (Supabase)
+
+잔액·충전 기록 확인:
+
+```sql
+select id, credits, email, updated_at
+from profiles
+order by updated_at desc
+limit 10;
+
+select user_id, amount, type, payment_provider, payment_event_id, payment_order_id, idempotency_key, created_at
+from credit_logs
+order by created_at desc
+limit 20;
+```
+
+과거 `payment:lemonsqueezy:unknown` 등 잘못된 idempotency 키가 쌓였는지 확인(필요 시 운영자가 원인 파악 후 정리):
+
+```sql
+select *
+from credit_logs
+where idempotency_key like '%unknown%'
+order by created_at desc;
+```
+
+**수동으로 `credits` 를 올리는 SQL 은 임의로 실행하지 말고**, 먼저 웹훅 응답 `action`·서버 로그·위 쿼리로 원인을 확인하세요.
+
+## Supabase 마이그레이션
+
+- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
+- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
 
 ## 아직 구현되지 않은 것
 
-- KataGo 실분석 워커  
-- **Stripe Checkout 으로 크레딧 팩(예: 50/120 credits) 구매** 및 결제 webhook → ledger `purchase` 반영  
-- 분석 job 의 **DB/큐 영속화** 및 멀티 인스턴스 안전한 워커  
-- `DATABASE_URL` 없이도 **운영** 베타를 돌리는 구성(현재 운영은 DB 필수)
+- **KataGo / LLM** 실분석 워커 (현재 mock만)  
+- 분석 job **완전한 DB/큐 기반** 파이프라인 (현재는 mock + `analysis_jobs` insert 병행)
 
 ## 보안·Git
 

@@ -1,20 +1,20 @@
 # KataTalk — 이후 작업 TODO
 
-> 현재 `master` 반영분은 **Clerk 인증 + Drizzle/MySQL 크레딧 지갑** 까지입니다. **Supabase DB 전환·Stripe 실결제·KataGo** 는 아래에서 단계적으로 진행합니다.
+> 베타에서는 결제 UI가 **Lemon Squeezy** 만 사용합니다. **Toss** 는 **향후 국내 결제 옵션**으로 검토하며(`tossProvider` 스켈레톤). Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
 
-## 인프라·데이터
+## 결제·법무
 
-- [ ] **Supabase** `profiles` / `credit_logs`(또는 동등 스키마)로 마이그레이션 작성 — `profiles.id` ↔ Clerk `userId` 매핑
-- [ ] 기존 MySQL `user_wallets` / `credit_ledger` 데이터 이전 전략(더블 라이트 / 단일 컷오버) 결정
+- [ ] **Toss** 실결제창·결제 승인 API·웹훅 서명 검증 완성 (`tossProvider.ts` TODO)
+- [ ] **Lemon Squeezy** 운영 주문·웹훅 payload 와 `custom_data` 필드 최종 검증 (Checkout URL·redirect_url 연동됨)
+- [ ] **환불 정책·이용약관** 법무 검토
+- [ ] 운영 웹훅 엔드포인트 URL·시크릿 로테이션 절차
 
-## 결제·크레딧
+## 인프라
 
-- [ ] Stripe **Checkout `mode=payment`** 기반 **크레딧 팩** 구매 플로우
-- [ ] Stripe **webhook**에서만 크레딧 증가 처리(success URL 클라이언트만으로 잔액 변경 금지)
-- [ ] Webhook **idempotency**(이벤트·결제 intent 단위 중복 방지)
-- [ ] 결제 UI: **환불 정책 동의** 체크박스와 실제 결제 버튼 연동
+- [ ] Supabase **`002` 마이그레이션** 적용 후 `add_credits_from_payment` RPC 검증
+- [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지
 
-## 분석 파이프라인
+## 분석
 
-- [ ] **DB 기반 job store** 및 **큐/워커**로 전환(in-memory job 제거)
-- [ ] **KataGo** 워커 연결 및 실분석 결과 저장
+- [ ] DB/큐 기반 job (인메모리 mock 대체)
+- [ ] KataGo / LLM (현재 mock)

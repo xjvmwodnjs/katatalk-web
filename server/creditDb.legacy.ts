@@ -1,3 +1,9 @@
+/**
+ * @deprecated Drizzle/MySQL user_wallets + credit_ledger 기반 크레딧.
+ * 현재 앱 기본 경로는 Supabase RPC + profiles/credit_logs 입니다.
+ * 참고·수동 마이그레이션용으로만 유지합니다.
+ */
+
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { ResultSetHeader } from "mysql2";
 import { creditLedger, userWallets } from "../drizzle/schema";

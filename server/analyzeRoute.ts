@@ -3,7 +3,7 @@
 // =============================================================
 //
 // SECURITY NOTE: requireAnalyzeAuth 로 서버 측 인증 필수.
-// 크레딧 차감은 서버(DB 또는 로컬 전용 메모리)에서만 수행한다.
+// 크레딧 차감·환불은 Supabase RPC 로만 수행한다.
 
 import { nanoid } from "nanoid";
 import { Router, type NextFunction, type Request, type Response } from "express";
@@ -14,8 +14,11 @@ import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
+import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
 import {
   ensureWalletWithSignupBonus,
+  getAnalysisJobOwnerProfileId,
+  insertAnalysisJobQueued,
   refundCreditIfJobFailed,
   spendCreditForAnalysisJob,
   walletSubjectFromAuthUser,
@@ -80,46 +83,80 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
 }
 
 analyzeRouter.get("/api/analyze/:jobId", requireAnalyzeAuth, (req: Request, res: Response) => {
-  const user = req.katatalkUser;
-  if (!user) {
-    sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
-    return;
-  }
+  void (async () => {
+    const user = req.katatalkUser;
+    if (!user) {
+      sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
+      return;
+    }
 
-  const jobId = req.params.jobId;
-  if (!jobId || typeof jobId !== "string") {
-    sendUploadError(res, 400, "Missing job ID.");
-    return;
-  }
+    const jobId = req.params.jobId;
+    if (!jobId || typeof jobId !== "string") {
+      sendUploadError(res, 400, "Missing job ID.");
+      return;
+    }
 
-  const internal = analysisJobStore.getInternal(jobId);
-  if (!internal) {
+    const viewer = walletSubjectFromAuthUser(user);
+    const internal = analysisJobStore.getInternal(jobId);
+
+    if (internal) {
+      if (internal.ownerClerkSubject !== viewer) {
+        res.status(403).json({
+          success: false,
+          message: "이 분석 결과에 접근할 권한이 없습니다.",
+        });
+        return;
+      }
+      const row = analysisJobStore.toPublicGetResponse(jobId);
+      if (!row) {
+        sendUploadError(res, 404, "Job not found. It may have expired or the ID is invalid.");
+        return;
+      }
+      if (row.status === "completed" && row.meta?.mock) {
+        res.set("X-KataTalk-Mock", "true");
+      }
+      res.json(row);
+      return;
+    }
+
+    let dbOwner: string | null = null;
+    try {
+      dbOwner = await getAnalysisJobOwnerProfileId(jobId);
+    } catch (e) {
+      if (e instanceof SupabaseAdminUnavailableError) {
+        sendUploadError(
+          res,
+          503,
+          "크레딧·작업 조회를 위해 Supabase 서버 설정(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)이 필요합니다."
+        );
+        return;
+      }
+      console.error("[analyze] getAnalysisJobOwnerProfileId", e);
+      sendUploadError(res, 500, "작업 소유자를 확인하지 못했습니다.");
+      return;
+    }
+
+    if (dbOwner != null) {
+      if (dbOwner !== viewer) {
+        res.status(403).json({
+          success: false,
+          message: "이 분석 결과에 접근할 권한이 없습니다.",
+        });
+        return;
+      }
+      res.status(404).json({
+        success: false,
+        message:
+          "작업을 찾을 수 없습니다. 서버가 재시작되었거나 인메모리 작업이 만료되었을 수 있습니다. 잠시 후 다시 분석을 요청해 주세요.",
+      });
+      return;
+    }
+
     res.status(404).json({
       success: false,
       message: "Job not found. It may have expired or the ID is invalid.",
     });
-    return;
-  }
-
-  const viewer = walletSubjectFromAuthUser(user);
-  if (internal.ownerClerkSubject !== viewer) {
-    res.status(403).json({
-      success: false,
-      message: "이 분석 결과에 접근할 권한이 없습니다.",
-    });
-    return;
-  }
-
-  const row = analysisJobStore.toPublicGetResponse(jobId);
-  if (!row) {
-    res.status(404).json({ success: false, message: "Job not found. It may have expired or the ID is invalid." });
-    return;
-  }
-
-  if (row.status === "completed" && row.meta?.mock) {
-    res.set("X-KataTalk-Mock", "true");
-  }
-  res.json(row);
+  })();
 });
 
 analyzeRouter.post(
@@ -155,12 +192,19 @@ analyzeRouter.post(
       try {
         await ensureWalletWithSignupBonus(user);
       } catch (e) {
+        if (e instanceof SupabaseAdminUnavailableError) {
+          res.status(503).json({
+            success: false,
+            code: "SUPABASE_CREDIT_UNAVAILABLE",
+            message: e.message,
+          });
+          return;
+        }
         console.error("[analyze] ensureWallet", e);
         res.status(503).json({
           success: false,
           code: "CREDITS_UNAVAILABLE",
-          message:
-            "크레딧 지갑을 사용할 수 없습니다. 운영 환경에서는 DATABASE_URL 설정이 필요합니다.",
+          message: "크레딧 프로필을 준비하지 못했습니다. 서버 설정을 확인해 주세요.",
         });
         return;
       }
@@ -169,17 +213,25 @@ analyzeRouter.post(
       const fileName = file.originalname.trim() || "uploaded.sgf";
 
       const jobId = nanoid();
+      const profileId = walletSubjectFromAuthUser(user);
 
       let spend: Awaited<ReturnType<typeof spendCreditForAnalysisJob>>;
       try {
         spend = await spendCreditForAnalysisJob(user, jobId, 1);
       } catch (e) {
+        if (e instanceof SupabaseAdminUnavailableError) {
+          res.status(503).json({
+            success: false,
+            code: "SUPABASE_CREDIT_UNAVAILABLE",
+            message: e.message,
+          });
+          return;
+        }
         console.error("[analyze] spendCredit", e);
         res.status(503).json({
           success: false,
           code: "CREDITS_UNAVAILABLE",
-          message:
-            "크레딧 차감에 실패했습니다. 서버 설정(DATABASE_URL 등)을 확인해 주세요.",
+          message: "크레딧 차감에 실패했습니다. 서버 설정을 확인해 주세요.",
         });
         return;
       }
@@ -187,8 +239,27 @@ analyzeRouter.post(
       if (!spend.ok) {
         res.status(402).json({
           success: false,
-          code: "INSUFFICIENT_CREDITS",
+          code: spend.code === "PROFILE_NOT_FOUND" ? "PROFILE_NOT_FOUND" : "INSUFFICIENT_CREDITS",
           message: "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해 주세요.",
+        });
+        return;
+      }
+
+      try {
+        await insertAnalysisJobQueued({
+          jobId,
+          profileId,
+          fileName,
+          language,
+          creditLogId: spend.ledgerId,
+          creditCost: 1,
+        });
+      } catch (e) {
+        console.error("[analyze] insertAnalysisJobQueued", e);
+        await refundCreditIfJobFailed(user, jobId, 1);
+        res.status(500).json({
+          success: false,
+          message: "분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         });
         return;
       }
@@ -197,7 +268,7 @@ analyzeRouter.post(
         analysisJobStore.createAndEnqueueMock({
           jobId,
           payload: { fileName, language },
-          ownerClerkSubject: walletSubjectFromAuthUser(user),
+          ownerClerkSubject: profileId,
           ownerAppUserId: user.id,
           creditLedgerId: spend.ledgerId,
           onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
@@ -217,6 +288,7 @@ analyzeRouter.post(
         jobId,
         status: "queued",
         creditBalance: spend.balanceAfter,
+        remainingCredits: spend.balanceAfter,
       };
       res.status(202).json(body);
     })();

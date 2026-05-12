@@ -2,9 +2,9 @@
 // Pricing Page: Dedicated subscription plans page
 // =============================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, readStoredUiLang, persistUiLang, KATATALK_UI_LANG_EVENT } from "@/const";
 import { ArrowLeft, Crown, LogIn, LogOut, User, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -15,8 +15,14 @@ import PricingTable from "@/components/PricingTable";
 
 export default function Pricing() {
   const { user, isAuthenticated, logout } = useAuth();
-  const [lang, setLang] = useState<Language>("ko");
+  const [lang, setLang] = useState<Language>(() => readStoredUiLang() as Language);
   const t = TRANSLATIONS[lang];
+
+  useEffect(() => {
+    const syncLang = () => setLang(readStoredUiLang() as Language);
+    window.addEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+    return () => window.removeEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+  }, []);
 
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -137,7 +143,13 @@ export default function Pricing() {
             <div className="w-px h-5 mx-1" style={{ background: "rgba(255,255,255,0.1)" }} />
 
             {/* Language Selector */}
-            <LanguageSelector current={lang} onChange={setLang} />
+            <LanguageSelector
+              current={lang}
+              onChange={next => {
+                setLang(next);
+                persistUiLang(next);
+              }}
+            />
           </div>
         </div>
       </header>
@@ -164,6 +176,7 @@ export default function Pricing() {
         {/* Pricing Table */}
         <PricingTable
           t={t}
+          locale={lang}
           isAuthenticated={isAuthenticated}
           onRequireLogin={() => {
             window.location.href = getLoginUrl();

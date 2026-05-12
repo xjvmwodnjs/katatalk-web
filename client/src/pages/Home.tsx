@@ -4,7 +4,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl, getSignUpUrl, persistUiLang, readStoredUiLang } from "@/const";
+import {
+  getLoginUrl,
+  getSignUpUrl,
+  persistUiLang,
+  readStoredUiLang,
+  KATATALK_UI_LANG_EVENT,
+} from "@/const";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -47,8 +53,101 @@ export default function Home() {
     };
   }, []);
 
-  // Fetch subscription info if authenticated
+  useEffect(() => {
+    const syncLang = () => setLang(readStoredUiLang());
+    window.addEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+    return () => window.removeEventListener(KATATALK_UI_LANG_EVENT, syncLang);
+  }, []);
+
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    const billing = params.get("billing");
+    if (!billing) return;
+
+    if (billing === "cancel") {
+      toast.message(TRANSLATIONS[lang].billingCancelled);
+      window.history.replaceState({}, "", window.location.pathname || "/");
+      return;
+    }
+
+    if (billing !== "success") return;
+
+    let cancelled = false;
+    const POLL_MS = 2000;
+    const MAX_MS = 30_000;
+
+    void (async () => {
+      const bt = TRANSLATIONS[lang];
+      const h = await getAnalyzeAuthHeaders().catch(() => null as null);
+      if (!h) {
+        toast.error(bt.billingCreditsRefreshError);
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+
+      const baselineStored = sessionStorage.getItem("katatalk_billing_baseline_credits");
+      sessionStorage.removeItem("katatalk_billing_baseline_credits");
+
+      async function readCredits(): Promise<number | null> {
+        const r = await fetch("/api/credits/me", {
+          headers: { ...h },
+          credentials: "include",
+        });
+        if (!r.ok) return null;
+        const j = (await r.json()) as { credits?: unknown };
+        return typeof j.credits === "number" ? j.credits : null;
+      }
+
+      const c0 = await readCredits();
+      if (cancelled || c0 === null) {
+        toast.error(bt.billingCreditsCheckFail, { description: bt.pricingCheckoutFailedDesc });
+        await utils.profile.getSubscription.invalidate();
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+
+      let baseline: number;
+      if (baselineStored != null && baselineStored !== "" && !Number.isNaN(Number(baselineStored))) {
+        baseline = Number(baselineStored);
+      } else {
+        baseline = c0;
+      }
+
+      if (c0 > baseline) {
+        toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+        await utils.profile.getSubscription.invalidate();
+        window.history.replaceState({}, "", window.location.pathname || "/");
+        return;
+      }
+
+      const deadline = Date.now() + MAX_MS;
+      while (!cancelled && Date.now() < deadline) {
+        await sleep(POLL_MS);
+        const c = await readCredits();
+        if (c !== null && c > baseline) {
+          toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+          await utils.profile.getSubscription.invalidate();
+          window.history.replaceState({}, "", window.location.pathname || "/");
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        toast.message(bt.billingCreditDelayedMessage);
+        await utils.profile.getSubscription.invalidate();
+        window.history.replaceState({}, "", window.location.pathname || "/");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, utils, lang]);
+
+  // Fetch subscription info if authenticated
   const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -140,6 +239,7 @@ export default function Home() {
         message?: string;
         code?: string;
         creditBalance?: number;
+        remainingCredits?: number;
       };
 
       if (response.status === 402 || createPayload.code === "INSUFFICIENT_CREDITS") {
@@ -162,7 +262,10 @@ export default function Home() {
         throw new Error(msg);
       }
 
-      if (typeof createPayload.creditBalance === "number") {
+      if (
+        typeof createPayload.creditBalance === "number" ||
+        typeof createPayload.remainingCredits === "number"
+      ) {
         void utils.profile.getSubscription.invalidate();
       }
 
@@ -346,31 +449,42 @@ export default function Home() {
               </>
             )}
 
-            {/* Credit top-up (결제 연동 전 안내) */}
-            <button
-              type="button"
-              onClick={() => {
-                toast.info(
-                  lang === "ko"
-                    ? "크레딧 충전 기능은 준비 중입니다."
-                    : lang === "en"
-                      ? "Credit top-up is coming soon."
-                      : lang === "zh"
-                        ? "积分充值功能即将推出。"
-                        : "クレジットチャージは準備中です。"
-                );
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
-              style={{
-                background: "linear-gradient(135deg, #C9A84C, #A08030)",
-                color: "#0c0a09",
-                boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
-                fontFamily: "'Noto Sans KR', sans-serif",
-              }}
-            >
-              <Crown className="w-3.5 h-3.5" />
-              {t.subscribe}
-            </button>
+            {/* Credit top-up → /pricing (Lemon Squeezy), 비로그인 시 로그인 안내 */}
+            {isAuthenticated ? (
+              <Link href="/pricing">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
+                  style={{
+                    background: "linear-gradient(135deg, #C9A84C, #A08030)",
+                    color: "#0c0a09",
+                    boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
+                    fontFamily: "'Noto Sans KR', sans-serif",
+                  }}
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  {t.subscribe}
+                </button>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.info(t.loginRequired);
+                  window.location.href = getLoginUrl();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 opacity-70"
+                style={{
+                  background: "linear-gradient(135deg, #C9A84C, #A08030)",
+                  color: "#0c0a09",
+                  boxShadow: "0 2px 12px rgba(201, 168, 76, 0.25)",
+                  fontFamily: "'Noto Sans KR', sans-serif",
+                }}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                {t.subscribe}
+              </button>
+            )}
 
             {/* Divider */}
             <div className="w-px h-5 mx-1" style={{ background: "rgba(255,255,255,0.1)" }} />

@@ -16,5 +16,7 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["server/vitestSetup.ts"],
     include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    /** vi.mock 이 테스트 파일 간에 섞이지 않도록 프로세스 분리 */
+    pool: "forks",
   },
 });

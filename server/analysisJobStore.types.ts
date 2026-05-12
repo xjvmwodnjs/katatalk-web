@@ -25,7 +25,8 @@ export type AnalysisJobInternal = {
   ownerClerkSubject: string;
   /** users.id — DB 없이 Clerk JWT 만 쓰는 경우 0 */
   ownerAppUserId: number;
-  creditLedgerId: number;
+  /** Supabase credit_logs.id (UUID 문자열) */
+  creditLedgerId: string;
   payload: AnalysisJobEnqueuePayload;
   /** Set when completed (mock or future KataGo). */
   resultData?: unknown;
@@ -41,7 +42,7 @@ export interface AnalysisJobStore {
     payload: AnalysisJobEnqueuePayload;
     ownerClerkSubject: string;
     ownerAppUserId: number;
-    creditLedgerId: number;
+    creditLedgerId: string;
     onJobFailed?: () => void | Promise<void>;
   }): void;
   getInternal(jobId: string): AnalysisJobInternal | null;
