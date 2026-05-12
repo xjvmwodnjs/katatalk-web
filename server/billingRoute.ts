@@ -18,7 +18,9 @@ import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
 } from "./middleware/requireAnalyzeAuth";
+import { billingCheckoutIpLimit, billingCheckoutUserLimit } from "./middleware/apiRateLimit";
 import { ENV } from "./_core/env";
+import { getLocalAppBaseUrlListenPortMismatch } from "./_core/appBaseUrlPortGuard";
 import {
   getPaymentProvider,
   resolveCheckoutProvider,
@@ -376,6 +378,12 @@ function createCheckoutHandler(req: Request, res: Response): void {
         return;
       }
 
+      const portMismatch = getLocalAppBaseUrlListenPortMismatch();
+      if (portMismatch) {
+        sendBillingError(res, 503, portMismatch.message, portMismatch.code);
+        return;
+      }
+
       const parsed = createCheckoutBodySchema.safeParse(req.body);
       if (!parsed.success) {
         sendBillingError(
@@ -467,5 +475,11 @@ function getBillingStatus(req: Request, res: Response): void {
 }
 
 export const billingRouter = Router();
-billingRouter.post("/api/billing/create-checkout", requireAnalyzeAuth, createCheckoutHandler);
+billingRouter.post(
+  "/api/billing/create-checkout",
+  billingCheckoutIpLimit,
+  requireAnalyzeAuth,
+  billingCheckoutUserLimit,
+  createCheckoutHandler
+);
 billingRouter.get("/api/billing/status", requireAnalyzeAuth, getBillingStatus);

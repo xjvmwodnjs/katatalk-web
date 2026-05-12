@@ -91,6 +91,9 @@ export default function Home() {
       const baselineStored = sessionStorage.getItem("katatalk_billing_baseline_credits");
       sessionStorage.removeItem("katatalk_billing_baseline_credits");
 
+      const hadStoredBaseline =
+        baselineStored != null && baselineStored !== "" && !Number.isNaN(Number(baselineStored));
+
       async function readCredits(): Promise<number | null> {
         const r = await fetch("/api/credits/me", {
           headers: { ...h },
@@ -101,6 +104,39 @@ export default function Home() {
         return typeof j.credits === "number" ? j.credits : null;
       }
 
+      type CreditLogLite = {
+        type?: unknown;
+        amount?: unknown;
+        created_at?: unknown;
+        payment_provider?: unknown;
+      };
+
+      async function readCreditLogs(): Promise<CreditLogLite[]> {
+        const r = await fetch("/api/credits/logs", {
+          headers: { ...h },
+          credentials: "include",
+        });
+        if (!r.ok) return [];
+        const j = (await r.json()) as { logs?: unknown };
+        return Array.isArray(j.logs) ? (j.logs as CreditLogLite[]) : [];
+      }
+
+      const REFILL_LOOKBACK_MS = 15 * 60 * 1000;
+
+      function hasRecentRefill(logs: CreditLogLite[], withinMs: number): boolean {
+        const now = Date.now();
+        for (const log of logs) {
+          if (log.type !== "refill") continue;
+          if (typeof log.amount !== "number" || log.amount <= 0) continue;
+          const t = log.created_at;
+          if (typeof t !== "string") continue;
+          const ts = Date.parse(t);
+          if (!Number.isFinite(ts) || now - ts > withinMs) continue;
+          return true;
+        }
+        return false;
+      }
+
       const c0 = await readCredits();
       if (cancelled || c0 === null) {
         toast.error(bt.billingCreditsCheckFail, { description: bt.pricingCheckoutFailedDesc });
@@ -109,8 +145,18 @@ export default function Home() {
         return;
       }
 
+      if (!hadStoredBaseline) {
+        const logsEarly = await readCreditLogs();
+        if (hasRecentRefill(logsEarly, REFILL_LOOKBACK_MS)) {
+          toast.success(bt.billingPaidTitle, { description: bt.billingCreditMaybeAppliedDesc });
+          await utils.profile.getSubscription.invalidate();
+          window.history.replaceState({}, "", window.location.pathname || "/");
+          return;
+        }
+      }
+
       let baseline: number;
-      if (baselineStored != null && baselineStored !== "" && !Number.isNaN(Number(baselineStored))) {
+      if (hadStoredBaseline) {
         baseline = Number(baselineStored);
       } else {
         baseline = c0;
@@ -136,7 +182,20 @@ export default function Home() {
       }
 
       if (!cancelled) {
-        toast.message(bt.billingCreditDelayedMessage);
+        if (!hadStoredBaseline) {
+          const logsLate = await readCreditLogs();
+          if (hasRecentRefill(logsLate, REFILL_LOOKBACK_MS)) {
+            toast.message(bt.billingCreditMaybeAppliedTitle, {
+              description: bt.billingCreditMaybeAppliedDesc,
+            });
+          } else {
+            toast.message(bt.billingCreditPendingNeutralTitle, {
+              description: bt.billingCreditPendingNeutralDesc,
+            });
+          }
+        } else {
+          toast.message(bt.billingCreditDelayedMessage);
+        }
         await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
       }

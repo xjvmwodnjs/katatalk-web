@@ -4,8 +4,14 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl, readStoredUiLang, persistUiLang, KATATALK_UI_LANG_EVENT } from "@/const";
-import { ArrowLeft, Crown, LogIn, LogOut, User, UserPlus } from "lucide-react";
+import {
+  getLoginUrl,
+  getSignUpUrl,
+  readStoredUiLang,
+  persistUiLang,
+  KATATALK_UI_LANG_EVENT,
+} from "@/const";
+import { ArrowLeft, LogIn, LogOut, User, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { TRANSLATIONS, Language } from "@/lib/mockData";
@@ -31,6 +37,10 @@ export default function Pricing() {
 
   const handleLogin = () => {
     window.location.href = getLoginUrl();
+  };
+
+  const handleSignUp = () => {
+    window.location.href = getSignUpUrl();
   };
 
   const handleLogout = async () => {
@@ -124,7 +134,7 @@ export default function Pricing() {
                   {t.login}
                 </button>
                 <button
-                  onClick={handleLogin}
+                  onClick={handleSignUp}
                   className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
                   style={{
                     background: "rgba(255,255,255,0.06)",

@@ -3,6 +3,11 @@
  */
 import { vi } from "vitest";
 
+/** 기본: Vitest(NODE_ENV=test)에서만 VITEST_RATE_LIMIT_OFF 로 rate limit 우회. production 에서는 무시됨. */
+if (process.env.VITEST_RATE_LIMIT_OFF === undefined) {
+  process.env.VITEST_RATE_LIMIT_OFF = "true";
+}
+
 if (!process.env.JWT_SECRET?.trim()) {
   process.env.JWT_SECRET = "vitest-jwt-secret-minimum-32-characters-long-x";
 }

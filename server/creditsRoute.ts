@@ -6,6 +6,7 @@ import { Router, type Request, type Response } from "express";
 import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
 import { ensureProfileForClerkUser, getCreditLogs, walletSubjectFromAuthUser } from "./creditService";
 import { ANALYZE_AUTH_REQUIRED_MESSAGE, requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
+import { creditsLogsUserLimit, creditsMeUserLimit } from "./middleware/apiRateLimit";
 
 const creditsRouter = Router();
 
@@ -25,7 +26,7 @@ function handleSupabaseCreditError(res: Response, e: unknown): void {
   });
 }
 
-creditsRouter.get("/api/credits/me", requireAnalyzeAuth, (req: Request, res: Response) => {
+creditsRouter.get("/api/credits/me", requireAnalyzeAuth, creditsMeUserLimit, (req: Request, res: Response) => {
   void (async () => {
     const user = req.katatalkUser;
     if (!user) {
@@ -44,7 +45,7 @@ creditsRouter.get("/api/credits/me", requireAnalyzeAuth, (req: Request, res: Res
   })();
 });
 
-creditsRouter.get("/api/credits/logs", requireAnalyzeAuth, (req: Request, res: Response) => {
+creditsRouter.get("/api/credits/logs", requireAnalyzeAuth, creditsLogsUserLimit, (req: Request, res: Response) => {
   void (async () => {
     const user = req.katatalkUser;
     if (!user) {

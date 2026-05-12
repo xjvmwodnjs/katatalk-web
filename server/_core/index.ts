@@ -12,6 +12,8 @@ import { creditsRouter } from "../creditsRoute";
 import { createContext } from "./context";
 import { ENV, validateServerEnv } from "./env";
 import { serveStatic, setupVite } from "./vite";
+import { setServerListenPort } from "./serverListenPort";
+import { warnIfAppBaseUrlListenPortMismatch } from "./appBaseUrlPortGuard";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +38,9 @@ async function startServer() {
   validateServerEnv();
 
   const app = express();
+  if (ENV.isProduction) {
+    app.set("trust proxy", 1);
+  }
   const server = createServer(app);
   // 결제 웹훅: 반드시 express.json() 앞에서 raw body 로 수신
   attachPaymentWebhooks(app);
@@ -73,6 +78,9 @@ async function startServer() {
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
+
+  setServerListenPort(port);
+  warnIfAppBaseUrlListenPortMismatch();
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);

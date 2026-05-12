@@ -180,6 +180,10 @@ export interface Translations {
   billingPaidTitle: string;
   billingCreditsAppliedNotice: string;
   billingCreditDelayedMessage: string;
+  billingCreditPendingNeutralTitle: string;
+  billingCreditPendingNeutralDesc: string;
+  billingCreditMaybeAppliedTitle: string;
+  billingCreditMaybeAppliedDesc: string;
   billingCreditsCheckFail: string;
   billingCreditsRefreshError: string;
   billingCancelled: string;
@@ -282,6 +286,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     billingCreditsAppliedNotice: "크레딧이 계정에 반영되었습니다.",
     billingCreditDelayedMessage:
       "결제는 완료되었지만 크레딧 반영이 지연되고 있습니다. 잠시 후 새로고침하거나 문의해 주세요.",
+    billingCreditPendingNeutralTitle: "크레딧 반영 상태를 확인 중입니다.",
+    billingCreditPendingNeutralDesc:
+      "결제 직전 잔액 기록이 없어 자동으로 확정할 수 없습니다. 상단 크레딧 잔액을 확인하거나 잠시 후 새로고침해 주세요.",
+    billingCreditMaybeAppliedTitle: "결제가 반영되었을 수 있습니다.",
+    billingCreditMaybeAppliedDesc:
+      "최근 충전 기록이 확인되었습니다. 크레딧 잔액을 확인해 주세요. 반영이 없으면 잠시 후 다시 시도해 주세요.",
     billingCreditsCheckFail: "결제 직후 크레딧을 확인하지 못했습니다.",
     billingCreditsRefreshError: "크레딧 새로고침 중 오류가 발생했습니다.",
     billingCancelled: "결제를 취소했습니다.",
@@ -381,6 +391,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     billingCreditsAppliedNotice: "Credits have been added to your account.",
     billingCreditDelayedMessage:
       "Your payment went through, but credits are taking longer to appear. Please refresh in a moment or contact support.",
+    billingCreditPendingNeutralTitle: "Checking whether credits were applied.",
+    billingCreditPendingNeutralDesc:
+      "We could not record your balance before checkout, so we cannot confirm automatically. Please check your credit balance above or refresh shortly.",
+    billingCreditMaybeAppliedTitle: "Credits may already be applied.",
+    billingCreditMaybeAppliedDesc:
+      "A recent top-up was found in your history. Please verify your balance. If it looks wrong, try again in a moment.",
     billingCreditsCheckFail: "Could not verify credits right after payment.",
     billingCreditsRefreshError: "Something went wrong while refreshing credits.",
     billingCancelled: "Checkout was cancelled.",
@@ -476,6 +492,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     billingCreditsAppliedNotice: "点数已计入账户。",
     billingCreditDelayedMessage:
       "支付已成功，但点数入账有所延迟。请稍后刷新页面或联系支持。",
+    billingCreditPendingNeutralTitle: "正在确认点数入账状态。",
+    billingCreditPendingNeutralDesc:
+      "未记录结账前余额，无法自动确认。请查看上方点数余额或稍后刷新。",
+    billingCreditMaybeAppliedTitle: "支付可能已入账。",
+    billingCreditMaybeAppliedDesc:
+      "检测到近期充值记录。请核对点数余额；若未到账请稍后再试。",
     billingCreditsCheckFail: "支付完成后暂时无法验证点数。",
     billingCreditsRefreshError: "刷新点数时出错。",
     billingCancelled: "已取消支付。",
@@ -575,6 +597,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     billingCreditsAppliedNotice: "クレジットがアカウントに反映されました。",
     billingCreditDelayedMessage:
       "お支払いは完了していますが、クレジット反映が遅れています。しばらくしてから更新するか、サポートへお問い合わせください。",
+    billingCreditPendingNeutralTitle: "クレジット反映状況を確認しています。",
+    billingCreditPendingNeutralDesc:
+      "決済前の残高記録がないため自動では確定できません。画面上部の残高を確認するか、しばらくしてから再読み込みしてください。",
+    billingCreditMaybeAppliedTitle: "決済が反映済みの可能性があります。",
+    billingCreditMaybeAppliedDesc:
+      "直近のチャージ記録が見つかりました。残高をご確認ください。反映がない場合は時間をおいて再度お試しください。",
     billingCreditsCheckFail: "直後にクレジットを確認できませんでした。",
     billingCreditsRefreshError: "クレジットの更新中にエラーが発生しました。",
     billingCancelled: "決済をキャンセルしました。",

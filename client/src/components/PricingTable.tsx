@@ -77,7 +77,9 @@ export default function PricingTable({ t, locale, isAuthenticated, onRequireLogi
         const desc =
           raw.code === "CHECKOUT_LEMON_CONFIG" || raw.code === "CHECKOUT_LEMON_API"
             ? t.pricingCheckoutServerErrorDetail
-            : serverMsg || t.pricingCheckoutFailedDesc;
+            : raw.code === "APP_BASE_URL_PORT_MISMATCH"
+              ? (typeof raw.message === "string" && raw.message.trim() ? raw.message : t.pricingCheckoutServerErrorDetail)
+              : serverMsg || t.pricingCheckoutFailedDesc;
         toast.error(t.pricingCheckoutFailedTitle, { description: desc });
         return;
       }
