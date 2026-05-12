@@ -8,7 +8,11 @@
 import type { Express, Request, Response } from "express";
 import express, { Router } from "express";
 import { z } from "zod";
-import { addCreditsFromPaymentWebhook, walletSubjectFromAuthUser } from "./creditService";
+import {
+  addCreditsFromPaymentWebhook,
+  ensureProfileForClerkUser,
+  walletSubjectFromAuthUser,
+} from "./creditService";
 import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
@@ -33,6 +37,33 @@ export type CreateCheckoutBody = z.infer<typeof createCheckoutBodySchema>;
 
 function paymentIdempotencyKey(provider: PaymentProviderId, stableId: string): string {
   return `payment:${provider}:${stableId}`;
+}
+
+function maskClerkUserId(id: string): string {
+  const t = id.trim();
+  if (t.length <= 8) return "(masked)";
+  return `${t.slice(0, 4)}…${t.slice(-4)}`;
+}
+
+/** Lemon verify 실패 시 HTTP 상태 — 무관 이벤트만 200 */
+function lemonWebhookVerifyFailureStatus(reason: string): number {
+  switch (reason) {
+    case "IGNORED_EVENT":
+      return 200;
+    case "MISSING_SIGNATURE":
+    case "INVALID_SIGNATURE":
+    case "MISSING_LEMONSQUEEZY_WEBHOOK_SECRET":
+      return 401;
+    case "MISSING_ORDER_IDENTIFIERS":
+      return 500;
+    case "INVALID_CUSTOM_DATA":
+    case "INVALID_CREDIT_AMOUNT":
+    case "CREDIT_AMOUNT_MISMATCH":
+    case "INVALID_PAYMENT_PROVIDER":
+      return 422;
+    default:
+      return 400;
+  }
 }
 
 function sendBillingError(res: Response, status: number, message: string, code?: string): void {
@@ -96,22 +127,35 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         headers: req.headers as Record<string, string | string[] | undefined>,
       });
       if (!v.ok) {
-        const unauthorized =
-          v.reason === "MISSING_SIGNATURE" ||
-          v.reason === "INVALID_SIGNATURE" ||
-          v.reason === "MISSING_LEMONSQUEEZY_WEBHOOK_SECRET";
-        const status = unauthorized ? 401 : v.reason === "IGNORED_EVENT" ? 200 : 400;
+        const status = lemonWebhookVerifyFailureStatus(v.reason);
         if (status === 200) {
           res.status(200).json({ received: true, ignored: true });
           return;
         }
-        res.status(status).json({ received: false });
+        if (v.debug) {
+          console.warn("[billing webhook lemonsqueezy] verify rejected", {
+            reason: v.reason,
+            ...v.debug,
+          });
+        } else {
+          console.warn("[billing webhook lemonsqueezy] verify rejected", { reason: v.reason });
+        }
+        res.status(status).json({ received: false, reason: v.reason });
         return;
       }
 
       const ev = v.event;
-      const stable = ev.paymentEventId ?? ev.paymentOrderId ?? "unknown";
-      const idem = paymentIdempotencyKey("lemonsqueezy", stable);
+      const stable = ev.paymentEventId ?? ev.paymentOrderId;
+      if (!stable?.trim()) {
+        console.error("[billing webhook lemonsqueezy] missing stable payment id", {
+          provider: "lemonsqueezy",
+          payment_event_id: ev.paymentEventId,
+          payment_order_id: ev.paymentOrderId,
+        });
+        res.status(500).json({ received: false });
+        return;
+      }
+      const idem = paymentIdempotencyKey("lemonsqueezy", stable.trim());
 
       const grant = await addCreditsFromPaymentWebhook({
         clerkUserId: ev.clerkUserId,
@@ -124,7 +168,26 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         description: ev.description,
       });
 
+      console.info("[billing webhook lemonsqueezy] grant result", {
+        provider: "lemonsqueezy",
+        payment_event_id: ev.paymentEventId,
+        payment_order_id: ev.paymentOrderId,
+        credit_package_id: ev.creditPackageId,
+        credit_amount: ev.creditAmount,
+        clerk_user_masked: maskClerkUserId(ev.clerkUserId),
+        grant_ok: grant.ok,
+        grant_duplicate: grant.duplicate,
+        grant_credits: grant.credits,
+        grant_error_code: grant.errorCode,
+      });
+
       if (grant.duplicate) {
+        console.warn("[billing webhook lemonsqueezy] duplicate idempotency", {
+          provider: "lemonsqueezy",
+          payment_event_id: ev.paymentEventId,
+          payment_order_id: ev.paymentOrderId,
+          clerk_user_masked: maskClerkUserId(ev.clerkUserId),
+        });
         res.status(200).json({ received: true, duplicate: true });
         return;
       }
@@ -134,12 +197,22 @@ function lemonsqueezyWebhookHandler(req: Request, res: Response): void {
         return;
       }
 
+      if (grant.errorCode === "PROFILE_NOT_FOUND") {
+        console.error("[billing webhook lemonsqueezy] profile not found for payment user", {
+          clerk_user_masked: maskClerkUserId(ev.clerkUserId),
+          payment_order_id: ev.paymentOrderId,
+        });
+        res.status(422).json({ received: false });
+        return;
+      }
+
       console.error("[billing webhook lemonsqueezy] credit grant not applied", {
         provider: "lemonsqueezy",
         payment_event_id: ev.paymentEventId,
         payment_order_id: ev.paymentOrderId,
-        clerk_user_id: ev.clerkUserId,
+        clerk_user_masked: maskClerkUserId(ev.clerkUserId),
         reason: "ADD_CREDITS_NOT_OK",
+        grant_error_code: grant.errorCode,
       });
       res.status(500).json({ received: false });
     } catch {
@@ -187,6 +260,7 @@ function createCheckoutHandler(req: Request, res: Response): void {
       const impl = getPaymentProvider(providerId);
 
       try {
+        await ensureProfileForClerkUser(user);
         const out = await impl.createCreditCheckout({
           user,
           packageId,

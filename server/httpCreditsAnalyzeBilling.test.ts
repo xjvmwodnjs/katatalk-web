@@ -202,6 +202,40 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(body.creditAmount).toBe(20);
   });
 
+  it("POST /api/billing/create-checkout sends Lemon checkout_data.custom fields", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const originalFetch = global.fetch.bind(global);
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("api.lemonsqueezy.com")) {
+        const parsed = JSON.parse(String(init?.body ?? "{}")) as {
+          data?: { attributes?: { checkout_data?: { custom?: Record<string, string> } } };
+        };
+        const custom = parsed?.data?.attributes?.checkout_data?.custom;
+        expect(custom?.clerkUserId).toBe("user_a");
+        expect(custom?.creditPackageId).toBe("starter");
+        expect(custom?.creditAmount).toBe("20");
+        expect(custom?.paymentProvider).toBe("lemonsqueezy");
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: { attributes: { url: "https://example.lemonsqueezy.com/checkout/custom-fields" } },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      return originalFetch(input as RequestInfo, init);
+    });
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/create-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+      body: JSON.stringify({ packageId: "starter", locale: "ko" }),
+    });
+    fetchSpy.mockRestore();
+    expect(res.status).toBe(200);
+  });
+
   it("POST /api/billing/create-checkout with lemonsqueezy returns checkout url", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const originalFetch = global.fetch.bind(global);
@@ -280,6 +314,7 @@ describe("Payment webhooks HTTP", () => {
       ok: true,
       duplicate: false,
       credits: 52,
+      errorCode: null,
     });
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
     const body = {
@@ -313,6 +348,7 @@ describe("Payment webhooks HTTP", () => {
       ok: false,
       duplicate: false,
       credits: null,
+      errorCode: null,
     });
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
     const body = {
@@ -345,6 +381,7 @@ describe("Payment webhooks HTTP", () => {
       ok: true,
       duplicate: true,
       credits: 72,
+      errorCode: null,
     });
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
     const body = {
@@ -372,5 +409,51 @@ describe("Payment webhooks HTTP", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { duplicate?: boolean };
     expect(json.duplicate).toBe(true);
+  });
+
+  it("Lemon webhook order_created without custom_data returns 422", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_no_custom" },
+      data: {
+        type: "orders",
+        id: "order_no_custom",
+        attributes: {},
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("Lemon webhook order_created without stable order/webhook id returns 500", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created" },
+      data: {
+        type: "orders",
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_a",
+            creditPackageId: "starter",
+            creditAmount: "20",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    expect(res.status).toBe(500);
   });
 });

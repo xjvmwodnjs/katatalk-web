@@ -41,9 +41,22 @@ export type CreateCreditCheckoutResult = {
   creditPackageId: CreditPackId;
 };
 
+/** Lemon 웹훅 검증 실패 시 운영 로그용(민감정보 없음) */
+export type LemonWebhookDebugSummary = {
+  eventName: string;
+  hasMetaCustomData: boolean;
+  hasDataAttributesCustomData: boolean;
+  hasAttributesCustomData: boolean;
+  customDataKeys: string[];
+  hasClerkUserId: boolean;
+  hasCreditAmount: boolean;
+  hasCreditPackageId: boolean;
+  hasPaymentProvider: boolean;
+};
+
 export type PaymentWebhookVerifyResult =
   | { ok: true; rawBody: string; event: PaymentSucceededEvent }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; debug?: LemonWebhookDebugSummary };
 
 export interface PaymentProvider {
   readonly id: PaymentProviderId;

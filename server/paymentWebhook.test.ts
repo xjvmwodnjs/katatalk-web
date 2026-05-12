@@ -83,6 +83,65 @@ describe("Lemon Squeezy webhook verify", () => {
     if (!v.ok) expect(v.reason).toBe("CREDIT_AMOUNT_MISMATCH");
   });
 
+  it("order_created reads custom_data from meta only (Lemon docs)", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: {
+        event_name: "order_created",
+        webhook_id: "wh_meta_custom_only",
+        custom_data: {
+          clerkUserId: "user_meta_only",
+          creditPackageId: "starter",
+          creditAmount: "20",
+          paymentProvider: "lemonsqueezy",
+        },
+      },
+      data: {
+        type: "orders",
+        id: "order_meta_custom_only",
+        attributes: {},
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const v = await lemonsqueezyProvider.verifyWebhookAndExtractEvent({
+      rawBody: Buffer.from(rawStr, "utf8"),
+      headers: { "x-signature": sig },
+    });
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.event.clerkUserId).toBe("user_meta_only");
+  });
+
+  it("order_created coerces numeric order id to string identifiers", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const body = {
+      meta: { event_name: "order_created", webhook_id: "wh_numeric_id" },
+      data: {
+        type: "orders",
+        id: 424242,
+        attributes: {
+          custom_data: {
+            clerkUserId: "user_numeric",
+            creditPackageId: "standard",
+            creditAmount: "50",
+            paymentProvider: "lemonsqueezy",
+          },
+        },
+      },
+    };
+    const rawStr = JSON.stringify(body);
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    const v = await lemonsqueezyProvider.verifyWebhookAndExtractEvent({
+      rawBody: Buffer.from(rawStr, "utf8"),
+      headers: { "x-signature": sig },
+    });
+    expect(v.ok).toBe(true);
+    if (v.ok) {
+      expect(v.event.paymentOrderId).toBe("424242");
+      expect(v.event.creditAmount).toBe(50);
+    }
+  });
+
   it("order_created event name can come from X-Event-Name header", async () => {
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
     const body = {

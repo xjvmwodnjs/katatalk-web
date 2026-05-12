@@ -36,11 +36,32 @@ export type CreditLogRow = {
   created_at: string;
 };
 
-function parseRpcJson(value: unknown): Record<string, unknown> | null {
+/** Supabase RPC json/jsonb 반환 — 단일 객체·배열 1행·JSON 문자열 모두 허용 */
+export function parseSupabaseRpcJson(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
+  if (Array.isArray(value) && value.length > 0 && value[0] && typeof value[0] === "object" && !Array.isArray(value[0])) {
+    return value[0] as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object" && !Array.isArray(parsed[0])) {
+        return parsed[0] as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   return null;
+}
+
+function parseRpcJson(value: unknown): Record<string, unknown> | null {
+  return parseSupabaseRpcJson(value);
 }
 
 function num(v: unknown): number | null {
@@ -168,7 +189,7 @@ export async function addCreditsFromPaymentWebhook(args: {
   paymentOrderId: string | null;
   paymentCheckoutId: string | null;
   description: string | null;
-}): Promise<{ ok: boolean; duplicate: boolean; credits: number | null }> {
+}): Promise<{ ok: boolean; duplicate: boolean; credits: number | null; errorCode: string | null }> {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb.rpc("add_credits_from_payment", {
     p_user_id: args.clerkUserId,
@@ -184,10 +205,12 @@ export async function addCreditsFromPaymentWebhook(args: {
     throw new Error(error.message);
   }
   const row = parseRpcJson(data);
+  const errCode = str(row?.error);
   return {
     ok: row?.ok === true,
     duplicate: row?.duplicate === true,
     credits: num(row?.credits),
+    errorCode: errCode,
   };
 }
 

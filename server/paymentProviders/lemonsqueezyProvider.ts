@@ -10,6 +10,7 @@ import type {
   CreateCreditCheckoutInput,
   CreateCreditCheckoutResult,
   CreditPackId,
+  LemonWebhookDebugSummary,
   PaymentProvider,
   PaymentSucceededEvent,
   PaymentWebhookVerifyResult,
@@ -69,6 +70,74 @@ function safeEqualHex(a: string, b: string): boolean {
   } catch {
     return false;
   }
+}
+
+function jsonRecord(v: unknown): Record<string, unknown> | null {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  if (typeof v === "string") {
+    try {
+      const p = JSON.parse(v) as unknown;
+      if (p && typeof p === "object" && !Array.isArray(p)) {
+        return p as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/** Lemon 문서: 주로 meta.custom_data, 일부 페이로드는 data.attributes.custom_data */
+function mergeOrderCustomData(body: Record<string, unknown>): Record<string, unknown> {
+  const meta = jsonRecord(body.meta) ?? {};
+  const metaCd = meta.custom_data;
+  const fromMeta = jsonRecord(metaCd) ?? {};
+  const fromNested =
+    metaCd && typeof metaCd === "object" && metaCd !== null && !Array.isArray(metaCd) && "data" in metaCd
+      ? jsonRecord((metaCd as { data?: unknown }).data) ?? {}
+      : {};
+
+  const data = jsonRecord(body.data);
+  const attrs = data ? (jsonRecord(data.attributes) ?? {}) : {};
+  const fromAttrs = jsonRecord(attrs.custom_data) ?? {};
+
+  const topData = jsonRecord(body.attributes) ?? {};
+  const fromTop = jsonRecord(topData.custom_data) ?? {};
+
+  return { ...fromMeta, ...fromNested, ...fromAttrs, ...fromTop };
+}
+
+function pickCustomString(custom: Record<string, unknown>, camel: string, snake: string): string | null {
+  const v = custom[camel] ?? custom[snake];
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return null;
+}
+
+function buildWebhookDebugSummary(args: {
+  eventName: string;
+  body: Record<string, unknown>;
+  custom: Record<string, unknown>;
+}): LemonWebhookDebugSummary {
+  const meta = jsonRecord(args.body.meta);
+  const data = jsonRecord(args.body.data);
+  const attrs = data ? (jsonRecord(data.attributes) ?? {}) : {};
+  const topAttr = jsonRecord(args.body.attributes);
+  const metaCd = meta?.custom_data;
+  return {
+    eventName: args.eventName,
+    hasMetaCustomData:
+      metaCd != null && metaCd !== "" && (typeof metaCd === "object" || typeof metaCd === "string"),
+    hasDataAttributesCustomData: attrs.custom_data != null && attrs.custom_data !== "",
+    hasAttributesCustomData: topAttr?.custom_data != null && topAttr.custom_data !== "",
+    customDataKeys: Object.keys(args.custom),
+    hasClerkUserId: !!(args.custom.clerkUserId ?? args.custom.clerk_user_id),
+    hasCreditAmount: args.custom.creditAmount != null || args.custom.credit_amount != null,
+    hasCreditPackageId: args.custom.creditPackageId != null || args.custom.credit_package_id != null,
+    hasPaymentProvider: args.custom.paymentProvider != null || args.custom.payment_provider != null,
+  };
 }
 
 export const lemonsqueezyProvider: PaymentProvider = {
@@ -134,6 +203,14 @@ export const lemonsqueezyProvider: PaymentProvider = {
       throw new Error("LEMONSQUEEZY_CHECKOUT_NO_URL");
     }
 
+    console.info("[billing checkout lemonsqueezy]", {
+      packageId: input.packageId,
+      creditAmount,
+      hasClerkUserId: Boolean(clerkUserId?.trim()),
+      provider: "lemonsqueezy",
+      hasCheckoutUrl: true,
+    });
+
     return {
       provider: "lemonsqueezy",
       url,
@@ -170,41 +247,30 @@ export const lemonsqueezyProvider: PaymentProvider = {
       return { ok: false, reason: "INVALID_JSON" };
     }
 
-    const meta = body.meta as Record<string, unknown> | undefined;
-    const eventName = eventNameFromWebhook(req.headers, meta);
+    const meta = jsonRecord(body.meta);
+    const eventName = eventNameFromWebhook(req.headers, meta ?? undefined);
     const normalizedEvent = eventName.trim().toLowerCase();
     if (normalizedEvent !== "order_created") {
       return { ok: false, reason: "IGNORED_EVENT" };
     }
 
-    const data = body.data as Record<string, unknown> | undefined;
-    const attrs = (data?.attributes as Record<string, unknown> | undefined) ?? {};
-    const orderId = typeof data?.id === "string" ? data.id : null;
+    const data = jsonRecord(body.data);
+    const attrs = data ? (jsonRecord(data.attributes) ?? {}) : {};
 
-    const metaCustomRaw = meta?.custom_data;
-    const fromMeta =
-      typeof metaCustomRaw === "object" && metaCustomRaw !== null && !Array.isArray(metaCustomRaw)
-        ? (metaCustomRaw as Record<string, unknown>)
-        : {};
-    const attrCustomRaw = attrs.custom_data;
-    const fromAttrs =
-      typeof attrCustomRaw === "object" && attrCustomRaw !== null && !Array.isArray(attrCustomRaw)
-        ? (attrCustomRaw as Record<string, unknown>)
-        : {};
-    const custom: Record<string, unknown> = { ...fromMeta, ...fromAttrs };
+    const custom = mergeOrderCustomData(body);
 
-    const clerkUserId =
-      typeof custom.clerkUserId === "string"
-        ? custom.clerkUserId
-        : typeof custom.clerk_user_id === "string"
-          ? (custom.clerk_user_id as string)
-          : null;
-    const creditPackageId =
-      typeof custom.creditPackageId === "string"
-        ? custom.creditPackageId
-        : typeof custom.credit_package_id === "string"
-          ? (custom.credit_package_id as string)
-          : null;
+    const ppRaw = pickCustomString(custom, "paymentProvider", "payment_provider");
+    if (ppRaw && ppRaw.toLowerCase() !== "lemonsqueezy") {
+      return {
+        ok: false,
+        reason: "INVALID_PAYMENT_PROVIDER",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
+    }
+
+    const clerkUserId = pickCustomString(custom, "clerkUserId", "clerk_user_id");
+    const creditPackageIdRaw = pickCustomString(custom, "creditPackageId", "credit_package_id");
+    const creditPackageId = creditPackageIdRaw as CreditPackId | null;
     const creditAmountRaw = custom.creditAmount ?? custom.credit_amount;
     const creditAmount =
       typeof creditAmountRaw === "string"
@@ -216,23 +282,60 @@ export const lemonsqueezyProvider: PaymentProvider = {
     const packOk =
       creditPackageId === "starter" || creditPackageId === "standard" || creditPackageId === "pro";
     if (!clerkUserId?.trim() || !packOk) {
-      return { ok: false, reason: "INVALID_CUSTOM_DATA" };
+      return {
+        ok: false,
+        reason: "INVALID_CUSTOM_DATA",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
     }
     if (!Number.isFinite(creditAmount) || creditAmount < 1) {
-      return { ok: false, reason: "INVALID_CREDIT_AMOUNT" };
+      return {
+        ok: false,
+        reason: "INVALID_CREDIT_AMOUNT",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
     }
 
     const serverExpected = getCreditAmountForPackage(creditPackageId as CreditPackId);
     if (creditAmount !== serverExpected) {
-      return { ok: false, reason: "CREDIT_AMOUNT_MISMATCH" };
+      return {
+        ok: false,
+        reason: "CREDIT_AMOUNT_MISMATCH",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
     }
 
-    const webhookId = typeof meta?.webhook_id === "string" ? meta.webhook_id : null;
+    const webhookId = typeof meta?.webhook_id === "string" ? meta.webhook_id.trim() : null;
+    const orderIdStr =
+      data?.id !== undefined && data?.id !== null && String(data.id).trim() !== ""
+        ? String(data.id).trim()
+        : null;
+    const identifierStr =
+      attrs.identifier !== undefined && attrs.identifier !== null && String(attrs.identifier).trim() !== ""
+        ? String(attrs.identifier).trim()
+        : null;
+    const checkoutIdStr =
+      attrs.checkout_id !== undefined && attrs.checkout_id !== null && String(attrs.checkout_id).trim() !== ""
+        ? String(attrs.checkout_id).trim()
+        : null;
+
+    const stableOrderKey = orderIdStr ?? identifierStr ?? checkoutIdStr ?? null;
+    const paymentEventId = webhookId ?? stableOrderKey;
+    const paymentOrderId = stableOrderKey ?? webhookId;
+
+    if (!paymentEventId?.trim() && !paymentOrderId?.trim()) {
+      return {
+        ok: false,
+        reason: "MISSING_ORDER_IDENTIFIERS",
+        debug: buildWebhookDebugSummary({ eventName, body, custom }),
+      };
+    }
+
     const event: PaymentSucceededEvent = {
       provider: "lemonsqueezy",
-      paymentEventId: webhookId ?? orderId,
-      paymentOrderId: orderId,
-      paymentCheckoutId: typeof attrs.checkout_id === "string" ? (attrs.checkout_id as string) : null,
+      paymentEventId: paymentEventId ?? paymentOrderId ?? null,
+      paymentOrderId: paymentOrderId ?? paymentEventId ?? null,
+      paymentCheckoutId: checkoutIdStr,
       clerkUserId: clerkUserId.trim(),
       creditAmount: serverExpected,
       creditPackageId: creditPackageId as CreditPackId,
