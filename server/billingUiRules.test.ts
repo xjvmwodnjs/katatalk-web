@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isCreditChargeCheckoutDisabled } from "@shared/billingUiRules";
 
 describe("isCreditChargeCheckoutDisabled", () => {
-  it("disables when not authenticated even if policy accepted", () => {
-    expect(isCreditChargeCheckoutDisabled(true, false, false)).toBe(true);
+  it("does not disable only because logged out (click leads to login)", () => {
+    expect(isCreditChargeCheckoutDisabled(false, false, false)).toBe(false);
   });
 
-  it("disables checkout when refund policy not accepted", () => {
+  it("disables checkout when refund policy not accepted (logged in)", () => {
     expect(isCreditChargeCheckoutDisabled(false, false, true)).toBe(true);
   });
 
