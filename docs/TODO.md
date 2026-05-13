@@ -18,14 +18,14 @@
 
 ## 분석
 
-- [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용). mock 파이프라인은 동일 테이블만 갱신.
-- [ ] **운영 배포 전**: DB-backed **queue/worker** 전환 (다중 인스턴스·슬립 가능 호스팅에서 in-process mock 타이머만으로는 비권장).
-- [ ] **KataGo / LLM** (현재 mock 유지).
-- [ ] **KataGo worker·큐** 설계 및 연동.
+- [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
+- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004 마이그레이션** 적용 필요.
+- [ ] **KataGo / LLM** (현재 mock만).
+- [ ] **KataGo worker** — `worker:analysis` 자리에 실 엔진 연결·리소스·타임아웃 설계.
 
 ## 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003** 적용
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004** 적용
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종

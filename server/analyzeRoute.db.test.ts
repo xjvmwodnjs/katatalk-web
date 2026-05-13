@@ -75,6 +75,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    delete process.env.ANALYSIS_WORKER_MODE;
   });
 
   it("GET /api/analyze/:jobId returns 404 when row is missing", async () => {
@@ -203,6 +204,25 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.user_id).toBe("user_a");
     expect(row.is_mock).toBe(true);
     expect(row.credit_log_id).toBeTruthy();
+  });
+
+  it("POST with ANALYSIS_WORKER_MODE=external leaves job queued when timers advance", async () => {
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.useFakeTimers();
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+    expect(res.status).toBe(202);
+    const { jobId } = (await res.json()) as { jobId: string };
+    await vi.advanceTimersByTimeAsync(60_000);
+    const row = vitestAnalysisJobsStore.get(jobId);
+    expect(row?.status).toBe("queued");
   });
 
   it("after mock timers, analysis_jobs becomes completed with result", async () => {
