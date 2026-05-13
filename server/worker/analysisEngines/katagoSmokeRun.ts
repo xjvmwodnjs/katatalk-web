@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisitsFrom, readKatagoTimeoutMsFrom } from "./config";
 import { assertKatagoSmokePathsFromEnv, buildKatagoAnalysisArgv, formatKatagoSmokeCommandPreview } from "./katagoCommand";
+
 import { buildKatagoAnalysisQueryLine, parseMinimalSgfForSmoke } from "./katagoSgfQuery";
 import {
   buildKatagoSmokeNormalized,
@@ -12,6 +13,9 @@ import {
   extractJsonObjectsFromKatagoStdout,
   type KatagoSmokeDocument,
 } from "./katagoRawParser";
+
+/** worker timeout 후 SIGKILL 까지 대기 (ms) */
+export const KATAGO_WORKER_KILL_GRACE_MS = 5000;
 
 export type SpawnFn = (
   command: string,
@@ -178,6 +182,107 @@ export async function runKatagoSmoke(opts: {
   await writeFile(normalizedPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
 
   return { rawPath, stderrPath, normalizedPath, document };
+}
+
+/** stderr 를 DB `error_message` 용으로만 짧게 요약(경로·긴 줄 축소, 원문 로그 금지). */
+export function summarizeKatagoStderrForDb(stderr: string, maxLen = 420): string {
+  const t = stderr.trim().replace(/\r\n/g, "\n");
+  if (!t) {
+    return "";
+  }
+  const redacted = t
+    .replace(/[A-Za-z]:\\[^\s]+/g, "<path>")
+    .replace(/\/[^\s]+/g, (m) => (m.length > 32 ? "<path>" : m));
+  const oneLine = redacted.replace(/\s+/g, " ").slice(0, maxLen);
+  return oneLine.length < t.length ? `${oneLine}…` : oneLine;
+}
+
+/**
+ * Worker 전용: KataGo `analysis` 1회 실행. raw stdout 은 호출자가 DB에 넣지 않는다.
+ * timeout 시 SIGTERM → grace 후 SIGKILL.
+ */
+export async function runKatagoWorkerAnalysisV1(opts: {
+  sgfContent: string;
+  jobId: string;
+  env?: NodeJS.ProcessEnv;
+  spawnFn?: SpawnFn;
+}): Promise<{ stdout: string; stderr: string; code: number | null; commandPreview: string }> {
+  const env = opts.env != null ? { ...process.env, ...opts.env } : process.env;
+  const paths = assertKatagoSmokePathsFromEnv(env);
+  const maxVisits = readKatagoMaxVisitsFrom(env);
+  const timeoutMs = readKatagoTimeoutMsFrom(env);
+  const parsed = parseMinimalSgfForSmoke(opts.sgfContent);
+  const queryLine = buildKatagoAnalysisQueryLine({
+    boardSize: parsed.boardSize,
+    komi: parsed.komi,
+    moves: parsed.moves,
+    maxVisits,
+    id: `katatalk-worker-${opts.jobId}-${timestampForFilename()}`,
+  });
+  const argv = buildKatagoAnalysisArgv(paths);
+  const commandPreview = `${formatKatagoSmokeCommandPreview(paths.binary, argv)} <stdin-json>`;
+
+  const spawnFn = opts.spawnFn ?? ((cmd, a, o) => spawn(cmd, [...a], { ...o, env: { ...process.env, ...o.env } }));
+
+  const proc = spawnFn(paths.binary, argv, {
+    env,
+    stdio: ["pipe", "pipe", "pipe"] as StdioOptions,
+  });
+
+  const outputPromise = collectSpawnOutput(proc);
+  let killFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelKillFallback = () => {
+    if (killFallbackTimer !== undefined) {
+      clearTimeout(killFallbackTimer);
+      killFallbackTimer = undefined;
+    }
+  };
+  proc.once("close", () => {
+    cancelKillFallback();
+  });
+
+  try {
+    const stdin = proc.stdin;
+    if (!stdin) {
+      throw new Error("KATAGO_STDIN_UNAVAILABLE: KataGo stdin 을 열 수 없습니다.");
+    }
+    stdin.write(queryLine, "utf8");
+    stdin.end();
+  } catch (e) {
+    cancelKillFallback();
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    throw e;
+  }
+
+  const onTimeout = () => {
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    killFallbackTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+    }, KATAGO_WORKER_KILL_GRACE_MS);
+  };
+
+  try {
+    const raced = await raceOutputWithTimeout(outputPromise, timeoutMs, onTimeout);
+    return { stdout: raced.stdout, stderr: raced.stderr, code: raced.code, commandPreview };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/ms 안에 KataGo/.test(msg) || /did not finish/i.test(msg)) {
+      throw new Error(`KATAGO_TIMEOUT: ${msg}`);
+    }
+    throw e instanceof Error ? e : new Error(msg);
+  }
 }
 
 /** CLI 진입 — 성공 시 경로만 stdout 에 한 줄씩(원문 없음). */

@@ -4,6 +4,14 @@
  */
 export type NormalizedAnalysisResult = Record<string, unknown>;
 
+import type { ChildProcess, StdioOptions } from "node:child_process";
+
+export type KatagoTestSpawnFn = (
+  command: string,
+  args: readonly string[],
+  options: { env?: NodeJS.ProcessEnv; stdio: StdioOptions }
+) => ChildProcess;
+
 export type AnalyzeSgfInput = {
   jobId: string;
   /** 검증된 SGF UTF-8 텍스트 (mock 은 참조만, katago 는 필수) */
@@ -12,6 +20,8 @@ export type AnalyzeSgfInput = {
   maxVisits: number;
   /** mock 리포트용 표시 파일명 */
   fileName: string;
+  /** 단위 테스트 전용 — `runKatagoWorkerAnalysisV1` spawn 주입 (운영에서는 미사용) */
+  __testSpawnFn?: KatagoTestSpawnFn;
 };
 
 export type AnalysisEngine = {

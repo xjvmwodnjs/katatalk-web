@@ -35,6 +35,7 @@ export async function runMockAnalysisDbPipeline(args: {
       progress: 100,
       result: data,
       completed_at: new Date().toISOString(),
+      is_mock: true,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

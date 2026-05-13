@@ -55,9 +55,15 @@ describe("processClaimedAnalysisJob (mock engine)", () => {
     await vi.runAllTimersAsync();
     await p;
 
-    const stored = vitestAnalysisJobsStore.get("w-job-1") as { status: string; progress: number; result?: unknown };
+    const stored = vitestAnalysisJobsStore.get("w-job-1") as {
+      status: string;
+      progress: number;
+      result?: unknown;
+      is_mock?: boolean;
+    };
     expect(stored.status).toBe("completed");
     expect(stored.progress).toBe(100);
     expect(stored.result).toBeDefined();
+    expect(stored.is_mock).toBe(true);
   });
 });

@@ -77,6 +77,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   afterEach(() => {
     vi.useRealTimers();
     delete process.env.ANALYSIS_WORKER_MODE;
+    delete process.env.ANALYSIS_ENGINE;
   });
 
   it("GET /api/analyze/:jobId returns 404 when row is missing", async () => {
@@ -134,6 +135,47 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.success).toBe(true);
     expect(body.data).toEqual(resultPayload);
     expect(res.headers.get("X-KataTalk-Mock")).toBe("true");
+  });
+
+  it("GET completed normalizes DB status casing and parses stringified result", async () => {
+    const katagoPayload = {
+      ok: true,
+      source: "katago-worker-v1",
+      isMock: false,
+      top_mistakes: [],
+      engine: { name: "katago", maxVisits: 800 },
+      katago: {
+        hasWinrate: true,
+        hasScoreLead: true,
+        moveInfosCount: 16,
+        rootInfo: { winrate: 0.52, scoreLead: 1.5, currentPlayer: "B" },
+        topMove: { move: "Q16", winrate: 0.51, scoreLead: 1.2 },
+      },
+    };
+    vitestSeedAnalysisJob({
+      id: "job-katago-str",
+      user_id: "user_a",
+      status: "COMPLETED",
+      file_name: "k.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa10",
+      is_mock: false,
+      progress: 100,
+      result: JSON.stringify(katagoPayload),
+      error_message: null,
+      completed_at: new Date().toISOString(),
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-katago-str`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; status: string; data?: unknown };
+    expect(body.success).toBe(true);
+    expect(body.status).toBe("completed");
+    expect(body.data).toEqual(katagoPayload);
+    expect(res.headers.get("X-KataTalk-Mock")).toBeNull();
   });
 
   it("GET queued returns status from DB row", async () => {
@@ -208,6 +250,24 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.sgf_content).toBe(minimalSgf);
     expect(row.sgf_sha256).toBe(sha256HexUtf8(minimalSgf));
     expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
+  });
+
+  it("POST inserts is_mock=false when ANALYSIS_ENGINE=katago and ANALYSIS_WORKER_MODE=external", async () => {
+    process.env.ANALYSIS_ENGINE = "katago";
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { jobId: string; success: boolean };
+    const row = vitestAnalysisJobsStore.get(body.jobId)!;
+    expect(row.is_mock).toBe(false);
   });
 
   it("POST with ANALYSIS_WORKER_MODE=external leaves job queued when timers advance", async () => {

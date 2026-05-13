@@ -1,16 +1,52 @@
+import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
+import { readKatagoMaxVisits } from "./config";
+import { buildKatagoSmokeNormalized, type KatagoSmokeDocument } from "./katagoRawParser";
+import { parseMinimalSgfForSmoke } from "./katagoSgfQuery";
+import { runKatagoWorkerAnalysisV1, summarizeKatagoStderrForDb, KATAGO_WORKER_KILL_GRACE_MS } from "./katagoSmokeRun";
 import type { AnalyzeSgfInput, NormalizedAnalysisResult } from "./types";
 
-function readIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : fallback;
+const V25_REF = "docs/algorithm/KataTalk_Algorithm_V2.5.md";
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
+function rootHasScoreLeadOrMean(root: Record<string, unknown>): boolean {
+  if (typeof root.scoreLead === "number") {
+    return true;
+  }
+  return typeof root.scoreMean === "number";
+}
+
+function validateKatagoWorkerV1Document(doc: KatagoSmokeDocument): void {
+  const fmt = doc.katago.rawFormat;
+  if (fmt === "unknown") {
+    throw new Error(
+      "KATAGO_OUTPUT_INVALID: stdout 이 비어 있거나 JSON/JSONL 로 파싱할 수 없습니다."
+    );
+  }
+  const root = doc.katago.rootInfo;
+  if (!isPlainObject(root) || Object.keys(root).length === 0) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: rootInfo 가 없거나 비어 있습니다.");
+  }
+  if (doc.katago.moveInfosCount <= 0) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: moveInfos 가 없습니다.");
+  }
+  if (!doc.normalized.hasWinrate) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: winrate 정보가 없습니다(rootInfo 또는 moveInfos).");
+  }
+  if (!doc.normalized.hasScoreLead && !rootHasScoreLeadOrMean(root)) {
+    throw new Error(
+      "KATAGO_OUTPUT_INCOMPLETE: scoreLead 또는 scoreMean 이 없어 요약 승률·집 차를 확정할 수 없습니다."
+    );
+  }
 }
 
 /**
- * KataGo 실 binary 실행은 아직 연결하지 않는다.
- * 경로 env 가 모두 있어도 이 스tub 은 `KATAGO_NOT_IMPLEMENTED` 로 거절한다.
+ * Worker v1: 실제 KataGo `analysis` 1회 실행 후 normalized 만 `analysis_jobs.result` 에 저장한다.
+ * raw stdout 전체는 DB 에 넣지 않는다.
  */
-export async function analyzeSgfKatagoStub(input: AnalyzeSgfInput): Promise<NormalizedAnalysisResult> {
+export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<NormalizedAnalysisResult> {
   const bin = process.env.KATAGO_BINARY_PATH?.trim();
   const cfg = process.env.KATAGO_CONFIG_PATH?.trim();
   const model = process.env.KATAGO_MODEL_PATH?.trim();
@@ -22,9 +58,129 @@ export async function analyzeSgfKatagoStub(input: AnalyzeSgfInput): Promise<Norm
   if (!input.sgfContent?.trim()) {
     throw new Error("KATAGO_INPUT_MISSING: sgf_content 가 비어 있습니다.");
   }
-  void readIntEnv("KATAGO_MAX_VISITS", 200);
-  void readIntEnv("KATAGO_ANALYSIS_TIMEOUT_MS", 120_000);
-  throw new Error(
-    "KATAGO_NOT_IMPLEMENTED: worker 에서 KataGo 프로세스 실행은 아직 연결하지 않습니다. 로컬에서 raw JSON 수집은 `corepack pnpm katago:smoke -- <sgf>` 로 검증한 뒤 katagoEngine 에 붙일 예정입니다. (adapter stub)"
-  );
+
+  const maxVisits = input.maxVisits > 0 ? input.maxVisits : readKatagoMaxVisits();
+  const sgfText = input.sgfContent;
+  const sgfSha256 = sha256HexUtf8(sgfText);
+  const sgfSizeBytes = utf8ByteLength(sgfText);
+  const parsed = parseMinimalSgfForSmoke(sgfText);
+
+  let stdout = "";
+  let stderr = "";
+  let exitCode: number | null = null;
+  let commandPreview = "";
+
+  try {
+    const ran = await runKatagoWorkerAnalysisV1({
+      sgfContent: sgfText,
+      jobId: input.jobId,
+      env: process.env,
+      spawnFn: input.__testSpawnFn,
+    });
+    stdout = ran.stdout;
+    stderr = ran.stderr;
+    exitCode = ran.code;
+    commandPreview = ran.commandPreview;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.startsWith("KATAGO_TIMEOUT:")) {
+      throw new Error(`${msg} (SIGTERM → ${KATAGO_WORKER_KILL_GRACE_MS}ms 후 SIGKILL 시도)`);
+    }
+    throw e instanceof Error ? e : new Error(msg);
+  }
+
+  if (exitCode !== 0 && exitCode !== null) {
+    const tail = summarizeKatagoStderrForDb(stderr);
+    throw new Error(
+      `KATAGO_EXIT_NONZERO: KataGo exit ${String(exitCode)}${tail ? ` — ${tail}` : ""}`
+    );
+  }
+
+  const document = buildKatagoSmokeNormalized({
+    sgfSha256,
+    sgfSizeBytes,
+    rawStdout: stdout,
+    exitCode,
+    commandPreview,
+  });
+
+  if (document.katago.rawFormat === "unknown") {
+    const tail = summarizeKatagoStderrForDb(stderr);
+    throw new Error(
+      `KATAGO_OUTPUT_INVALID: stdout 을 분석 JSON 으로 읽을 수 없습니다.${tail ? ` stderr: ${tail}` : ""}`
+    );
+  }
+
+  try {
+    validateKatagoWorkerV1Document(document);
+  } catch (err) {
+    const tail = summarizeKatagoStderrForDb(stderr);
+    const base = err instanceof Error ? err.message : String(err);
+    throw new Error(tail && !base.includes(tail.slice(0, 20)) ? `${base} stderr: ${tail}` : base);
+  }
+
+  const root = document.katago.rootInfo as Record<string, unknown>;
+  const hasScoreLeadField =
+    document.normalized.hasScoreLead || rootHasScoreLeadOrMean(root);
+  const rootWinrate = typeof root.winrate === "number" && Number.isFinite(root.winrate) ? root.winrate : null;
+
+  const result: NormalizedAnalysisResult = {
+    ok: true,
+    source: "katago-worker-v1",
+    isMock: false,
+    /** KataGo root winrate — 흑/백 고정 해석 없음(UI·문서에서 중립 표기) */
+    katagoRootWinrate: rootWinrate,
+    engine: {
+      name: "katago",
+      maxVisits,
+      rawFormat: document.katago.rawFormat,
+    },
+    input: {
+      sgfSha256: document.input.sgfSha256,
+      sgfSizeBytes: document.input.sgfSizeBytes,
+    },
+    katago: {
+      rootInfo: document.katago.rootInfo,
+      moveInfosCount: document.katago.moveInfosCount,
+      topMove: document.katago.topMove,
+      hasWinrate: document.normalized.hasWinrate,
+      hasScoreLead: hasScoreLeadField,
+      hasOwnership: document.normalized.hasOwnership,
+    },
+    normalized: {
+      summary: "KataGo raw analysis captured. BSI/ADI not computed yet.",
+      sampleMoveInfos: document.normalized.sampleMoveInfos,
+    },
+    algorithmStage: {
+      v25Reference: V25_REF,
+      implemented: ["katago_raw_capture"],
+      notYetImplemented: [
+        "bsi",
+        "adi",
+        "concept_tags",
+        "explanation_planner",
+        "claim_verification",
+        "llm_commentary",
+      ],
+    },
+    game_info: {
+      black_player: "Black",
+      white_player: "White",
+      date: new Date().toISOString().slice(0, 10),
+      total_moves: parsed.moves.length,
+      result: {
+        ko: "KataGo raw 분석 완료(BSI/ADI 미계산)",
+        en: "KataGo raw done (BSI/ADI not computed)",
+        zh: "KataGo 原始分析完成（未计算 BSI/ADI）",
+        ja: "KataGo raw 完了(BSI/ADI 未実装)",
+      },
+      komi: parsed.komi,
+    },
+    top_mistakes: [],
+  };
+
+  return result;
 }
+
+/** @deprecated 호환용 별칭 — `analyzeSgfKatago` 사용 */
+export const analyzeSgfKatagoStub = analyzeSgfKatago;

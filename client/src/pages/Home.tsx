@@ -17,10 +17,18 @@ import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
 import type { AnalysisJobGetResponse } from "@shared/analysisJob";
+import {
+  isKatagoWorkerV1ResultPayload,
+  normalizeAnalysisJobStatus,
+  parseStoredAnalysisJobResult,
+} from "@shared/analysisJob";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import GameInfoHeader from "@/components/GameInfoHeader";
+import KatagoWorkerV1ResultPanel, {
+  type KatagoWorkerV1ResultData,
+} from "@/components/KatagoWorkerV1ResultPanel";
 import MistakeCard from "@/components/MistakeCard";
 import UploadHero from "@/components/UploadHero";
 
@@ -42,6 +50,7 @@ export default function Home() {
   const [lang, setLang] = useState<Language>(() => readStoredUiLang());
   const [view, setView] = useState<View>("upload");
   const [report, setReport] = useState<AnalysisReport>(MOCK_DATA);
+  const [katagoWorkerV1Result, setKatagoWorkerV1Result] = useState<KatagoWorkerV1ResultData | null>(null);
   const [jobProgress, setJobProgress] = useState(0);
   const [jobStatus, setJobStatus] = useState<AnalysisJobGetResponse["status"] | "idle">("idle");
   const pollAbortRef = useRef(false);
@@ -276,6 +285,7 @@ export default function Home() {
     }
 
     pollAbortRef.current = false;
+    setKatagoWorkerV1Result(null);
     setJobProgress(0);
     setJobStatus("queued");
     setView("loading");
@@ -350,14 +360,21 @@ export default function Home() {
         }
 
         const job = pollBody as AnalysisJobGetResponse;
-        setJobStatus(job.status);
+        const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
+        setJobStatus(normalizedStatus);
         setJobProgress(typeof job.progress === "number" ? job.progress : 0);
 
-        if (job.status === "completed") {
-          if (!job.data) {
+        if (normalizedStatus === "completed") {
+          const parsed = parseStoredAnalysisJobResult(job.data);
+          if (parsed == null) {
             throw new Error("Analysis finished but no data was returned.");
           }
-          setReport(job.data as AnalysisReport);
+          if (isKatagoWorkerV1ResultPayload(parsed)) {
+            setKatagoWorkerV1Result(parsed as KatagoWorkerV1ResultData);
+          } else {
+            setKatagoWorkerV1Result(null);
+            setReport(parsed as AnalysisReport);
+          }
           setView("result");
           setJobStatus("idle");
           toast.success(
@@ -368,7 +385,7 @@ export default function Home() {
           return;
         }
 
-        if (job.status === "failed") {
+        if (normalizedStatus === "failed") {
           throw new Error(job.error?.message ?? "Analysis job failed.");
         }
 
@@ -738,7 +755,10 @@ export default function Home() {
             {/* Back to Upload button */}
             <div className="pt-6">
               <button
-                onClick={() => setView("upload")}
+                onClick={() => {
+                  setKatagoWorkerV1Result(null);
+                  setView("upload");
+                }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-white/5"
                 style={{
                   color: "#94a3b8",
@@ -753,48 +773,53 @@ export default function Home() {
 
             {/* Analysis Results */}
             <div className="py-6 md:py-10">
-              <GameInfoHeader report={report} t={t} lang={lang} heroImageUrl={HERO_IMAGE} />
+              {katagoWorkerV1Result ? (
+                <KatagoWorkerV1ResultPanel data={katagoWorkerV1Result} lang={lang} />
+              ) : (
+                <GameInfoHeader report={report} t={t} lang={lang} heroImageUrl={HERO_IMAGE} />
+              )}
 
-              {/* Mistakes Section */}
-              <section>
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-400" />
-                    <h2
-                      className="text-lg font-bold text-amber-100"
-                      style={{ fontFamily: "'Noto Serif KR', serif" }}
+              {/* Mistakes Section (mock / full report only — KataGo v1 raw has no BSI mistakes yet) */}
+              {!katagoWorkerV1Result ? (
+                <section>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-400" />
+                      <h2
+                        className="text-lg font-bold text-amber-100"
+                        style={{ fontFamily: "'Noto Serif KR', serif" }}
+                      >
+                        {t.topMistakes}
+                      </h2>
+                    </div>
+                    <div
+                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        background: "rgba(201, 168, 76, 0.15)",
+                        border: "1px solid rgba(201, 168, 76, 0.3)",
+                        color: "#C9A84C",
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
                     >
-                      {t.topMistakes}
-                    </h2>
+                      {report.top_mistakes.length}
+                      {lang === "en" ? " " : ""}
+                      {t.mistakeCount}
+                    </div>
                   </div>
-                  <div
-                    className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                    style={{
-                      background: "rgba(201, 168, 76, 0.15)",
-                      border: "1px solid rgba(201, 168, 76, 0.3)",
-                      color: "#C9A84C",
-                      fontFamily: "'JetBrains Mono', monospace",
-                    }}
-                  >
-                    {report.top_mistakes.length}
-                    {lang === "en" ? " " : ""}
-                    {t.mistakeCount}
-                  </div>
-                </div>
 
-                {/* Mistake Cards */}
-                <div className="flex flex-col gap-5">
-                  {report.top_mistakes.map((mistake, i) => (
-                    <MistakeCard
-                      key={`${mistake.turn}-${mistake.player}`}
-                      mistake={mistake}
-                      index={i}
-                      t={t}
-                      lang={lang}
-                    />
-                  ))}
-                </div>
-              </section>
+                  <div className="flex flex-col gap-5">
+                    {report.top_mistakes.map((mistake, i) => (
+                      <MistakeCard
+                        key={`${mistake.turn}-${mistake.player}`}
+                        mistake={mistake}
+                        index={i}
+                        t={t}
+                        lang={lang}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </div>
           </>
         )}

@@ -162,13 +162,17 @@ export async function spendCreditForAnalysisJob(
   return { ok: true, balanceAfter: credits, ledgerId: logStr };
 }
 
+export type RefundCreditForAnalysisResult =
+  | { ok: true; duplicate: boolean }
+  | { ok: false; duplicate?: boolean; errorCode: string; errorMessage?: string };
+
 export async function refundCreditIfJobFailed(
   user: AuthenticatedUser,
   jobId: string,
   cost: number = DEFAULT_ANALYSIS_COST
-): Promise<void> {
+): Promise<RefundCreditForAnalysisResult> {
   const profileId = walletSubjectFromAuthUser(user);
-  await refundCreditIfJobFailedByProfileId(profileId, jobId, cost);
+  return refundCreditIfJobFailedByProfileId(profileId, jobId, cost);
 }
 
 /** analysis worker 등 — Clerk 세션 없이 profiles.id(= analysis_jobs.user_id)로 환불 RPC 호출 */
@@ -176,15 +180,35 @@ export async function refundCreditIfJobFailedByProfileId(
   profileId: string,
   jobId: string,
   cost: number = DEFAULT_ANALYSIS_COST
-): Promise<void> {
-  const sb = getSupabaseAdmin();
-  const { error } = await sb.rpc("refund_credit_for_analysis", {
-    p_user_id: profileId,
-    p_analysis_job_id: jobId,
-    p_amount: cost,
-  });
-  if (error) {
-    console.error("[creditService] refund_credit_for_analysis", error.message);
+): Promise<RefundCreditForAnalysisResult> {
+  try {
+    const sb = getSupabaseAdmin();
+    const { data, error } = await sb.rpc("refund_credit_for_analysis", {
+      p_user_id: profileId,
+      p_analysis_job_id: jobId,
+      p_amount: cost,
+    });
+    if (error) {
+      console.error("[creditService] refund_credit_for_analysis RPC", error.message);
+      return { ok: false, errorCode: "RPC_ERROR", errorMessage: error.message };
+    }
+    const row = parseRpcJson(data);
+    if (!row) {
+      return { ok: false, errorCode: "RPC_EMPTY_RESPONSE" };
+    }
+    if (row.ok === true) {
+      return { ok: true, duplicate: row.duplicate === true };
+    }
+    const reason = str(row.reason) ?? str(row.error) ?? "REFUND_DECLINED";
+    return {
+      ok: false,
+      duplicate: row.duplicate === true,
+      errorCode: reason,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[creditService] refund_credit_for_analysis exception", msg);
+    return { ok: false, errorCode: "EXCEPTION", errorMessage: msg };
   }
 }
 
@@ -277,8 +301,11 @@ export async function insertAnalysisJobQueued(args: {
   sgfContent: string;
   sgfSha256: string;
   sgfSizeBytes: number;
+  /** KataGo worker(external) 실분석 큐이면 false */
+  isMock?: boolean;
 }): Promise<void> {
   const sb = getSupabaseAdmin();
+  const isMock = args.isMock ?? true;
   const { error } = await sb.from("analysis_jobs").insert({
     id: args.jobId,
     user_id: args.profileId,
@@ -287,7 +314,7 @@ export async function insertAnalysisJobQueued(args: {
     language: args.language,
     credit_cost: args.creditCost ?? 1,
     credit_log_id: args.creditLogId,
-    is_mock: true,
+    is_mock: isMock,
     progress: 0,
     sgf_content: args.sgfContent,
     sgf_sha256: args.sgfSha256,
@@ -310,7 +337,10 @@ export async function getAnalysisJobRow(jobId: string): Promise<AnalysisJobDbRow
 export async function updateAnalysisJobRow(
   jobId: string,
   patch: Partial<
-    Pick<AnalysisJobDbRow, "status" | "progress" | "result" | "error_message" | "completed_at">
+    Pick<
+      AnalysisJobDbRow,
+      "status" | "progress" | "result" | "error_message" | "completed_at" | "is_mock"
+    >
   >
 ): Promise<void> {
   const sb = getSupabaseAdmin();

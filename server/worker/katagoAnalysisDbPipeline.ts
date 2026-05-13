@@ -1,9 +1,9 @@
 import type { AnalysisJobDbRow } from "../creditService";
 import { updateAnalysisJobRow } from "../creditService";
-import { analyzeSgfKatagoStub, readKatagoMaxVisits, readKatagoTimeoutMs } from "./analysisEngines";
+import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
 
 /**
- * KataGo 분석용 DB 파이프라인 (현재 엔진은 stub — 완료 전까지 failed + 환불 위주).
+ * KataGo 분석용 DB 파이프라인 — worker 에서 `analyzeSgfKatago` 로 1회 실행 후 `result` 저장.
  */
 export async function runKatagoAnalysisDbPipeline(args: {
   jobId: string;
@@ -28,8 +28,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
 
     await updateAnalysisJobRow(jobId, { status: "running", progress: 15 });
 
-    void readKatagoTimeoutMs;
-    const result = await analyzeSgfKatagoStub({
+    const result = await analyzeSgfKatago({
       jobId,
       sgfContent: content,
       language,
@@ -42,6 +41,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
       progress: 100,
       result,
       completed_at: new Date().toISOString(),
+      is_mock: false,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
