@@ -68,15 +68,23 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
   }
 
   if (row.status === "completed" && row.result != null) {
+    const r = row.result as Record<string, unknown> | null;
+    const fromKatagoWorker =
+      r != null && typeof r.source === "string" && r.source === "katago-worker-v1";
     return {
       ...base,
       data: row.result,
-      meta: row.is_mock
+      meta: fromKatagoWorker
         ? {
-            mock: true,
-            message: "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
+            mock: false,
+            message: "KataGo worker v1 raw capture. BSI/ADI not computed.",
           }
-        : undefined,
+        : row.is_mock
+          ? {
+              mock: true,
+              message: "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
+            }
+          : undefined,
     };
   }
 

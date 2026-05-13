@@ -144,6 +144,9 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 |------|------|
 | `KATATALK_ALLOW_MOCK_ANALYSIS` | `true` 일 때만 production 에서 mock 분석 API·**worker mock 처리** 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
 | `ANALYSIS_WORKER_MODE` | `inline`(Express 내 타이머) / `external`(별도 worker). **production 기본값은 `external`**(미설정 시). Web 만 띄우고 worker 가 없으면 job 은 **queued** 에 남습니다. |
+| `ANALYSIS_ENGINE` | `mock`(기본) / `katago`. **실 KataGo 실행은 Worker 프로세스에서만** (`pnpm worker:analysis`). Web 에 `KATAGO_*` 가 없어도 됩니다. |
+| `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` | Worker(또는 로컬 smoke)에서만 필요. **binary·모델·cfg 는 Git 에 올리지 않음.** |
+| `KATAGO_MAX_VISITS` / `KATAGO_ANALYSIS_TIMEOUT_MS` | 선택. 기본 `200` / `120000`. worker timeout 시 **SIGTERM → 5s 후 SIGKILL** 시도. |
 
 `PORT` 는 Railway/Render 가 주입합니다. **대시보드에서 임의 고정할 필요 없음**(플랫폼 기본값 사용).
 
@@ -167,7 +170,13 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 | 서비스 | 역할 | Start Command |
 |--------|------|----------------|
 | **Web** | HTTP·정적·Clerk·Lemon webhook | `corepack pnpm start` |
-| **Worker** | `claim_next_analysis_job` 로 queued 를 가져와 mock 분석 완료까지 DB 갱신 | `corepack pnpm worker:analysis` |
+| **Worker** | `claim_next_analysis_job` 로 queued 를 가져와 **`ANALYSIS_ENGINE`** 에 따라 mock 완료 또는 **KataGo v1** 분석 후 DB 갱신 | `corepack pnpm worker:analysis` |
+
+**Worker 전용 — `ANALYSIS_ENGINE=katago` (v1)**  
+- **Worker Service** Variables 예: `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`. **Web Service**에는 이 `KATAGO_*` 가 **없어도 됩니다**(KataGo는 worker에서만 실행).  
+- **Railway 일반 CPU**에서는 분석이 **느릴 수 있습니다.** 상용 고성능은 **GPU worker**(RunPod / Fly GPU / GPU VPS 등) 후보를 검토하세요.  
+- **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다.  
+- **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
 두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004_analysis_job_claim_rpc.sql` 의 `claim_next_analysis_job` RPC 가 적용되어 있어야** worker 가 job 을 가져갑니다.
 
@@ -286,7 +295,7 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
 - **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.  
-  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job`** 으로 queued 를 잡은 뒤 동일 mock 파이프라인으로 DB 를 갱신합니다.  
+  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job`** 으로 queued 를 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.  
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
 - mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
@@ -359,7 +368,8 @@ order by created_at desc;
 
 - **`pnpm katago:smoke` 등 로컬 smoke** 가 쓰는 **`.tmp/katago/`** 는 **raw / normalized / stderr 출력 전용**이며 **커밋하지 않습니다.** (`.gitignore` 에 디렉터리와 `raw-*`·`normalized-*`·`stderr-*` 패턴을 명시.) **실제 사용자 기보는 `samples/` 에 넣지 말고** **`.tmp/`·`.local/`** 등 ignore 되는 경로에 두세요. **`samples/test.sgf`** 는 **짧은 synthetic fixture** 로 **예외적으로** 저장소에 둘 수 있습니다.
 - **KataGo binary·모델(`*.bin.gz` 등)·로컬 cfg** 는 **저장소에 올리지 마세요.** (루트 실행 파일·루트 cfg 는 `.gitignore` 로 차단.)
-- **worker 에 실제 KataGo 를 붙이기 전**에는 **SIGTERM 이후 SIGKILL fallback**, **stdout 상한·streaming**, **raw 출력 저장 정책** 등을 **별도 브랜치**에서 보강할 예정입니다.
+- **worker 에 실제 KataGo 를 붙이기 전**에는 **SIGTERM 이후 SIGKILL fallback**, **stdout 상한·streaming**, **raw 출력 저장 정책** 등을 **별도 브랜치**에서 보강할 예정입니다.  
+- **worker v1(`ANALYSIS_ENGINE=katago`)**은 이미 **timeout 시 SIGTERM → 5초 후 SIGKILL** 을 시도하며, **`analysis_jobs.result` 에 raw stdout 전체는 넣지 않습니다.** 전체 raw 보존은 **추후 Storage / 디버그 아티팩트 정책** 후 구현합니다.
 
 ## 보안·Git
 

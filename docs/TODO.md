@@ -25,9 +25,9 @@
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
 - [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004 마이그레이션** 적용 필요.
 - [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
-- [ ] **KataGo worker 견고화(별도 브랜치)** — SIGTERM 이후 SIGKILL fallback, stdout 상한·streaming, raw 저장 정책.
-- [ ] **KataGo / LLM** (현재 mock만).
-- [ ] **KataGo worker** — `worker:analysis` 자리에 실 엔진 연결·리소스·타임아웃 설계.
+- [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI·LLM 없음). timeout 시 SIGTERM→SIGKILL 시도.
+- [ ] **KataGo worker 고도화** — stdout 스트리밍·상한, raw Storage/artifact 정책, GPU 호스트 분리.
+- [ ] **KataGo / LLM** — BSI/ADI·해설 파이프라인(V2.5 문서 기준).
 
 ## 운영 배포 체크리스트
 

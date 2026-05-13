@@ -1,6 +1,6 @@
 export type { AnalyzeSgfInput, AnalysisEngine, NormalizedAnalysisResult } from "./types";
 export { analyzeSgfMock } from "./mockEngine";
-export { analyzeSgfKatagoStub } from "./katagoEngine";
+export { analyzeSgfKatago, analyzeSgfKatagoStub } from "./katagoEngine";
 export {
   assertKatagoSmokePathsFromEnv,
   buildKatagoAnalysisArgv,
