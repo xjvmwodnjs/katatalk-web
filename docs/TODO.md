@@ -11,6 +11,7 @@
 
 ## 인프라
 
+- [ ] **Railway 운영 프로파일 전환** — README **「Railway 운영 프로파일」**: (1) internal mock 베타, (2) 공개 분석 비활성, (3) 향후 **GPU 전용 호스트**에 KataGo worker 배포 후 Web=`katago`+`external` / Worker=`KATAGO_*` (Web 에는 `KATAGO_*` 불필요). Railway **일반 CPU** 상용 KataGo 부하는 비권장.
 - [ ] **초기 베타 호스팅:** long-running **Node**(Railway 우선, Render 차순) — README 배포 절 참고. **Vercel 은 현재 미사용·보류**(Express listen·raw body webhook·in-process mock·memory rate limit·향후 KataGo worker 등으로 serverless adapter 분리 후 재검토).
 - [ ] Supabase **`002` 마이그레이션** 적용 후 `add_credits_from_payment` RPC 검증
 - [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지

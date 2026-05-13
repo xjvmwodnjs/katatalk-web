@@ -125,6 +125,43 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 - **로그:** SGF 전문은 애플리케이션 로그에 출력하지 않습니다(해시·크기 등 메타만).
 - **추후:** Supabase Storage / S3 이전, **TTL·삭제 정책**, 사용자 삭제 요청, raw 디버그 산출물과의 **권한 분리**는 별도 설계 후 적용합니다(`docs/TODO.md` 참고).
 
+### Railway 운영 프로파일 (mock 베타 / 공개 분석 비활성 / 향후 GPU KataGo)
+
+Railway **Web** 와 **Worker** 는 별도 서비스로 두는 것을 전제로 합니다. **Web/API 프로세스는 KataGo 바이너리를 실행하지 않습니다.** `KATAGO_*` 는 **Worker(또는 향후 GPU Worker)** 에만 필요합니다. **Railway 일반 CPU**에서 KataGo 상용 부하를 돌리는 것은 **권장하지 않습니다** — GPU·전용 호스트 후보를 검토하세요.
+
+#### 1) Railway internal beta — mock mode
+
+내부·스테이징에서 **가짜 분석 end-to-end**(업로드·큐·완료 UI)를 검증할 때. **공개 유료 서비스에 그대로 두지 말 것.**
+
+| 서비스 | 변수 |
+|--------|------|
+| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
+| **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
+
+Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004)** 적용 필수.
+
+#### 2) Railway public — analysis disabled mode
+
+**로그인·결제·크레딧·SGF 업로드** 등은 테스트하되, **가짜 분석 결과를 공개 유저에게 노출하지 않을** 때.
+
+| 서비스 | 변수 |
+|--------|------|
+| **Web** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** (`ANALYSIS_WORKER_MODE` 는 `external` 권장 — worker 없으면 queued 만 쌓임) |
+| **Worker** | 동일하게 `ANALYSIS_ENGINE=mock` + `KATATALK_ALLOW_MOCK_ANALYSIS=false`/미설정 이면 production 에서 **queued job 을 claim 하지 않음**(기존 README「Worker」절 참고) |
+
+이때 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 로 막힙니다.
+
+#### 3) Future — GPU KataGo worker mode (binary는 Railway Web 에 올리지 않음)
+
+GPU 서버(또는 전용 워커 호스트) 구독 후, **KataGo binary/model/config 를 Worker 측에만** 배치합니다. **Web Service Variables 에 `KATAGO_*` 를 넣을 필요 없습니다.**
+
+| 서비스 | 변수 |
+|--------|------|
+| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** |
+| **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, production 공통(Clerk·`APP_BASE_URL` 등은 호스트 정책에 맞게) |
+
+Worker 는 Supabase **`claim_next_analysis_job`** 로 `analysis_jobs` 를 가져와 **KataGo `analysis` 1회** 실행 후 `result.source=katago-worker-v1` 형태로 저장합니다.
+
 ### Railway / Render — Production 환경 변수 체크리스트
 
 아래 값은 **이름만** 나열합니다. **실제 secret·API 키 값은 README에 적지 말고**, 각 플랫폼 Environment 탭과 `.env`(로컬)에만 넣으세요.
@@ -175,6 +212,8 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 9. 아래 **「배포 후 스모크 테스트」** 절 수행  
 
 #### Railway — 분석 Worker 를 Web 과 분리할 때
+
+**운영 목적별 권장 env 조합(내부 mock / 공개 분석 끔 / 향후 GPU)** 은 위 **「Railway 운영 프로파일」** 절을 먼저 읽으세요.
 
 동일 저장소에서 **Web Service** 와 **Worker Service** 두 개를 두는 방식을 권장합니다. **Build Command** 는 동일하게 `corepack pnpm build` (또는 install 포함 한 줄)로 두고, **Start Command** 만 다르게 합니다.
 
