@@ -6,6 +6,10 @@ React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **�
 
 **최종 알고리즘 기준 문서:** [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)
 
+### analysis plan v1 (후보 턴만)
+
+BSI/ADI·다중 KataGo 호출 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수순을 나중에 분석할지** 후보 목록만 만든다. 스키마·빌더는 `shared/analysisPlanV1.ts`, `server/analysisPlan.ts` 이고, KataGo worker v1 결과 JSON에는 `analysisPlan` 필드로 포함된다(여전히 **KataGo 1회**만 실행).
+
 ## 로컬 실행
 
 ```bash
