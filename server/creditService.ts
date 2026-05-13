@@ -167,10 +167,19 @@ export async function refundCreditIfJobFailed(
   jobId: string,
   cost: number = DEFAULT_ANALYSIS_COST
 ): Promise<void> {
+  const profileId = walletSubjectFromAuthUser(user);
+  await refundCreditIfJobFailedByProfileId(profileId, jobId, cost);
+}
+
+/** analysis worker 등 — Clerk 세션 없이 profiles.id(= analysis_jobs.user_id)로 환불 RPC 호출 */
+export async function refundCreditIfJobFailedByProfileId(
+  profileId: string,
+  jobId: string,
+  cost: number = DEFAULT_ANALYSIS_COST
+): Promise<void> {
   const sb = getSupabaseAdmin();
-  const userId = walletSubjectFromAuthUser(user);
   const { error } = await sb.rpc("refund_credit_for_analysis", {
-    p_user_id: userId,
+    p_user_id: profileId,
     p_analysis_job_id: jobId,
     p_amount: cost,
   });
@@ -299,6 +308,51 @@ export async function updateAnalysisJobRow(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
+  if (data == null) {
+    return null;
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row || typeof row !== "object") {
+    return null;
+  }
+  const id = typeof row.id === "string" ? row.id : null;
+  const user_id = typeof row.user_id === "string" ? row.user_id : null;
+  const status = typeof row.status === "string" ? row.status : null;
+  if (!id || !user_id || !status) {
+    return null;
+  }
+  return {
+    id,
+    user_id,
+    status,
+    file_name: typeof row.file_name === "string" ? row.file_name : null,
+    language: typeof row.language === "string" ? row.language : null,
+    credit_cost: typeof row.credit_cost === "number" ? row.credit_cost : 1,
+    credit_log_id: typeof row.credit_log_id === "string" ? row.credit_log_id : null,
+    result: row.result ?? null,
+    error_message: typeof row.error_message === "string" ? row.error_message : null,
+    is_mock: row.is_mock === true,
+    created_at: typeof row.created_at === "string" ? row.created_at : "",
+    updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
+    completed_at: typeof row.completed_at === "string" ? row.completed_at : null,
+    progress: typeof row.progress === "number" ? row.progress : row.progress === null ? null : undefined,
+  };
+}
+
+/**
+ * queued job 1건을 running 으로 원자 claim. 없으면 null.
+ * DB 에 `004_analysis_job_claim_rpc.sql` 의 RPC 가 적용되어 있어야 한다.
+ */
+export async function claimNextAnalysisJobRpc(): Promise<AnalysisJobDbRow | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.rpc("claim_next_analysis_job");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return analysisJobRowFromUnknown(data);
 }
 
 export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<string | null> {

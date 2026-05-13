@@ -5,8 +5,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "node scripts/run-server.mjs development tsx watch server/_core/index.ts",
-    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "dev:worker": "node scripts/run-server.mjs development tsx watch server/worker/analysisWorker.ts",
+    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/worker/analysisWorker.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/worker/analysisWorker.js",
     "start": "node scripts/run-server.mjs production node dist/index.js",
+    "worker:analysis": "node scripts/run-server.mjs production node dist/worker/analysisWorker.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",

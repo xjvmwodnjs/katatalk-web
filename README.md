@@ -138,7 +138,8 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 | 변수 | 비고 |
 |------|------|
-| `KATATALK_ALLOW_MOCK_ANALYSIS` | `true` 일 때만 production 에서 mock 분석 API 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
+| `KATATALK_ALLOW_MOCK_ANALYSIS` | `true` 일 때만 production 에서 mock 분석 API·**worker mock 처리** 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
+| `ANALYSIS_WORKER_MODE` | `inline`(Express 내 타이머) / `external`(별도 worker). **production 기본값은 `external`**(미설정 시). Web 만 띄우고 worker 가 없으면 job 은 **queued** 에 남습니다. |
 
 `PORT` 는 Railway/Render 가 주입합니다. **대시보드에서 임의 고정할 필요 없음**(플랫폼 기본값 사용).
 
@@ -154,6 +155,19 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
    `https://<railway-도메인>/api/billing/webhook/lemonsqueezy`  
 8. **Clerk** Dashboard 의 **Allowed origins / redirect URLs** 에 production 도메인 추가  
 9. 아래 **「배포 후 스모크 테스트」** 절 수행  
+
+#### Railway — 분석 Worker 를 Web 과 분리할 때
+
+동일 저장소에서 **Web Service** 와 **Worker Service** 두 개를 두는 방식을 권장합니다. **Build Command** 는 동일하게 `corepack pnpm build` (또는 install 포함 한 줄)로 두고, **Start Command** 만 다르게 합니다.
+
+| 서비스 | 역할 | Start Command |
+|--------|------|----------------|
+| **Web** | HTTP·정적·Clerk·Lemon webhook | `corepack pnpm start` |
+| **Worker** | `claim_next_analysis_job` 로 queued 를 가져와 mock 분석 완료까지 DB 갱신 | `corepack pnpm worker:analysis` |
+
+두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004_analysis_job_claim_rpc.sql` 의 `claim_next_analysis_job` RPC 가 적용되어 있어야** worker 가 job 을 가져갑니다.
+
+mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
 
 ### Render 배포 절차 (요약)
 
@@ -181,7 +195,7 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 ### 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003** 적용
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004** 적용 (`004`: 분석 worker 용 `claim_next_analysis_job`)
 - [ ] Clerk **production** 도메인·Redirect URL
 - [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
 - [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
@@ -267,8 +281,18 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 ## 분석 job (`analysis_jobs`)
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
-- mock 분석은 여전히 **KataGo·LLM 없이** 동일 테이블을 갱신합니다. 프로세스 안에서는 **`setTimeout` 기반 mock 파이프라인**만 돌아가며, 이는 **인스턴스 로컬 스케줄러**일 뿐입니다.
-- **운영 배포 전**에는 **DB-backed queue/worker** 로 바꿔야 합니다. **다중 인스턴스** 에서는 프로세스 내 장시간 mock 파이프라인에만 의존하면 안 되며, 다음 단계로 **KataGo worker·큐 설계**가 필요합니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
+- **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.  
+  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job`** 으로 queued 를 잡은 뒤 동일 mock 파이프라인으로 DB 를 갱신합니다.  
+  - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
+- mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
+
+**로컬 수동 검증 (`external` + worker):**
+
+1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 이 적용되어 있어야 합니다. 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.  
+2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)  
+3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`  
+4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.  
+5. **`corepack pnpm worker:analysis`** 는 **`dist/worker/analysisWorker.js`** 를 사용하므로, 로컬에서 이 명령만 돌릴 때는 먼저 **`corepack pnpm build`** 가 필요합니다(Railway 등은 Build 단계에서 동일하게 `pnpm build` 가 선행되면 됩니다).
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
@@ -318,12 +342,14 @@ order by created_at desc;
 ## Supabase 마이그레이션
 
 - [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
-- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
+- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC  
+- [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`  
+- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** (worker 가 queued 를 원자적으로 running 으로 claim)
 
 ## 아직 구현되지 않은 것
 
-- **KataGo / LLM** 실분석 워커 (현재 mock만)  
-- 분석 job **완전한 DB/큐 기반** 파이프라인 (현재는 mock + `analysis_jobs` insert 병행)
+- **KataGo / LLM** 실분석 워커 (현재 mock worker 슬롯만 분리됨)  
+- **KataGo** 를 `worker:analysis` 자리에 연결하고, 장시간·GPU 작업에 맞는 **프로세스/리소스** 설계
 
 ## 보안·Git
 

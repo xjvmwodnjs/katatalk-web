@@ -1,5 +1,7 @@
 // =============================================================
-// /api/analyze — SGF upload + job enqueue (mock worker, DB-backed analysis_jobs)
+// /api/analyze — SGF upload + job enqueue (DB-backed analysis_jobs)
+// mock 실행: ANALYSIS_WORKER_MODE=inline 일 때만 Express 내 타이머,
+// external 일 때는 별도 `pnpm worker:analysis` 프로세스가 claim 후 처리.
 // =============================================================
 //
 // SECURITY NOTE: requireAnalyzeAuth 로 서버 측 인증 필수.
@@ -21,6 +23,8 @@ import {
 } from "./middleware/apiRateLimit";
 import { requireMockAnalysisAllowed } from "./middleware/mockAnalysisGuard";
 import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
+import { getAnalysisWorkerMode } from "./analysisWorkerMode";
+import { isMockAnalysisAllowed } from "./_core/env";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
@@ -305,20 +309,23 @@ analyzeRouter.post(
         return;
       }
 
-      try {
-        analysisJobStore.createAndEnqueueMock({
-          jobId,
-          payload: { fileName, language },
-          onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
-        });
-      } catch (e) {
-        console.error("[analyze] enqueue", e);
-        await refundCreditIfJobFailed(user, jobId, 1);
-        res.status(500).json({
-          success: false,
-          message: "분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-        });
-        return;
+      const workerMode = getAnalysisWorkerMode();
+      if (workerMode === "inline" && isMockAnalysisAllowed()) {
+        try {
+          analysisJobStore.createAndEnqueueMock({
+            jobId,
+            payload: { fileName, language },
+            onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
+          });
+        } catch (e) {
+          console.error("[analyze] enqueue", e);
+          await refundCreditIfJobFailed(user, jobId, 1);
+          res.status(500).json({
+            success: false,
+            message: "분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+          });
+          return;
+        }
       }
 
       const body: AnalysisJobCreateResponse = {

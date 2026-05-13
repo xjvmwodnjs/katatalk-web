@@ -156,6 +156,29 @@ vi.mock("./_core/supabaseAdmin", () => {
       if (name === "refund_credit_for_analysis") {
         return { data: { ok: true, duplicate: false }, error: null };
       }
+      if (name === "claim_next_analysis_job") {
+        const queued = Array.from(vitestAnalysisJobsStore.entries())
+          .filter(([, r]) => (r as { status?: string }).status === "queued")
+          .sort((a, b) =>
+            String((a[1] as { created_at?: string }).created_at ?? "").localeCompare(
+              String((b[1] as { created_at?: string }).created_at ?? "")
+            )
+          );
+        if (queued.length === 0) {
+          return { data: null, error: null };
+        }
+        const [id, row] = queued[0]!;
+        const existing = vitestAnalysisJobsStore.get(id);
+        if (existing) {
+          Object.assign(existing, {
+            status: "running",
+            progress: Math.max(Number((existing as { progress?: number }).progress) || 0, 1),
+            updated_at: isoNow(),
+          });
+          return { data: existing, error: null };
+        }
+        return { data: null, error: null };
+      }
       if (name === "add_credits_from_payment") {
         return {
           data: { ok: true, duplicate: false, credits: 52, log_id: "00000000-0000-0000-0000-00000000bb01" },
