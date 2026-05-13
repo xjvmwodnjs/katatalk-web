@@ -16,10 +16,16 @@
 - [ ] 기존 `stripe_*` 로 적재된 `credit_logs` 가 있다면 조회·리포트만 legacy 로 유지
 - [ ] **Lemon `order_created`**: redacted JSON fixture 추가 후 `lemonsqueezyProvider` idempotency 키 우선순위 고정 테스트
 
+## 알고리즘·해설(향후)
+
+- [ ] **BSI/ADI·Concept Tagger·Explanation Planner·Claim Verification·Q&A Engine** — 구현 시 설계·행위 근거는 **최종 알고리즘 기준 문서** [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)를 따른다.
+
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
 - [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004 마이그레이션** 적용 필요.
+- [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
+- [ ] **KataGo worker 견고화(별도 브랜치)** — SIGTERM 이후 SIGKILL fallback, stdout 상한·streaming, raw 저장 정책.
 - [ ] **KataGo / LLM** (현재 mock만).
 - [ ] **KataGo worker** — `worker:analysis` 자리에 실 엔진 연결·리소스·타임아웃 설계.
 

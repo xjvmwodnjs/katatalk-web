@@ -2,6 +2,10 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { InMemoryAnalysisJobStore } from "./inMemoryAnalysisJobStore";
 import { getAnalysisJobRow, insertAnalysisJobQueued } from "./creditService";
 import { vitestAnalysisJobsStore } from "./vitestSetup";
+import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
+
+const sgfA = "(;FF[4]GM[1]SZ[19];B[pd];W[dp])";
+const sgfB = "(;FF[4]GM[1]SZ[19];B[dd];W[dp])";
 
 const payload = {
   fileName: "game.sgf",
@@ -30,6 +34,9 @@ describe("InMemoryAnalysisJobStore (DB-backed mock pipeline)", () => {
       fileName: payload.fileName,
       language: payload.language,
       creditLogId: "00000000-0000-0000-0000-000000000001",
+      sgfContent: sgfA,
+      sgfSha256: sha256HexUtf8(sgfA),
+      sgfSizeBytes: utf8ByteLength(sgfA),
     });
 
     store.createAndEnqueueMock({
@@ -56,6 +63,9 @@ describe("InMemoryAnalysisJobStore (DB-backed mock pipeline)", () => {
       fileName: "x.sgf",
       language: "ko",
       creditLogId: "00000000-0000-0000-0000-000000000002",
+      sgfContent: sgfB,
+      sgfSha256: sha256HexUtf8(sgfB),
+      sgfSizeBytes: utf8ByteLength(sgfB),
     });
     store.createAndEnqueueMock({ jobId, payload: { fileName: "x.sgf", language: "ko" } });
     await vi.runAllTimersAsync();

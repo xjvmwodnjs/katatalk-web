@@ -2,6 +2,10 @@
 
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 **mock 분석**만 제공합니다. **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
 
+## 알고리즘 기준 문서
+
+**최종 알고리즘 기준 문서:** [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)
+
 ## 로컬 실행
 
 ```bash
@@ -350,6 +354,12 @@ order by created_at desc;
 
 - **KataGo / LLM** 실분석 워커 (현재 mock worker 슬롯만 분리됨)  
 - **KataGo** 를 `worker:analysis` 자리에 연결하고, 장시간·GPU 작업에 맞는 **프로세스/리소스** 설계
+
+## KataGo 로컬 smoke·저장소 위생 (worker 실연결 전)
+
+- **`pnpm katago:smoke` 등 로컬 smoke** 가 쓰는 **`.tmp/katago/`** 는 **raw / normalized / stderr 출력 전용**이며 **커밋하지 않습니다.** (`.gitignore` 에 디렉터리와 `raw-*`·`normalized-*`·`stderr-*` 패턴을 명시.) **실제 사용자 기보는 `samples/` 에 넣지 말고** **`.tmp/`·`.local/`** 등 ignore 되는 경로에 두세요. **`samples/test.sgf`** 는 **짧은 synthetic fixture** 로 **예외적으로** 저장소에 둘 수 있습니다.
+- **KataGo binary·모델(`*.bin.gz` 등)·로컬 cfg** 는 **저장소에 올리지 마세요.** (루트 실행 파일·루트 cfg 는 `.gitignore` 로 차단.)
+- **worker 에 실제 KataGo 를 붙이기 전**에는 **SIGTERM 이후 SIGKILL fallback**, **stdout 상한·streaming**, **raw 출력 저장 정책** 등을 **별도 브랜치**에서 보강할 예정입니다.
 
 ## 보안·Git
 

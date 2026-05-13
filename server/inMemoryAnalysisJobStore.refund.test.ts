@@ -4,6 +4,9 @@ import { InMemoryAnalysisJobStore } from "./inMemoryAnalysisJobStore";
 import * as creditService from "./creditService";
 import { vitestAnalysisJobsStore } from "./vitestSetup";
 import type { AuthenticatedUser } from "./_core/sdk";
+import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
+
+const refundSgf = "(;FF[4]GM[1]SZ[19];B[pd];W[dp])";
 
 const refundUser = {
   id: 99,
@@ -40,6 +43,9 @@ describe("InMemoryAnalysisJobStore refund on mock failure", () => {
       fileName: "x.sgf",
       language: "ko",
       creditLogId: "00000000-0000-0000-0000-00000000ee01",
+      sgfContent: refundSgf,
+      sgfSha256: sha256HexUtf8(refundSgf),
+      sgfSizeBytes: utf8ByteLength(refundSgf),
     });
 
     const store = new InMemoryAnalysisJobStore();

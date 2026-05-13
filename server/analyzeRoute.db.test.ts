@@ -6,6 +6,7 @@ import { analyzeRouter } from "./analyzeRoute";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import type { AuthenticatedUser } from "./_core/sdk";
+import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
 
 vi.mock("./_core/resolveRequestUser", () => ({
   tryResolveUserFromRequest: vi.fn(),
@@ -204,6 +205,9 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.user_id).toBe("user_a");
     expect(row.is_mock).toBe(true);
     expect(row.credit_log_id).toBeTruthy();
+    expect(row.sgf_content).toBe(minimalSgf);
+    expect(row.sgf_sha256).toBe(sha256HexUtf8(minimalSgf));
+    expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
   });
 
   it("POST with ANALYSIS_WORKER_MODE=external leaves job queued when timers advance", async () => {

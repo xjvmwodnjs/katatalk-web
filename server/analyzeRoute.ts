@@ -28,6 +28,7 @@ import { isMockAnalysisAllowed } from "./_core/env";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { validateSgfText } from "./sgfValidation";
+import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
 import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
 import type { AnalysisJobDbRow } from "./creditService";
 import {
@@ -290,6 +291,15 @@ analyzeRouter.post(
         return;
       }
 
+      const sgfSha256 = sha256HexUtf8(sgfContent);
+      const sgfSizeBytes = utf8ByteLength(sgfContent);
+      console.log("[analyze] job enqueued", {
+        jobId,
+        fileName,
+        sgfSizeBytes,
+        sgfSha256Prefix: sgfSha256.slice(0, 12),
+      });
+
       try {
         await insertAnalysisJobQueued({
           jobId,
@@ -298,6 +308,9 @@ analyzeRouter.post(
           language,
           creditLogId: spend.ledgerId,
           creditCost: 1,
+          sgfContent: sgfContent,
+          sgfSha256,
+          sgfSizeBytes,
         });
       } catch (e) {
         console.error("[analyze] insertAnalysisJobQueued", e);
