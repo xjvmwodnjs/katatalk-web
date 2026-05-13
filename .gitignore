@@ -97,9 +97,22 @@ jspm_packages/
 .out
 .storybook-out
 
-# Temporary folders
-tmp/
-temp/
+# KataGo local smoke 출력 전용 (raw / normalized / stderr — 커밋 금지)
+.tmp/katago/
+.tmp/katago/raw-*.json
+.tmp/katago/raw-*.jsonl
+.tmp/katago/raw-*.txt
+.tmp/katago/normalized-*.json
+.tmp/katago/stderr-*.log
+
+# 로컬 KataGo 바이너리·모델·cfg (`katago` 전역 패턴은 docs/katago 등과 충돌하므로 루트 바이너리만 `/katago`)
+.local/katago/
+*.bin.gz
+/katago
+katago.exe
+/analysis.cfg
+/analysis_example.cfg
+/gtp_example.cfg
 
 # Database
 *.db
