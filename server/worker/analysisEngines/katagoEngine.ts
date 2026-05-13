@@ -1,3 +1,4 @@
+import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisits } from "./config";
 import { buildKatagoSmokeNormalized, type KatagoSmokeDocument } from "./katagoRawParser";
@@ -153,7 +154,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     },
     algorithmStage: {
       v25Reference: V25_REF,
-      implemented: ["katago_raw_capture"],
+      implemented: ["katago_raw_capture", "analysis_plan_v1"],
       notYetImplemented: [
         "bsi",
         "adi",
@@ -177,6 +178,8 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       komi: parsed.komi,
     },
     top_mistakes: [],
+    /** BSI/ADI 전 — 다중 KataGo 호출 없이 후보 턴만 기록 */
+    analysisPlan: buildAnalysisPlanV1FromParsed(parsed),
   };
 
   return result;

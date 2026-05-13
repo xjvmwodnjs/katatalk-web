@@ -85,3 +85,10 @@ export function isKatagoWorkerV1ResultPayload(data: unknown): boolean {
   const o = data as Record<string, unknown>;
   return o.source === "katago-worker-v1";
 }
+
+/** `analysis_jobs.result.analysisPlan` 등 — 상세는 `shared/analysisPlanV1.ts` */
+export type {
+  AnalysisPlanV1,
+  AnalysisPlanCandidateTurnV1,
+  BuildAnalysisPlanV1Options,
+} from "./analysisPlanV1";
