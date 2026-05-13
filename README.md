@@ -286,7 +286,13 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
 - mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
-**로컬 수동 검증:** 터미널 A 에서 `corepack pnpm dev`, 터미널 B 에서 `corepack pnpm dev:worker` 를 띄운 뒤 SGF 업로드 → `analysis_jobs` 가 `queued` → worker 가 `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 **`external`** 모드에서 job 은 **queued** 에 남습니다.
+**로컬 수동 검증 (`external` + worker):**
+
+1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 이 적용되어 있어야 합니다. 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.  
+2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)  
+3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`  
+4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.  
+5. **`corepack pnpm worker:analysis`** 는 **`dist/worker/analysisWorker.js`** 를 사용하므로, 로컬에서 이 명령만 돌릴 때는 먼저 **`corepack pnpm build`** 가 필요합니다(Railway 등은 Build 단계에서 동일하게 `pnpm build` 가 선행되면 됩니다).
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
 
