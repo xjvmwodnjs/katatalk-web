@@ -10,10 +10,10 @@
 import { nanoid } from "nanoid";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
-import type {
-  AnalysisJobCreateResponse,
-  AnalysisJobGetResponse,
-  AnalysisJobStatus,
+import type { AnalysisJobCreateResponse, AnalysisJobGetResponse } from "@shared/analysisJob";
+import {
+  normalizeAnalysisJobStatus,
+  parseStoredAnalysisJobResult,
 } from "@shared/analysisJob";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import {
@@ -21,7 +21,10 @@ import {
   analyzePostIpLimit,
   analyzePostUserLimit,
 } from "./middleware/apiRateLimit";
-import { requireMockAnalysisAllowed } from "./middleware/mockAnalysisGuard";
+import {
+  requireAnalyzeEnqueueAllowed,
+  shouldEnqueueAnalysisJobAsMock,
+} from "./middleware/analyzeEnqueueGuard";
 import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
 import { isMockAnalysisAllowed } from "./_core/env";
@@ -41,39 +44,42 @@ import {
 } from "./creditService";
 
 function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetResponse {
+  const status = normalizeAnalysisJobStatus(row.status);
+  const parsedResult = parseStoredAnalysisJobResult(row.result);
+
   const progress =
     row.progress ??
-    (row.status === "queued"
+    (status === "queued"
       ? 0
-      : row.status === "completed"
+      : status === "completed"
         ? 100
-        : row.status === "failed"
+        : status === "failed"
           ? null
           : 40);
 
   const base = {
     success: true as const,
     jobId: row.id,
-    status: row.status as AnalysisJobStatus,
+    status,
     progress,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 
-  if (row.status === "failed") {
+  if (status === "failed") {
     return {
       ...base,
       error: { message: row.error_message ?? "Analysis failed." },
     };
   }
 
-  if (row.status === "completed" && row.result != null) {
-    const r = row.result as Record<string, unknown> | null;
+  if (status === "completed" && parsedResult != null) {
+    const r = parsedResult as Record<string, unknown> | null;
     const fromKatagoWorker =
       r != null && typeof r.source === "string" && r.source === "katago-worker-v1";
     return {
       ...base,
-      data: row.result,
+      data: parsedResult,
       meta: fromKatagoWorker
         ? {
             mock: false,
@@ -215,7 +221,7 @@ analyzeRouter.post(
   analyzePostIpLimit,
   requireAnalyzeAuth,
   analyzePostUserLimit,
-  requireMockAnalysisAllowed,
+  requireAnalyzeEnqueueAllowed,
   handleMulterUpload,
   (req: Request, res: Response) => {
     void (async () => {
@@ -319,6 +325,7 @@ analyzeRouter.post(
           sgfContent: sgfContent,
           sgfSha256,
           sgfSizeBytes,
+          isMock: shouldEnqueueAnalysisJobAsMock(),
         });
       } catch (e) {
         console.error("[analyze] insertAnalysisJobQueued", e);
@@ -336,7 +343,9 @@ analyzeRouter.post(
           analysisJobStore.createAndEnqueueMock({
             jobId,
             payload: { fileName, language },
-            onJobFailed: () => refundCreditIfJobFailed(user, jobId, 1),
+            onJobFailed: () => {
+              void refundCreditIfJobFailed(user, jobId, 1);
+            },
           });
         } catch (e) {
           console.error("[analyze] enqueue", e);

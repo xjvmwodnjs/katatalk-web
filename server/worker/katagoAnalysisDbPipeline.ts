@@ -41,6 +41,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
       progress: 100,
       result,
       completed_at: new Date().toISOString(),
+      is_mock: false,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

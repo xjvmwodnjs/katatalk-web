@@ -35,7 +35,10 @@ describe("InMemoryAnalysisJobStore refund on mock failure", () => {
   });
 
   it("calls refundCreditIfJobFailed and persists failed status", async () => {
-    const refundSpy = vi.spyOn(creditService, "refundCreditIfJobFailed").mockResolvedValue(undefined);
+    const refundSpy = vi.spyOn(creditService, "refundCreditIfJobFailed").mockResolvedValue({
+      ok: true,
+      duplicate: false,
+    });
     const jobId = "job-refund-1";
     await creditService.insertAnalysisJobQueued({
       jobId,

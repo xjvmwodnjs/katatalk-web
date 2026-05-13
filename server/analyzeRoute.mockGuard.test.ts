@@ -60,11 +60,14 @@ describe("POST /api/analyze mock guard (production)", () => {
 
   afterEach(() => {
     process.env = envBackup;
+    delete process.env.ANALYSIS_ENGINE;
+    delete process.env.ANALYSIS_WORKER_MODE;
   });
 
-  it("returns 503 MOCK_ANALYSIS_DISABLED when NODE_ENV=production and flag not true", async () => {
+  it("returns 503 MOCK_ANALYSIS_DISABLED when production + mock engine + flag not true", async () => {
     process.env.NODE_ENV = "production";
     process.env.KATATALK_ALLOW_MOCK_ANALYSIS = "false";
+    delete process.env.ANALYSIS_ENGINE;
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
 
     const fd = new FormData();
@@ -81,6 +84,48 @@ describe("POST /api/analyze mock guard (production)", () => {
     const body = (await res.json()) as { code?: string; success?: boolean };
     expect(body.success).toBe(false);
     expect(body.code).toBe("MOCK_ANALYSIS_DISABLED");
+  });
+
+  it("allows enqueue when production + ANALYSIS_ENGINE=katago + ANALYSIS_WORKER_MODE=external without mock flag", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.KATATALK_ALLOW_MOCK_ANALYSIS = "false";
+    process.env.ANALYSIS_ENGINE = "katago";
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(202);
+  });
+
+  it("returns 503 KATAGO_INLINE_FORBIDDEN when production + katago + inline", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.ANALYSIS_ENGINE = "katago";
+    process.env.ANALYSIS_WORKER_MODE = "inline";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { code?: string; success?: boolean };
+    expect(body.success).toBe(false);
+    expect(body.code).toBe("KATAGO_INLINE_FORBIDDEN");
   });
 
   it("allows analyze when NODE_ENV is test (development behavior)", async () => {

@@ -19,7 +19,17 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
   const engine = getAnalysisEngineName();
   const fileName = row.file_name?.trim() || "uploaded.sgf";
   const language = coerceLanguage(row.language);
-  const onFail = () => refundCreditIfJobFailedByProfileId(row.user_id, row.id, row.credit_cost);
+  const onFail = async (): Promise<void> => {
+    const r = await refundCreditIfJobFailedByProfileId(row.user_id, row.id, row.credit_cost);
+    if (!r.ok) {
+      console.error(
+        "[analysis-worker] refund failed",
+        JSON.stringify({ jobId: row.id, code: r.errorCode })
+      );
+    } else if (r.duplicate) {
+      console.warn("[analysis-worker] refund idempotent duplicate", JSON.stringify({ jobId: row.id }));
+    }
+  };
 
   if (engine === "katago") {
     await runKatagoAnalysisDbPipeline({

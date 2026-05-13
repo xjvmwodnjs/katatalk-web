@@ -130,7 +130,7 @@ vi.mock("./_core/supabaseAdmin", () => {
     async (
       name: string,
       args?: Record<string, unknown>
-    ): Promise<{ data: unknown; error: null }> => {
+    ): Promise<{ data: unknown; error: unknown }> => {
       const a = args ?? {};
       if (name === "ensure_profile_with_signup_bonus") {
         return { data: { credits: 2, signup_bonus_rows: 1 }, error: null };
@@ -154,7 +154,23 @@ vi.mock("./_core/supabaseAdmin", () => {
         };
       }
       if (name === "refund_credit_for_analysis") {
-        return { data: { ok: true, duplicate: false }, error: null };
+        const jobId = a.p_analysis_job_id as string;
+        if (jobId === "job-refund-rpc-error") {
+          return { data: null, error: { message: "rpc simulated failure" } };
+        }
+        if (jobId === "job-refund-dup") {
+          return {
+            data: { ok: true, duplicate: true, credits: 9, log_id: "00000000-0000-0000-0000-00000000dd01" },
+            error: null,
+          };
+        }
+        if (jobId === "job-refund-no-spend") {
+          return {
+            data: { ok: false, reason: "NO_SPEND", credits: 9, log_id: null },
+            error: null,
+          };
+        }
+        return { data: { ok: true, duplicate: false, credits: 10, log_id: "00000000-0000-0000-0000-00000000cc01" }, error: null };
       }
       if (name === "claim_next_analysis_job") {
         const queued = Array.from(vitestAnalysisJobsStore.entries())

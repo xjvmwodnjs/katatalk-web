@@ -42,14 +42,6 @@ function validateKatagoWorkerV1Document(doc: KatagoSmokeDocument): void {
   }
 }
 
-function finalWinrateBlackPercent(root: Record<string, unknown>): number {
-  if (typeof root.winrate === "number") {
-    const w = root.winrate;
-    return w <= 1 && w >= 0 ? Math.round(w * 1000) / 10 : Math.round(w * 10) / 10;
-  }
-  return 50;
-}
-
 /**
  * Worker v1: 실제 KataGo `analysis` 1회 실행 후 normalized 만 `analysis_jobs.result` 에 저장한다.
  * raw stdout 전체는 DB 에 넣지 않는다.
@@ -130,11 +122,14 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
   const root = document.katago.rootInfo as Record<string, unknown>;
   const hasScoreLeadField =
     document.normalized.hasScoreLead || rootHasScoreLeadOrMean(root);
+  const rootWinrate = typeof root.winrate === "number" && Number.isFinite(root.winrate) ? root.winrate : null;
 
   const result: NormalizedAnalysisResult = {
     ok: true,
     source: "katago-worker-v1",
     isMock: false,
+    /** KataGo root winrate — 흑/백 고정 해석 없음(UI·문서에서 중립 표기) */
+    katagoRootWinrate: rootWinrate,
     engine: {
       name: "katago",
       maxVisits,
@@ -180,7 +175,6 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
         ja: "KataGo raw 完了(BSI/ADI 未実装)",
       },
       komi: parsed.komi,
-      final_winrate_black: finalWinrateBlackPercent(root),
     },
     top_mistakes: [],
   };

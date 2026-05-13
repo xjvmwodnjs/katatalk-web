@@ -108,11 +108,22 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 주요 REST 경로에 **express-rate-limit**(메모리 저장)을 적용했습니다. **단일 인스턴스**에서만 의미가 일관되며, 초과 시 **429** 및 JSON `code: "RATE_LIMITED"` 를 반환합니다. **수평 확장** 시에는 **Redis/Upstash** 등으로 교체해야 합니다.
 
-### Production 환경 변수·mock 분석 가드
+### Production 환경 변수·분석 enqueue 가드
 
 `NODE_ENV=production` 이면 기동 시 **`validateServerEnv`** 가 Clerk·Supabase·Lemon·`APP_BASE_URL`(반드시 **`https://`** 로 시작, **`http://localhost` 불가**) 등을 검증합니다. 오류 메시지에는 **변수명만** 포함하고 값은 넣지 않습니다.
 
-**KataGo/LLM이 연결되기 전에는 production에서 유료 공개 mock 분석을 켜면 안 됩니다.** `KATATALK_ALLOW_MOCK_ANALYSIS=true` 가 아니면 production 에서 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 입니다. 스테이징·내부 베타에서만 명시적으로 켜세요.
+**Mock 분석(엔진 mock)** 은 운영에서 실수로 노출되면 안 되므로, `NODE_ENV=production` 이고 **`ANALYSIS_ENGINE` 이 mock(또는 미설정)** 이면 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 아닐 때 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 입니다.
+
+**KataGo 실분석** 은 **`ANALYSIS_ENGINE=katago`** 이고 **`ANALYSIS_WORKER_MODE=external`** 일 때 production 에서도 **`KATATALK_ALLOW_MOCK_ANALYSIS` 없이** enqueue(202)가 허용됩니다. 웹/API 프로세스는 KataGo 바이너리를 실행하지 않으며, 별도 worker 가 DB 큐를 소비합니다.
+
+**금지 조합(운영):** `ANALYSIS_ENGINE=katago` + **`ANALYSIS_WORKER_MODE=inline`** → **503** `KATAGO_INLINE_FORBIDDEN` (웹·워커 역할 혼동·오설정 방지).
+
+### SGF 원문 저장 (MVP)
+
+- **저장 위치:** 검증된 SGF UTF-8 텍스트는 Supabase **`analysis_jobs.sgf_content`** 컬럼에 저장됩니다.
+- **사용:** worker 가 동일 행을 읽어 KataGo 분석에만 사용합니다.
+- **로그:** SGF 전문은 애플리케이션 로그에 출력하지 않습니다(해시·크기 등 메타만).
+- **추후:** Supabase Storage / S3 이전, **TTL·삭제 정책**, 사용자 삭제 요청, raw 디버그 산출물과의 **권한 분리**는 별도 설계 후 적용합니다(`docs/TODO.md` 참고).
 
 ### Railway / Render — Production 환경 변수 체크리스트
 
