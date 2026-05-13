@@ -261,6 +261,10 @@ export type AnalysisJobDbRow = {
   completed_at: string | null;
   /** 마이그레이션 003 이전 DB 에서는 없을 수 있음 */
   progress?: number | null;
+  /** 마이그레이션 005 — 검증된 SGF UTF-8 원문 (MVP 는 DB 컬럼; 추후 Storage 분리 가능) */
+  sgf_content?: string | null;
+  sgf_sha256?: string | null;
+  sgf_size_bytes?: number | null;
 };
 
 export async function insertAnalysisJobQueued(args: {
@@ -270,6 +274,9 @@ export async function insertAnalysisJobQueued(args: {
   language: string;
   creditLogId: string | null;
   creditCost?: number;
+  sgfContent: string;
+  sgfSha256: string;
+  sgfSizeBytes: number;
 }): Promise<void> {
   const sb = getSupabaseAdmin();
   const { error } = await sb.from("analysis_jobs").insert({
@@ -282,6 +289,9 @@ export async function insertAnalysisJobQueued(args: {
     credit_log_id: args.creditLogId,
     is_mock: true,
     progress: 0,
+    sgf_content: args.sgfContent,
+    sgf_sha256: args.sgfSha256,
+    sgf_size_bytes: args.sgfSizeBytes,
   });
   if (error) {
     throw new Error(error.message);
@@ -339,6 +349,9 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
     updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
     completed_at: typeof row.completed_at === "string" ? row.completed_at : null,
     progress: typeof row.progress === "number" ? row.progress : row.progress === null ? null : undefined,
+    sgf_content: typeof row.sgf_content === "string" ? row.sgf_content : null,
+    sgf_sha256: typeof row.sgf_sha256 === "string" ? row.sgf_sha256 : null,
+    sgf_size_bytes: typeof row.sgf_size_bytes === "number" ? row.sgf_size_bytes : null,
   };
 }
 

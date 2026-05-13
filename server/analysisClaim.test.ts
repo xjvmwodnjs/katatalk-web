@@ -51,4 +51,18 @@ describe("claim_next_analysis_job (RPC)", () => {
     expect(first?.id).toBe("j1");
     expect(second?.id).toBe("j2");
   });
+
+  it("claim returns sgf columns when present on the row", async () => {
+    const sgf = "(;FF[4]GM[1]SZ[19];B[pd];W[dp])";
+    seedQueued("job-sgf", "2025-01-01T00:00:00.000Z", {
+      sgf_content: sgf,
+      sgf_sha256: "abc123",
+      sgf_size_bytes: 42,
+    });
+    const claimed = await claimNextAnalysisJobRpc();
+    expect(claimed?.id).toBe("job-sgf");
+    expect(claimed?.sgf_content).toBe(sgf);
+    expect(claimed?.sgf_sha256).toBe("abc123");
+    expect(claimed?.sgf_size_bytes).toBe(42);
+  });
 });

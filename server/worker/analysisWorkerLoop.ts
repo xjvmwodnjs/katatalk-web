@@ -1,7 +1,8 @@
 import { ENV, isMockAnalysisAllowed, validateServerEnv } from "../_core/env";
 import type { AnalysisJobDbRow } from "../creditService";
 import { claimNextAnalysisJobRpc } from "../creditService";
-import { processMockAnalysisJob } from "./mockAnalysisProcessor";
+import { assertKatagoPathsConfiguredOrThrow, getAnalysisEngineName } from "./analysisEngines";
+import { processClaimedAnalysisJob } from "./processClaimedAnalysisJob";
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -13,9 +14,10 @@ const IDLE_MOCK_DISABLED_MS = 8000;
 export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Promise<void> {
   const signal = opts?.signal;
   while (!signal?.aborted) {
-    if (ENV.isProduction && !isMockAnalysisAllowed()) {
+    const engine = getAnalysisEngineName();
+    if (ENV.isProduction && engine === "mock" && !isMockAnalysisAllowed()) {
       console.warn(
-        "[analysis-worker] production에서 KATATALK_ALLOW_MOCK_ANALYSIS≠true — queued job 을 claim 하지 않습니다."
+        "[analysis-worker] production에서 ANALYSIS_ENGINE=mock 인데 KATATALK_ALLOW_MOCK_ANALYSIS≠true — queued job 을 claim 하지 않습니다."
       );
       await sleep(IDLE_MOCK_DISABLED_MS);
       continue;
@@ -36,7 +38,7 @@ export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Pr
     }
 
     try {
-      await processMockAnalysisJob(job);
+      await processClaimedAnalysisJob(job);
     } catch (e) {
       console.error("[analysis-worker] job 처리 실패", job.id, e);
       await sleep(IDLE_MS);
@@ -46,6 +48,9 @@ export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Pr
 
 export async function startAnalysisWorkerMain(): Promise<void> {
   validateServerEnv();
+  if (getAnalysisEngineName() === "katago") {
+    assertKatagoPathsConfiguredOrThrow();
+  }
   const ac = new AbortController();
   const onStop = (): void => {
     ac.abort();
