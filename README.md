@@ -55,7 +55,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`(코드 배열: UI 에서 `analysisResultI18n` 으로 번역) 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. **LLM·top_mistakes 생성은 ViewModel 에 포함하지 않는다.**
 
-**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인** `;B[]`/`;W[]` 만 파싱해 `selectedTurnIndex`(옵션, `buildAnalysisResultViewModel` 두 번째 인자)까지의 **돌 좌표 스냅샷**을 만든다. `analysis_jobs.result` JSON 에 **`sgf_content` 또는 `sgfContent`** UTF-8 원문이 포함될 때만 `placeholder: false` 로 채워지며, 없으면 placeholder 유지(API 가 원문을 내려주지 않는 현재 기본 동작). **실제 19×19 격자 렌더·중·패 규칙은 미구현.**
+**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). `analysis_jobs.result` JSON 에 **`sgf_content` 또는 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI 렌더는 미포함.**
 
 **결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `AnalysisVariationPreview` 가 ViewModel 을 바인딩한다(간이 SVG 승률 그래프·참고도 PV·바둑판 영역은 텍스트 스냅샷 또는 placeholder). 실제 바둑판 렌더·흑백 승률 토글은 미포함. **문구 i18n** 은 `shared/analysisResultI18n.ts` 에서 `ko`/`en`/`ja`/`zh` 를 제공하고, Home 등에서 쓰는 기존 `lang`(`Language`)을 그대로 넘긴다.
 

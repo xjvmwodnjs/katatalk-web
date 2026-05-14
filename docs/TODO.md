@@ -37,7 +37,8 @@
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
 - [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·승률 시리즈(katago_output 원시만), 중립 라벨·경고문. 바둑판/차트 UI 미포함.
 - [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG 패널·후보 카드·참고도 PV·보드 placeholder. mock-legacy / unknown 별도 안내. 흑/백 승률 토글은 비활성(준비 중).
-- [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인-only·pass/중복/좌표 검증·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder. **격자 렌더·중·패 규칙은 다음 단계.**
+- [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인·pass/중복/좌표·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder.
+- [x] **SGF token parser + capture engine v1** — property bracket 이스케이프·주석 속 `;B[]` 오인 방지·변화도 skip 경고·liberty 기반 상대 포획(연결군). ko/자살 미완 경고. **UI 격자 렌더 없음.**
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).
 - [ ] **흑/백 승률 표시 토글** — ViewModel 에 `rawWinrate` / `displayPerspective` / `playerToMove` 등만 준비됨; 토글 UX 는 다음 단계.

@@ -245,6 +245,24 @@ const SGF_WARN: Record<
     ja: "手 {turnIndex}: 交点に既に石があります（{point}）— 上書きせずスキップ。",
     zh: "第 {turnIndex} 手：交叉点已有棋子（{point}）— 未覆盖，已跳过。",
   },
+  variation_branch_skipped: {
+    ko: "변화도 블록 {count}개는 v1에서 건너뛰었습니다(메인라인만).",
+    en: "Skipped {count} variation branch(es); v1 uses mainline only.",
+    ja: "変化図 {count} 件は v1 ではスキップしました（メインラインのみ）。",
+    zh: "已跳过 {count} 个变化图分支；v1 仅使用主线。",
+  },
+  unclosed_property: {
+    ko: "속성 값의 대괄호가 닫히지 않아 인덱스 {at} 근처에서 복구했습니다.",
+    en: "Unclosed property bracket; recovered near position {at}.",
+    ja: "プロパティの括弧が閉じていません（位置 {at} 付近）。",
+    zh: "属性方括号未闭合，在位置 {at} 附近恢复解析。",
+  },
+  suicide_not_fully_handled_v1: {
+    ko: "수 {turnIndex}: 착수 후 자기 돌 연결군에 호가 없을 수 있습니다. v1은 ko/자살을 완전히 판정하지 않습니다.",
+    en: "Move {turnIndex}: the placed group may have no liberties; ko/suicide are not fully ruled in v1.",
+    ja: "手 {turnIndex}: 着手後の連に呼吸がない可能性があります。v1 ではコウ/自殺手を完全には扱いません。",
+    zh: "第 {turnIndex} 手：落子后己方块可能无气；v1 不完整处理劫/自杀。",
+  },
 };
 
 export function translateSgfPlaybackWarning(warning: SgfPlaybackWarningV1, lang: AnalysisResultLang): string {
