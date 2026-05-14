@@ -386,6 +386,26 @@ export async function updateAnalysisJobRow(
   }
 }
 
+/** `ANALYSIS_WORKER_HEARTBEAT_SECONDS` (기본 60). running lease 갱신 주기 하한·상한(초). */
+export function readAnalysisWorkerHeartbeatSeconds(): number {
+  const raw = parseInt(process.env.ANALYSIS_WORKER_HEARTBEAT_SECONDS ?? "60", 10);
+  if (!Number.isFinite(raw)) {
+    return 60;
+  }
+  return Math.min(Math.max(raw, 5), 600);
+}
+
+/**
+ * 처리 중 lease 유지: running + 동일 `locked_by`·`attempt_count` 일 때만 `locked_at` 을 갱신한다.
+ * stale 판정 기준 시각이 밀려 장기 작업이 오인 stale 되는 것을 줄인다.
+ */
+export async function heartbeatAnalysisJobLease(
+  jobId: string,
+  lease: AnalysisJobProcessingLease
+): Promise<UpdateAnalysisJobLeaseResult> {
+  return updateAnalysisJobRowWithLease(jobId, lease, { locked_at: new Date().toISOString() });
+}
+
 /**
  * running + 동일 lease(locked_by, attempt_count) 일 때만 갱신한다.
  * stale 재claim 으로 lease 가 바뀐 뒤 이전 worker 가 결과를 덮어쓰지 못하게 한다.

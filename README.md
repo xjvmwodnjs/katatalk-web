@@ -174,7 +174,7 @@ Railway **Web** 와 **Worker** 는 별도 서비스로 두는 것을 전제로 �
 | **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 | **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 
-Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수. **007은 stale 재claim·시도 상한을 제공하고**, 앱 측에서는 **`locked_by` + `attempt_count` + `status=running` 조건의 lease-aware DB 갱신**으로 stale 이후 **이전 worker 가 completed/failed 를 덮어쓰지 못하게**(lease fencing) 한다. **주기적 heartbeat(`locked_at` 연장)** 는 아직 없음(`docs/TODO`).
+Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수. **007은 stale 재claim·시도 상한을 제공하고**, 앱 측에서는 **`locked_by` + `attempt_count` + `status=running` 조건의 lease-aware DB 갱신**으로 stale 이후 **이전 worker 가 completed/failed 를 덮어쓰지 못하게**(lease fencing) 한다. **장기 실행**에서는 **`heartbeatAnalysisJobLease`** 및 running **`progress` 갱신 시 `locked_at` 연장** + KataGo 구간 **`ANALYSIS_WORKER_HEARTBEAT_SECONDS`(기본 60초)** 주기 갱신으로 정상 처리 중 running 을 stale 로 오인하는 빈도를 줄인다. **heartbeat RPC 예외·`LEASE_LOST`** 는 분석 실패로 보지 않고 **`completed`/환불을 생략**하며 job 은 **running** 으로 두어 stale 재처리에 맡긴다.
 
 #### 2) Railway public — analysis disabled mode
 

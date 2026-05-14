@@ -4,7 +4,8 @@
  * 서버는 Supabase `analysis_jobs` 를 authoritative source 로 두고,
  * mock 파이프라인은 동일 테이블을 갱신한다. 운영 규모에서는 queue/worker 가 필요하다.
  * Worker claim 은 `claim_next_analysis_job`(007 이후) 로 `locked_at` / `attempt_count` 등 lease 필드를 갱신한다.
- * **Lease fencing:** stale 재claim 으로 `locked_by` / `attempt_count` 가 바뀐 뒤에는, 이전 worker 의 DB 갱신이 `update…WithLease` 조건에 맞지 않아 무시된다(heartbeat 미구현 — TODO).
+ * **Lease fencing:** stale 재claim 으로 `locked_by` / `attempt_count` 가 바뀐 뒤에는, 이전 worker 의 DB 갱신이 `update…WithLease` 조건에 맞지 않아 무시된다.
+ * **Heartbeat:** `heartbeatAnalysisJobLease` 및 running 진행 갱신 시 `locked_at` 연장으로 장기 작업의 오인 stale 을 줄인다(`ANALYSIS_WORKER_HEARTBEAT_SECONDS`).
  */
 
 /** Terminal and in-progress states exposed to the client. */
