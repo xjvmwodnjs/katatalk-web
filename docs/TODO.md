@@ -38,8 +38,53 @@
 - [x] **`deepSearchResults` v1 (실행)** — Worker `analyzeSgfKatago` 가 `KATAGO_DEEP_SEARCH_ENABLED=true` 일 때만 `deepSearchPlan.candidates` 대상 추가 KataGo 순차 실행·`result.deepSearchResults` 저장. 기본 OFF·Railway CPU 경고는 README. stdin 배치(`KATAGO_DEEP_SEARCH_BATCH`)는 미구현(TODO).
 - [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
 
+## 최신 master 배포 전 smoke (체크리스트)
+
+> 저장소에 `006`/`007` SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 동일 마이그레이션이 적용됐는지** 대시보드·SQL로 확인하세요.  
+> 아래는 **문서화된 수동 절차**이며, 코드·스키마 변경은 포함하지 않습니다.
+
+### Supabase `006` / `007` 적용 확인 절차
+
+1. **적용 순서**: 기존과 동일하게 **001 → … → 005 → 004 → 007 → 006** 권장(007이 무인자 `claim_next_analysis_job()` 을 대체한 뒤, 006이 RPC EXECUTE 를 잠금). 이미 운영에 004만 있는 경우 **007 적용 전 백업·다운타임** 정책을 팀 규칙에 맞출 것.
+2. **`007` 반영 여부** — SQL Editor 예시:
+   - `claim_next_analysis_job` 시그니처: **`public.claim_next_analysis_job(text, integer)`** 존재(인자명은 DB마다 다를 수 있으나 **text + integer** 두 인자).
+   - `analysis_jobs` 컬럼 존재: **`locked_at`**, **`locked_by`**, **`attempt_count`**, **`max_attempts`**, **`next_retry_at`**, **`last_error_code`** (`007_analysis_job_lease_retry.sql` 주석과 일치).
+3. **`006` 반영 여부** — README **「SECURITY DEFINER RPC 권한 검증 (006 적용 후)」** 의 `has_function_privilege` 패턴으로 확인. 특히 **`public.claim_next_analysis_job(text, integer)`**: `anon` / `authenticated` = **false**, `service_role` = **true** 기대.
+4. **클레임 스모크**: 서버·worker 가 쓰는 **service role** 로만 RPC 가 호출되는지(브라우저 anon 으로 RPC 직접 호출 불가) 배포 아키텍처와 함께 재확인.
+
+### `ANALYSIS_CLAIM_STALE_SECONDS` 와 `ANALYSIS_WORKER_HEARTBEAT_SECONDS` 관계
+
+- **`ANALYSIS_CLAIM_STALE_SECONDS`** (기본 **900**): `running` 인 job 의 **`locked_at`** 이 이 시간 이상 갱신되지 않으면 **stale** 로 간주되어 다른 worker 가 **`claim_next_analysis_job`** 으로 재claim 할 수 있음.
+- **`ANALYSIS_WORKER_HEARTBEAT_SECONDS`** (기본 **60**, 코드상 하한·상한 clamp): 장시간 KataGo 실행 중 **`heartbeatAnalysisJobLease`** 등으로 **`locked_at` 연장** 주기.
+- **운영 권장**: **heartbeat 주기 ≪ stale 초** (예: 60초 heartbeat vs 900초 stale). heartbeat 가 stale 보다 길거나 비슷하면 정상 처리 중에도 stale 오인·재claim 빈도가 늘 수 있음.
+
+### Web / Worker 환경 변수 최종 체크리스트
+
+| 구분 | 확인 항목 |
+|------|------------|
+| **공통** | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk, Lemon, `APP_BASE_URL` (HTTPS), `JWT_SECRET` |
+| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago` (실분석 공개 시), **`KATATALK_ALLOW_MOCK_ANALYSIS` 미설정 또는 false**; **Web 에는 `KATAGO_*` 경로 불필요**(GPU worker 호스트에만 binary/model) |
+| **Worker** | Web 과 동일 Supabase·Clerk 등 최소 동일 세트; **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH`**; **`ANALYSIS_WORKER_ID`**(선택, lease 식별용) |
+| **Lease** | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부 |
+| **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토 |
+
+### Deep Search **OFF** 기본 스모크 (프로덕션·스테이징 공통 권장)
+
+1. Worker·배포 환경에서 **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 변수 자체 미설정 → false 취급) 확인.
+2. 인증 후 **SGF 업로드 → 분석 job 이 `completed`** 까지 도달하는지 UI 또는 `GET /api/analyze/:jobId` 로 확인.
+3. 응답 `result.deepSearchResults` 에서 **`enabled === false`**, **`attemptedCount === 0`** (추가 KataGo 없음) 확인.
+4. **`top_mistakes`** 가 **빈 배열 `[]`** 인지 확인(선정 로직 미구현 상태 유지).
+5. **자연어 해설·LLM 전용 필드가 새로 생성되지 않는지** — `algorithmStage.notYetImplemented` 에 `llm_commentary` 등만 있고, 운영 결과에 **해설 텍스트 파이프라인 출력이 없는지** 샘플 1건으로 육안 확인.
+
+### Deep Search **ON** 시 주의 (GPU Worker · 소규모만)
+
+- **Railway/일반 CPU 프로덕션에서는 `true` 금지 권장.** 부하·지연·비용 급증.
+- **`KATAGO_DEEP_SEARCH_ENABLED=true`** 는 **GPU 붙은 analysis worker** 에서만, **짧은 SGF·후보 1~2·낮은 visits** 로 스테이징 소규모 테스트.
+- 성공 시에만 프로덕션 반영 검토; ON 시에도 **job 전체 failed/환불로 딥서치 행 실패가 전파되지 않는** 기존 정책(README Deep Search 절)을 전제로 동작만 확인.
+
 ## 운영 배포 체크리스트
 
+- [ ] **최신 master 배포 전 smoke** — 위 **「최신 master 배포 전 smoke (체크리스트)」** 절(006/007·env·Deep Search OFF/ON) 전부 수행
 - [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (**006**: SECURITY DEFINER RPC EXECUTE 잠금, **007**: `analysis_jobs` lease·`claim_next_analysis_job(worker_id, stale_seconds)` stale 재claim — README「SECURITY DEFINER RPC 권한 검증」·마이그레이션 목록 참고)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret

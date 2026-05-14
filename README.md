@@ -293,7 +293,9 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 별도 **healthcheck API** 는 두지 않습니다. 아래를 **수동**으로 확인합니다.
 
-1. 브라우저에서 **GET /** — 정적 홈이 로드되는지  
+**최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase 006/007 운영 DB 적용 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
+
+1. 브라우저에서 **GET /** — 정적 홈이 로드되는지
 2. **Clerk 로그인** — 세션 후 홈 복귀  
 3. 인증된 상태로 **GET `/api/credits/me`** — 200 및 잔액 JSON  
 4. **`/pricing`** 페이지 로드  
