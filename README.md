@@ -51,6 +51,10 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 - **실패:** 한 후보가 실패해도 job 을 failed 로 만들지 않고 해당 행만 `status: "failed"` + 짧은 `error` 코드/메시지. 전 후보 실패 시 `deepSearchResults.allFailed === true` 이어도 primary/multi 가 성공했다면 **job 은 completed** 유지. Deep 실패에 **추가 환불 없음**.
 - **저장:** `moveInfos` 전체·raw stdout·stderr 전문은 저장하지 않는다. `katago` 슬라이스는 multi-turn 과 유사한 요약만. `comparison` 에 `deepBestMove` / `plannedBestMoveStillTop` / `playedMoveRank` 만( **패착·악수·정답 라벨 없음** ). `top_mistakes`·LLM·해설 없음.
 
+### 분석 결과 ViewModel v1 (`analysis-result-viewmodel-v1`)
+
+프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 라벨)·`variationPreview`(raw stdout 미사용)·`warnings` 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. **바둑판 렌더·승률 차트 컴포넌트·LLM·top_mistakes 생성은 포함하지 않는다.** SGF 재생은 `sgfPlayback.placeholder` 만 유지.
+
 ## 로컬 실행
 
 ```bash

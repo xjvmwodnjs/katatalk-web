@@ -89,6 +89,18 @@ export function isKatagoWorkerV1ResultPayload(data: unknown): boolean {
   return o.source === "katago-worker-v1";
 }
 
+/** 결과 페이지용 ViewModel v1 — `shared/analysisResultViewModel.ts` */
+export {
+  buildAnalysisResultViewModel,
+  type AnalysisResultViewModel,
+  type KatagoWorkerV1AnalysisViewModel,
+  type MockLegacyAnalysisViewModel,
+  type UnknownAnalysisViewModel,
+  type AnalysisResultWinratePointV1,
+  type AnalysisResultKeyMoveCandidateV1,
+  type AnalysisResultVariationPreviewV1,
+} from "./analysisResultViewModel";
+
 /** `analysis_jobs.result.analysisPlan` 등 — 상세는 `shared/analysisPlanV1.ts` */
 export type {
   AnalysisPlanV1,

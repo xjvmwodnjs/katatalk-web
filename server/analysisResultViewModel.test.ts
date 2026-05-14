@@ -1,0 +1,384 @@
+import { describe, expect, it } from "vitest";
+import { buildMockAnalysisReport } from "./mockAnalysisResult";
+import { buildAnalysisResultViewModel } from "@shared/analysisResultViewModel";
+import type { DeepSearchPlanV1Result } from "@shared/deepSearchPlanV1";
+import type { DeepSearchResultsV1Result } from "@shared/deepSearchResultsV1";
+import type { AdiV1Result } from "@shared/adiV1";
+import type { BsiV1Result } from "@shared/bsiV1";
+import type { TurnAnalysisEntryV1 } from "@shared/multiTurnKatagoAnalysisV1";
+import type { AnalysisPlanV1 } from "@shared/analysisPlanV1";
+
+const FORBIDDEN = ["패착", "악수", "정답", "완착"];
+
+function assertNoForbiddenLabels(vm: { keyMoveCandidates: { label: string }[] }) {
+  for (const k of vm.keyMoveCandidates) {
+    for (const w of FORBIDDEN) {
+      expect(k.label).not.toContain(w);
+    }
+  }
+}
+
+function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ok: true,
+    source: "katago-worker-v1",
+    isMock: false,
+    game_info: {
+      black_player: "B",
+      white_player: "W",
+      date: "2026-01-01",
+      total_moves: 50,
+      result: { ko: "", en: "", zh: "", ja: "" },
+      komi: 6.5,
+    },
+    analysisPlan: {
+      version: "analysis-plan-v1",
+      totalMoves: 50,
+      boardSize: 19,
+      komi: 6.5,
+      candidateTurns: [
+        { turnIndex: 10, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 0.5 },
+        { turnIndex: 50, player: "W", move: "pass", gtpMove: "pass", reason: "final_position", priority: 0.1 },
+      ],
+      strategy: { mode: "light", maxTurns: 20, includeFinalPosition: true, intervalStep: 10, openingTurnCutoff: 30 },
+    } satisfies AnalysisPlanV1,
+    turnAnalyses: [
+      {
+        status: "ok",
+        turnIndex: 10,
+        player: "B",
+        playedMove: "Q16",
+        reason: "interval_sample",
+        priority: 0.5,
+        query: { movesBeforeCount: 9, boardSize: 19, komi: 6.5 },
+        katago: {
+          rootInfo: { winrate: 0.48 },
+          topMove: { move: "D16", winrate: 0.52, pv: ["D16", "C14", "F17"] },
+          moveInfosCount: 5,
+          hasWinrate: true,
+          hasScoreLead: true,
+          hasOwnership: false,
+        },
+        comparisonReady: {
+          playedMoveFoundInCandidates: true,
+          playedMoveRank: 2,
+          bestMove: "D16",
+        },
+        moveSummary: {
+          played: { move: "Q16", winrate: 0.48 },
+          best: { move: "D16", winrate: 0.52 },
+        },
+        candidateMoves: [{ move: "D16", order: 1, pvLength: 3, winrate: 0.52 }],
+      },
+      {
+        status: "ok",
+        turnIndex: 20,
+        player: "W",
+        playedMove: "D4",
+        reason: "interval_sample",
+        priority: 0.4,
+        query: { movesBeforeCount: 19, boardSize: 19, komi: 6.5 },
+        katago: {
+          rootInfo: { winrate: 0.51 },
+          topMove: { move: "Q4", pv: ["Q4", "R4"] },
+          moveInfosCount: 4,
+          hasWinrate: true,
+          hasScoreLead: true,
+          hasOwnership: false,
+        },
+        comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 3, bestMove: "Q4" },
+        moveSummary: { played: { move: "D4", winrate: 0.51 }, best: { move: "Q4", winrate: 0.55 } },
+      },
+    ] as TurnAnalysisEntryV1[],
+    multiTurnAnalysis: {
+      version: "multi-turn-katago-analysis-v1",
+      maxTurnsRequested: 6,
+      maxTurnsAnalyzed: 6,
+      candidateCount: 2,
+      attemptedCount: 2,
+      completedCount: 2,
+      failedCount: 0,
+      allFailed: false,
+      partialFailure: false,
+    },
+    bsiV1: {
+      version: "bsi-v1",
+      computedFrom: "multi-turn-katago-analysis-v1",
+      candidateCount: 2,
+      scoredCount: 2,
+      insufficientCount: 0,
+      signals: [
+        {
+          turnIndex: 10,
+          player: "B",
+          playedMove: "Q16",
+          bestMove: "D16",
+          playedMoveRank: 2,
+          scoreMetricUsed: "scoreLead",
+          scorePerspective: "katago_output",
+          winratePerspective: "katago_output",
+          interpretationStatus: "provisional",
+          bsiScore: 62,
+          status: "scored",
+          components: { moveInfosCount: 5, candidateReason: "interval_sample" },
+        },
+        {
+          turnIndex: 20,
+          player: "W",
+          playedMove: "D4",
+          bestMove: "Q4",
+          playedMoveRank: 3,
+          scoreMetricUsed: "scoreLead",
+          scorePerspective: "katago_output",
+          winratePerspective: "katago_output",
+          interpretationStatus: "provisional",
+          bsiScore: 40,
+          status: "scored",
+          components: { moveInfosCount: 4, candidateReason: "interval_sample" },
+        },
+      ],
+    } satisfies BsiV1Result,
+    adiV1: {
+      version: "adi-v1",
+      computedFrom: ["multi-turn-katago-analysis-v1", "bsi-v1"],
+      candidateCount: 2,
+      scoredCount: 2,
+      partialCount: 0,
+      insufficientCount: 0,
+      signals: [
+        {
+          turnIndex: 10,
+          player: "B",
+          playedMove: "Q16",
+          bestMove: "D16",
+          status: "scored",
+          adiScore: 0.71,
+          deepSearchCandidate: true,
+          components: {
+            visitEntropy: 0.5,
+            rankInstability: 0.2,
+            tacticalPvRisk: 0.1,
+            ownershipVolatility: null,
+            bsiNorm: 0.6,
+            rareUserMoveRisk: 0.1,
+            availableWeightSum: 1,
+          },
+          interpretationStatus: "provisional",
+        },
+        {
+          turnIndex: 20,
+          player: "W",
+          playedMove: "D4",
+          bestMove: "Q4",
+          status: "scored",
+          adiScore: 0.45,
+          deepSearchCandidate: false,
+          components: {
+            visitEntropy: 0.3,
+            rankInstability: 0.1,
+            tacticalPvRisk: 0.1,
+            ownershipVolatility: null,
+            bsiNorm: 0.4,
+            rareUserMoveRisk: 0.1,
+            availableWeightSum: 1,
+          },
+          interpretationStatus: "provisional",
+        },
+        {
+          turnIndex: 50,
+          player: "W",
+          playedMove: "pass",
+          bestMove: null,
+          status: "scored",
+          adiScore: 0.99,
+          deepSearchCandidate: true,
+          components: {
+            visitEntropy: 0.9,
+            rankInstability: 0.9,
+            tacticalPvRisk: 0.9,
+            ownershipVolatility: null,
+            bsiNorm: 0.9,
+            rareUserMoveRisk: 0.1,
+            availableWeightSum: 1,
+          },
+          interpretationStatus: "provisional",
+        },
+      ],
+    } satisfies AdiV1Result,
+    deepSearchPlan: {
+      version: "deep-search-plan-v1",
+      computedFrom: ["analysis-plan-v1", "multi-turn-katago-analysis-v1", "bsi-v1", "adi-v1"],
+      policy: { mode: "standard", maxCandidates: 3, minAdiScore: 0.5, minBsiScore: 30 },
+      candidateCount: 1,
+      candidates: [
+        {
+          turnIndex: 10,
+          player: "B",
+          playedMove: "Q16",
+          bestMove: "D16",
+          selectionScore: 0.9,
+          selectionBand: "high",
+          reasons: ["multi_signal"],
+          adiScore: 0.71,
+          bsiScore: 62,
+          priority: 0.5,
+          candidateReason: "interval_sample",
+          status: "selected",
+        },
+      ],
+      notSelected: [],
+    } satisfies DeepSearchPlanV1Result,
+    deepSearchResults: {
+      version: "deep-search-results-v1",
+      computedFrom: ["deep-search-plan-v1"],
+      enabled: false,
+      policy: { mode: "sequential", maxCandidates: 2, visits: 800, timeoutMs: 180000 },
+      candidateCount: 1,
+      attemptedCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      partialFailure: false,
+      allFailed: false,
+      results: [],
+    } satisfies DeepSearchResultsV1Result,
+    top_mistakes: [],
+    ...over,
+  };
+}
+
+describe("buildAnalysisResultViewModel", () => {
+  it("maps katago-worker-v1 and prefers deepSearchPlan candidates", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult());
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.summary.deepSearchEnabled).toBe(false);
+    expect(vm.keyMoveCandidates.length).toBeGreaterThanOrEqual(1);
+    expect(vm.keyMoveCandidates[0]!.turnIndex).toBe(10);
+    expect(vm.keyMoveCandidates[0]!.deepSearchSelected).toBe(true);
+    expect(vm.keyMoveCandidates[0]!.deepSearchCompleted).toBe(false);
+    expect(vm.graph.winrateSeries.some((p) => p.turnIndex === 10)).toBe(true);
+    expect(vm.graph.winrateSeries.every((p) => p.displayPerspective === "katago_output")).toBe(true);
+    assertNoForbiddenLabels(vm);
+    const pv = vm.variationPreview.find((v) => v.turnIndex === 10);
+    expect(pv?.source).toBe("multi-turn");
+    expect(pv?.pv.length).toBeGreaterThan(0);
+  });
+
+  it("excludes final_position turns from keyMoveCandidates", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult());
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.keyMoveCandidates.every((k) => k.turnIndex !== 50)).toBe(true);
+  });
+
+  it("falls back to ADI-only when plan has no candidates", () => {
+    const r = baseKatagoResult({
+      deepSearchPlan: {
+        ...((baseKatagoResult().deepSearchPlan as object) as DeepSearchPlanV1Result),
+        candidates: [],
+        candidateCount: 0,
+      },
+    });
+    const vm = buildAnalysisResultViewModel(r);
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
+    expect(vm.keyMoveCandidates[0]!.turnIndex).not.toBe(50);
+    assertNoForbiddenLabels(vm);
+  });
+
+  it("falls back to BSI when ADI empty", () => {
+    const r = baseKatagoResult({
+      deepSearchPlan: { ...(baseKatagoResult().deepSearchPlan as DeepSearchPlanV1Result), candidates: [], candidateCount: 0 },
+      adiV1: { ...(baseKatagoResult().adiV1 as AdiV1Result), signals: [] },
+    });
+    const vm = buildAnalysisResultViewModel(r);
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
+    assertNoForbiddenLabels(vm);
+  });
+
+  it("uses deep-search PV when deep ok row exists", () => {
+    const r = baseKatagoResult({
+      deepSearchResults: {
+        version: "deep-search-results-v1",
+        computedFrom: ["deep-search-plan-v1"],
+        enabled: true,
+        policy: { mode: "sequential", maxCandidates: 2, visits: 800, timeoutMs: 180000 },
+        candidateCount: 1,
+        attemptedCount: 1,
+        completedCount: 1,
+        failedCount: 0,
+        partialFailure: false,
+        allFailed: false,
+        results: [
+          {
+            turnIndex: 10,
+            player: "B",
+            playedMove: "Q16",
+            plannedBestMove: "D16",
+            status: "ok",
+            query: { movesBeforeCount: 9, boardSize: 19, komi: 6.5, maxVisits: 800 },
+            katago: {
+              rootInfo: {},
+              topMove: { move: "D16", pv: ["D16", "X1", "X2"] },
+              moveInfosCount: 3,
+              hasWinrate: true,
+              hasScoreLead: true,
+              hasOwnership: false,
+            },
+            comparison: {
+              deepBestMove: "D16",
+              plannedBestMove: "D16",
+              plannedBestMoveStillTop: true,
+              playedMoveRank: 2,
+            },
+          },
+        ],
+      } satisfies DeepSearchResultsV1Result,
+    });
+    const vm = buildAnalysisResultViewModel(r);
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.summary.deepSearchEnabled).toBe(true);
+    const row = vm.keyMoveCandidates.find((k) => k.turnIndex === 10);
+    expect(row?.deepSearchCompleted).toBe(true);
+    const pv = vm.variationPreview.find((v) => v.turnIndex === 10);
+    expect(pv?.source).toBe("deep-search");
+    expect(pv?.pv).toEqual(["D16", "X1", "X2"]);
+  });
+
+  it("mock legacy kind does not expose top_mistakes as key moves", () => {
+    const mock = buildMockAnalysisReport({ fileName: "x.sgf", language: "ko" });
+    const vm = buildAnalysisResultViewModel(mock);
+    expect(vm.kind).toBe("mock-legacy");
+    expect(vm.keyMoveCandidates).toEqual([]);
+    expect(vm.variationPreview).toEqual([]);
+    expect(vm.graph.winrateSeries).toEqual([]);
+  });
+
+  it("unknown payload is safe", () => {
+    const vm = buildAnalysisResultViewModel({ source: "other" });
+    expect(vm.kind).toBe("unknown");
+    expect(vm.keyMoveCandidates).toEqual([]);
+  });
+
+  it("minimal katago payload does not throw", () => {
+    const vm = buildAnalysisResultViewModel({
+      source: "katago-worker-v1",
+      game_info: { total_moves: 0, black_player: "", white_player: "", date: "", result: { ko: "" }, komi: 0 },
+    });
+    expect(vm.kind).toBe("katago-worker-v1");
+  });
+});
