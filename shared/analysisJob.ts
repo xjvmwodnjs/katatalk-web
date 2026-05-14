@@ -124,3 +124,12 @@ export type {
   AdiV1SignalComponents,
   AdiV1InterpretationStatus,
 } from "./adiV1";
+
+/** `analysis_jobs.result.deepSearchPlan` — `shared/deepSearchPlanV1.ts` */
+export type {
+  DeepSearchPlanV1Result,
+  DeepSearchPlanPolicyV1,
+  DeepSearchPlanCandidateV1,
+  DeepSearchPlanNotSelectedV1,
+  DeepSearchPlanSelectionBandV1,
+} from "./deepSearchPlanV1";
