@@ -1,0 +1,76 @@
+/**
+ * multi-turn-katago-analysis-v1 — analysisPlan 후보별 “착수 직전 국면” raw 분석 요약.
+ * BSI/ADI·LLM 없음. 근거: docs/algorithm/KataTalk_Algorithm_V2.5.md (전체 미구현).
+ */
+
+import type { AnalysisPlanCandidateReasonV1 } from "./analysisPlanV1";
+
+export const MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION = "multi-turn-katago-analysis-v1" as const;
+
+export type TurnAnalysisQueryMetaV1 = {
+  movesBeforeCount: number;
+  boardSize: number;
+  komi: number;
+};
+
+export type TurnAnalysisComparisonReadyV1 = {
+  playedMoveFoundInCandidates: boolean;
+  /** moveInfos 순서 기준 1-based; 없으면 null */
+  playedMoveRank: number | null;
+  bestMove: string | null;
+};
+
+export type TurnAnalysisKatagoSliceV1 = {
+  rootInfo: Record<string, unknown>;
+  topMove: unknown | null;
+  moveInfosCount: number;
+  hasWinrate: boolean;
+  hasScoreLead: boolean;
+  hasOwnership: boolean;
+};
+
+export type TurnAnalysisEntrySuccessV1 = {
+  status: "ok";
+  turnIndex: number;
+  player: "B" | "W";
+  playedMove: string;
+  reason: AnalysisPlanCandidateReasonV1;
+  priority: number;
+  query: TurnAnalysisQueryMetaV1;
+  katago: TurnAnalysisKatagoSliceV1;
+  comparisonReady: TurnAnalysisComparisonReadyV1;
+  /** 순차 모드에서 `id` 없이 `pickPrimaryAnalysisObject` 폴백을 썼을 때만 true */
+  fallbackUsed?: boolean;
+};
+
+export type TurnAnalysisEntryFailedV1 = {
+  status: "failed";
+  turnIndex: number;
+  player: "B" | "W";
+  playedMove: string;
+  reason: AnalysisPlanCandidateReasonV1;
+  priority: number;
+  query: TurnAnalysisQueryMetaV1;
+  error: string;
+};
+
+export type TurnAnalysisEntryV1 = TurnAnalysisEntrySuccessV1 | TurnAnalysisEntryFailedV1;
+
+export type MultiTurnKatagoAnalysisMetaV1 = {
+  version: typeof MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION;
+  /** `KATAGO_MULTI_TURN_MAX` 등으로 정한 상한(실제 성공 개수 아님) */
+  maxTurnsRequested: number;
+  /** @deprecated `maxTurnsRequested` 와 동일 의미 — 하위 호환용 */
+  maxTurnsAnalyzed: number;
+  candidateCount: number;
+  /** 실제 multi-turn 시도 수(선택된 후보 수) */
+  attemptedCount: number;
+  completedCount: number;
+  failedCount: number;
+  /** `completedCount === 0` 이고 `failedCount > 0` 이고 시도가 있었을 때 */
+  allFailed: boolean;
+  /** 일부만 실패 */
+  partialFailure: boolean;
+  /** batch stdout 에 기대 id 집합 밖의 `id` 응답 줄 수(요약용) */
+  unknownResponseIdCount?: number;
+};

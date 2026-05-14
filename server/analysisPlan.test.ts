@@ -2,9 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildAnalysisPlanV1FromParsed,
   buildAnalysisPlanV1FromSgf,
   buildCandidateTurnsV1,
   buildEnrichedMovesFromParsed,
+  selectCandidatesForMultiTurnAnalysis,
+  sliceMovesBeforeTurnIndex,
 } from "./analysisPlan";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 
@@ -81,5 +84,35 @@ describe("analysisPlan v1", () => {
     expect(t20?.reason).toBe("opening_sample");
     const t25 = turns.find(c => c.turnIndex === 25);
     expect(t25?.reason).toBe("final_position");
+  });
+
+  it("sliceMovesBeforeTurnIndex: turn N has movesBeforeCount N-1; turn 1 is empty", () => {
+    const parsed = parseMinimalSgfForSmoke("(;SZ[19];B[pd];W[ee];B[df])");
+    const t1 = sliceMovesBeforeTurnIndex(parsed, 1);
+    expect(t1.movesBeforeCount).toBe(0);
+    expect(t1.movesBefore).toHaveLength(0);
+    expect(t1.playedMoveGtp).toBe("Q16");
+    const t2 = sliceMovesBeforeTurnIndex(parsed, 2);
+    expect(t2.movesBeforeCount).toBe(1);
+    expect(t2.playedMoveGtp).toBe("E15");
+    const t3 = sliceMovesBeforeTurnIndex(parsed, 3);
+    expect(t3.movesBeforeCount).toBe(2);
+    expect(t3.playedMoveGtp).toBe("D14");
+  });
+
+  it("playedMove from slice matches candidate gtpMove for each plan turn", () => {
+    const parsed = parseMinimalSgfForSmoke("(;SZ[19];B[pd];W[ee];B[df])");
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    for (const c of plan.candidateTurns) {
+      const { playedMoveGtp } = sliceMovesBeforeTurnIndex(parsed, c.turnIndex);
+      expect(playedMoveGtp).toBe(c.gtpMove);
+    }
+  });
+
+  it("selectCandidatesForMultiTurnAnalysis caps count and puts final_position first", () => {
+    const plan = buildAnalysisPlanV1FromParsed(parseMinimalSgfForSmoke(buildSgfWithNMoves(30)));
+    const sel = selectCandidatesForMultiTurnAnalysis(plan, 4);
+    expect(sel.length).toBeLessThanOrEqual(4);
+    expect(sel[0]?.reason).toBe("final_position");
   });
 });

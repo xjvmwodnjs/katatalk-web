@@ -11,9 +11,11 @@ export {
   detectKatagoStdoutFormat,
   extractJsonObjectsFromKatagoStdout,
   pickPrimaryAnalysisObject,
+  rootHasScoreLeadOrMean,
+  validateKatagoWorkerV1Document,
   type KatagoSmokeDocument,
 } from "./katagoRawParser";
-export { raceOutputWithTimeout, resolveSgfPathFromArgv, runKatagoSmoke, runKatagoSmokeCliMain, type SpawnFn } from "./katagoSmokeRun";
+export { raceOutputWithTimeout, resolveSgfPathFromArgv, runKatagoSmoke, runKatagoSmokeCliMain, runKatagoWorkerAnalysisQueryLines, type SpawnFn } from "./katagoSmokeRun";
 export {
   buildKatagoAnalysisQueryLine,
   buildKatagoAnalysisQueryObject,
@@ -29,5 +31,9 @@ export {
   getAnalysisEngineName,
   readKatagoMaxVisits,
   readKatagoTimeoutMs,
+  readKatagoMultiTurnMaxFrom,
+  readKatagoMultiTurnMaxVisitsFrom,
+  readKatagoMultiTurnQueryTimeoutMsFrom,
+  readKatagoMultiTurnBatchTimeoutMsFrom,
   type AnalysisEngineName,
 } from "./config";

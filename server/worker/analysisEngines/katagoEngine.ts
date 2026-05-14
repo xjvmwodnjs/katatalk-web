@@ -1,47 +1,17 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisits } from "./config";
-import { buildKatagoSmokeNormalized, type KatagoSmokeDocument } from "./katagoRawParser";
+import { runMultiTurnKatagoRawV1 } from "./katagoMultiTurnRun";
+import {
+  buildKatagoSmokeNormalized,
+  rootHasScoreLeadOrMean,
+  validateKatagoWorkerV1Document,
+} from "./katagoRawParser";
 import { parseMinimalSgfForSmoke } from "./katagoSgfQuery";
 import { runKatagoWorkerAnalysisV1, summarizeKatagoStderrForDb, KATAGO_WORKER_KILL_GRACE_MS } from "./katagoSmokeRun";
 import type { AnalyzeSgfInput, NormalizedAnalysisResult } from "./types";
 
 const V25_REF = "docs/algorithm/KataTalk_Algorithm_V2.5.md";
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return v != null && typeof v === "object" && !Array.isArray(v);
-}
-
-function rootHasScoreLeadOrMean(root: Record<string, unknown>): boolean {
-  if (typeof root.scoreLead === "number") {
-    return true;
-  }
-  return typeof root.scoreMean === "number";
-}
-
-function validateKatagoWorkerV1Document(doc: KatagoSmokeDocument): void {
-  const fmt = doc.katago.rawFormat;
-  if (fmt === "unknown") {
-    throw new Error(
-      "KATAGO_OUTPUT_INVALID: stdout 이 비어 있거나 JSON/JSONL 로 파싱할 수 없습니다."
-    );
-  }
-  const root = doc.katago.rootInfo;
-  if (!isPlainObject(root) || Object.keys(root).length === 0) {
-    throw new Error("KATAGO_OUTPUT_INCOMPLETE: rootInfo 가 없거나 비어 있습니다.");
-  }
-  if (doc.katago.moveInfosCount <= 0) {
-    throw new Error("KATAGO_OUTPUT_INCOMPLETE: moveInfos 가 없습니다.");
-  }
-  if (!doc.normalized.hasWinrate) {
-    throw new Error("KATAGO_OUTPUT_INCOMPLETE: winrate 정보가 없습니다(rootInfo 또는 moveInfos).");
-  }
-  if (!doc.normalized.hasScoreLead && !rootHasScoreLeadOrMean(root)) {
-    throw new Error(
-      "KATAGO_OUTPUT_INCOMPLETE: scoreLead 또는 scoreMean 이 없어 요약 승률·집 차를 확정할 수 없습니다."
-    );
-  }
-}
 
 /**
  * Worker v1: 실제 KataGo `analysis` 1회 실행 후 normalized 만 `analysis_jobs.result` 에 저장한다.
@@ -125,6 +95,18 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     document.normalized.hasScoreLead || rootHasScoreLeadOrMean(root);
   const rootWinrate = typeof root.winrate === "number" && Number.isFinite(root.winrate) ? root.winrate : null;
 
+  const analysisPlan = buildAnalysisPlanV1FromParsed(parsed);
+
+  const { turnAnalyses, multiTurnAnalysis } = await runMultiTurnKatagoRawV1({
+    parsed,
+    plan: analysisPlan,
+    jobId: input.jobId,
+    sgfSha256,
+    sgfSizeBytes,
+    env: process.env,
+    spawnFn: input.__testSpawnFn,
+  });
+
   const result: NormalizedAnalysisResult = {
     ok: true,
     source: "katago-worker-v1",
@@ -154,7 +136,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     },
     algorithmStage: {
       v25Reference: V25_REF,
-      implemented: ["katago_raw_capture", "analysis_plan_v1"],
+      implemented: ["katago_raw_capture", "analysis_plan_v1", "multi_turn_katago_raw_v1"],
       notYetImplemented: [
         "bsi",
         "adi",
@@ -178,8 +160,9 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       komi: parsed.komi,
     },
     top_mistakes: [],
-    /** BSI/ADI 전 — 다중 KataGo 호출 없이 후보 턴만 기록 */
-    analysisPlan: buildAnalysisPlanV1FromParsed(parsed),
+    analysisPlan,
+    turnAnalyses,
+    multiTurnAnalysis,
   };
 
   return result;

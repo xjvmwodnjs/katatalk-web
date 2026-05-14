@@ -39,3 +39,41 @@ export function readKatagoMaxVisits(): number {
 export function readKatagoTimeoutMs(): number {
   return readKatagoTimeoutMsFrom(process.env);
 }
+
+/** multi-turn 후보 최대 개수 (0이면 multi-turn 생략). 기본 6 */
+export function readKatagoMultiTurnMaxFrom(env: NodeJS.ProcessEnv): number {
+  const raw = env.KATAGO_MULTI_TURN_MAX?.trim();
+  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+}
+
+/** 미설정 시 `readKatagoMaxVisitsFrom` 과 동일 */
+export function readKatagoMultiTurnMaxVisitsFrom(env: NodeJS.ProcessEnv, fallbackMax: number): number {
+  const raw = env.KATAGO_MULTI_TURN_MAX_VISITS?.trim();
+  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : fallbackMax;
+}
+
+/** 한 줄(한 수순) 분석에 쓰는 타임아웃. 미설정 시 전체 분석과 동일 */
+export function readKatagoMultiTurnQueryTimeoutMsFrom(env: NodeJS.ProcessEnv): number {
+  const raw = env.KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS?.trim();
+  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : readKatagoTimeoutMsFrom(env);
+}
+
+/**
+ * stdin 에 여러 JSON 줄을 한 번에 보낼 때의 배치 타임아웃.
+ * 미설정 시 `max(KATAGO_ANALYSIS_TIMEOUT_MS, perQuery * 줄수)` 상한 900000ms.
+ */
+export function readKatagoMultiTurnBatchTimeoutMsFrom(env: NodeJS.ProcessEnv, lineCount: number): number {
+  const explicit = env.KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS?.trim();
+  if (explicit) {
+    const n = Number.parseInt(explicit, 10);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  }
+  const per = readKatagoTimeoutMsFrom(env);
+  const scaled = per * Math.max(1, lineCount);
+  return Math.min(900_000, Math.max(per, scaled));
+}

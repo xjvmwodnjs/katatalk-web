@@ -134,3 +134,49 @@ export function buildAnalysisPlanV1FromSgf(
 ): AnalysisPlanV1 {
   return buildAnalysisPlanV1FromParsed(parseMinimalSgfForSmoke(sgf), opts);
 }
+
+/**
+ * multi-turn 실행 대상 후보: `final_position` 우선, 그다음 priority 내림차순, turnIndex 오름차순.
+ * `maxRuns` 개까지만 선택한다.
+ */
+export function selectCandidatesForMultiTurnAnalysis(
+  plan: AnalysisPlanV1,
+  maxRuns: number
+): AnalysisPlanCandidateTurnV1[] {
+  if (maxRuns <= 0 || plan.candidateTurns.length === 0) {
+    return [];
+  }
+  const sorted = [...plan.candidateTurns].sort((a, b) => {
+    const af = a.reason === "final_position" ? 1 : 0;
+    const bf = b.reason === "final_position" ? 1 : 0;
+    if (af !== bf) {
+      return bf - af;
+    }
+    if (b.priority !== a.priority) {
+      return b.priority - a.priority;
+    }
+    return a.turnIndex - b.turnIndex;
+  });
+  return sorted.slice(0, maxRuns);
+}
+
+/**
+ * turnIndex=N (1-based) 일 때 N번째 수 직전까지의 착수 목록과, 그때 둘 GTP 수(playedMove).
+ */
+export function sliceMovesBeforeTurnIndex(
+  parsed: ParsedMinimalSgf,
+  turnIndex: number
+): { movesBefore: ParsedMinimalSgf["moves"]; movesBeforeCount: number; playedMoveGtp: string; player: "B" | "W" } {
+  const n = parsed.moves.length;
+  if (turnIndex < 1 || turnIndex > n) {
+    throw new Error(`MULTI_TURN_TURN_OOB: turnIndex ${String(turnIndex)} 는 1..${String(n)} 범위가 아닙니다.`);
+  }
+  const movesBefore = parsed.moves.slice(0, turnIndex - 1);
+  const mv = parsed.moves[turnIndex - 1]!;
+  return {
+    movesBefore,
+    movesBeforeCount: movesBefore.length,
+    playedMoveGtp: sgfPointToGtp(mv.sgfPoint, parsed.boardSize),
+    player: mv.color,
+  };
+}
