@@ -70,21 +70,45 @@ export async function runKatagoAnalysisDbPipeline(args: {
     }
 
     let leaseLostDuringRun = false;
+    /** heartbeat RPC 예외 등으로 완료 저장을 안전하게 생략(실제 분석 실패로 취급하지 않음). */
+    let heartbeatUncertain = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     if (lease) {
       const periodMs = readAnalysisWorkerHeartbeatSeconds() * 1000;
       heartbeatTimer = setInterval(() => {
         void (async () => {
-          const hb = await heartbeatAnalysisJobLease(jobId, lease);
-          if (!hb.ok) {
-            leaseLostDuringRun = true;
+          try {
+            const hb = await heartbeatAnalysisJobLease(jobId, lease);
+            if (!hb.ok) {
+              leaseLostDuringRun = true;
+              if (heartbeatTimer) {
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = undefined;
+              }
+              console.warn("[katagoAnalysisDbPipeline] heartbeat lease_lost", { jobId });
+            }
+          } catch (intervalErr) {
+            heartbeatUncertain = true;
             if (heartbeatTimer) {
               clearInterval(heartbeatTimer);
               heartbeatTimer = undefined;
             }
-            console.warn("[katagoAnalysisDbPipeline] heartbeat lease_lost", { jobId });
+            console.warn("[katagoAnalysisDbPipeline] heartbeat interval error; stopping timer, skip completed", {
+              jobId,
+              err: intervalErr instanceof Error ? intervalErr.message : intervalErr,
+            });
           }
-        })();
+        })().catch(err => {
+          heartbeatUncertain = true;
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = undefined;
+          }
+          console.warn("[katagoAnalysisDbPipeline] heartbeat interval promise rejection; skip completed", {
+            jobId,
+            err: err instanceof Error ? err.message : err,
+          });
+        });
       }, periodMs);
     }
 
@@ -100,18 +124,35 @@ export async function runKatagoAnalysisDbPipeline(args: {
     } finally {
       if (heartbeatTimer) {
         clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
       }
+    }
+
+    if (heartbeatUncertain) {
+      console.warn("[katagoAnalysisDbPipeline] heartbeat uncertain before post-run; skip completed (job stays running)", {
+        jobId,
+      });
+      return;
     }
 
     if (lease) {
-      const postRun = await heartbeatAnalysisJobLease(jobId, lease);
-      if (!postRun.ok) {
-        leaseLostDuringRun = true;
+      try {
+        const postRun = await heartbeatAnalysisJobLease(jobId, lease);
+        if (!postRun.ok) {
+          leaseLostDuringRun = true;
+        }
+      } catch (postErr) {
+        heartbeatUncertain = true;
+        console.warn("[katagoAnalysisDbPipeline] post_run heartbeat error; skip completed (job stays running)", {
+          jobId,
+          err: postErr instanceof Error ? postErr.message : postErr,
+        });
+        return;
       }
     }
 
-    if (leaseLostDuringRun) {
-      console.warn("[katagoAnalysisDbPipeline] lease_lost skip post-analyze write", { jobId });
+    if (leaseLostDuringRun || heartbeatUncertain) {
+      console.warn("[katagoAnalysisDbPipeline] lease_lost or heartbeat uncertain; skip post-analyze write", { jobId });
       return;
     }
 
