@@ -1,6 +1,7 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
 import { computeAdiV1FromTurnAnalysesAndBsi } from "../../adiV1";
 import { computeBsiV1FromTurnAnalyses } from "../../bsiV1";
+import { computeDeepSearchPlanV1 } from "../../deepSearchPlanV1";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisits, readKatagoMaxVisitsFrom, readKatagoMultiTurnMaxVisitsFrom } from "./config";
 import { runMultiTurnKatagoRawV1 } from "./katagoMultiTurnRun";
@@ -116,6 +117,13 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     multiTurnMaxVisits,
   });
   const adiV1 = computeAdiV1FromTurnAnalysesAndBsi(turnAnalyses, bsiV1);
+  const deepSearchPlan = computeDeepSearchPlanV1({
+    analysisPlan,
+    turnAnalyses,
+    bsiV1,
+    adiV1,
+    env: process.env,
+  });
 
   const result: NormalizedAnalysisResult = {
     ok: true,
@@ -141,7 +149,8 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       hasOwnership: document.normalized.hasOwnership,
     },
     normalized: {
-      summary: "KataGo raw + BSI/ADI v1 numeric signals from multi-turn (no Deep Search execution, no NL).",
+      summary:
+        "KataGo raw + BSI/ADI v1 + deep-search-plan-v1 (candidate turns only; no Deep Search execution, no NL).",
       sampleMoveInfos: document.normalized.sampleMoveInfos,
     },
     algorithmStage: {
@@ -152,6 +161,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
         "multi_turn_katago_raw_v1",
         "bsi_v1",
         "adi_v1",
+        "deep_search_plan_v1",
       ],
       notYetImplemented: [
         "deep_search_execution",
@@ -180,6 +190,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     multiTurnAnalysis,
     bsiV1,
     adiV1,
+    deepSearchPlan,
   };
 
   return result;
