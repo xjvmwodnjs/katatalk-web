@@ -34,7 +34,7 @@
 - [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1`·`components`·perspective 메타(`provisional`). KataGo score/winrate 축은 샘플 검증 후 확정. `top_mistakes`/해설 미사용.
 - [x] **ADI v1 (signal only)** — `result.adiV1`·`deepSearchCandidate`·components(`visitEntropy` 등). **Deep Search 실행·`top_mistakes`/해설/LLM 없음.** `docs/algorithm/KataTalk_Algorithm_V2.5.md` 기준 Value & Search 단계 일부.
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
-- [ ] **`deepSearchResults` v1** — Deep Search **실행** 산출물은 `deepSearchPlan`에 넣지 않고 별도 스키마(`deepSearchResults` v1)로 분리·저장(후보 계획과 실행 결과 경계).
+- [x] **`deepSearchResults` v1 (실행)** — Worker `analyzeSgfKatago` 가 `KATAGO_DEEP_SEARCH_ENABLED=true` 일 때만 `deepSearchPlan.candidates` 대상 추가 KataGo 순차 실행·`result.deepSearchResults` 저장. 기본 OFF·Railway CPU 경고는 README. stdin 배치(`KATAGO_DEEP_SEARCH_BATCH`)는 미구현(TODO).
 - [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
 
 ## 운영 배포 체크리스트

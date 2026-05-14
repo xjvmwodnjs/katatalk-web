@@ -133,3 +133,13 @@ export type {
   DeepSearchPlanNotSelectedV1,
   DeepSearchPlanSelectionBandV1,
 } from "./deepSearchPlanV1";
+
+/** `analysis_jobs.result.deepSearchResults` — `shared/deepSearchResultsV1.ts` */
+export type {
+  DeepSearchResultsV1Result,
+  DeepSearchResultsPolicyV1,
+  DeepSearchSingleResultV1,
+  DeepSearchSingleResultOkV1,
+  DeepSearchSingleResultFailedV1,
+  DeepSearchResultComparisonV1,
+} from "./deepSearchResultsV1";
