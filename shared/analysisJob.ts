@@ -99,6 +99,7 @@ export type {
   TurnAnalysisEntrySuccessV1,
   TurnAnalysisEntryFailedV1,
   MultiTurnKatagoAnalysisMetaV1,
+  TurnAnalysisCandidateMoveSummaryV1,
 } from "./multiTurnKatagoAnalysisV1";
 
 /** `analysis_jobs.result.bsiV1` — `shared/bsiV1.ts` */
@@ -113,3 +114,13 @@ export type {
   BsiV1Perspective,
   BsiV1InterpretationStatus,
 } from "./bsiV1";
+
+/** `analysis_jobs.result.adiV1` — `shared/adiV1.ts` */
+export type {
+  AdiV1Result,
+  AdiV1Signal,
+  AdiV1SignalStatus,
+  AdiV1Band,
+  AdiV1SignalComponents,
+  AdiV1InterpretationStatus,
+} from "./adiV1";

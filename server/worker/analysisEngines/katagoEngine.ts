@@ -1,4 +1,5 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
+import { computeAdiV1FromTurnAnalysesAndBsi } from "../../adiV1";
 import { computeBsiV1FromTurnAnalyses } from "../../bsiV1";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisits, readKatagoMaxVisitsFrom, readKatagoMultiTurnMaxVisitsFrom } from "./config";
@@ -114,6 +115,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     engineMaxVisits: maxVisits,
     multiTurnMaxVisits,
   });
+  const adiV1 = computeAdiV1FromTurnAnalysesAndBsi(turnAnalyses, bsiV1);
 
   const result: NormalizedAnalysisResult = {
     ok: true,
@@ -139,14 +141,20 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       hasOwnership: document.normalized.hasOwnership,
     },
     normalized: {
-      summary: "KataGo raw + BSI v1 numeric signals from multi-turn (no ADI, no NL).",
+      summary: "KataGo raw + BSI/ADI v1 numeric signals from multi-turn (no Deep Search execution, no NL).",
       sampleMoveInfos: document.normalized.sampleMoveInfos,
     },
     algorithmStage: {
       v25Reference: V25_REF,
-      implemented: ["katago_raw_capture", "analysis_plan_v1", "multi_turn_katago_raw_v1", "bsi_v1"],
+      implemented: [
+        "katago_raw_capture",
+        "analysis_plan_v1",
+        "multi_turn_katago_raw_v1",
+        "bsi_v1",
+        "adi_v1",
+      ],
       notYetImplemented: [
-        "adi",
+        "deep_search_execution",
         "concept_tags",
         "explanation_planner",
         "claim_verification",
@@ -159,10 +167,10 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       date: new Date().toISOString().slice(0, 10),
       total_moves: parsed.moves.length,
       result: {
-        ko: "KataGo raw + BSI v1 수치 신호(ADI·자연어 없음)",
-        en: "KataGo raw + BSI v1 numeric signals (no ADI / NL)",
-        zh: "KataGo 原始 + BSI v1 数值信号（无 ADI/自然语言）",
-        ja: "KataGo raw + BSI v1 数値(ADI/NL なし)",
+        ko: "KataGo raw + BSI/ADI v1 내부 수치(Deep Search·자연어 미실행)",
+        en: "KataGo raw + BSI/ADI v1 numeric signals (no Deep Search / NL)",
+        zh: "KataGo 原始 + BSI/ADI v1 数值（不执行 Deep Search/自然语言）",
+        ja: "KataGo raw + BSI/ADI v1（Deep Search/NL なし）",
       },
       komi: parsed.komi,
     },
@@ -171,6 +179,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     turnAnalyses,
     multiTurnAnalysis,
     bsiV1,
+    adiV1,
   };
 
   return result;

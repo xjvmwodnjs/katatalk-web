@@ -83,7 +83,7 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
       meta: fromKatagoWorker
         ? {
             mock: false,
-            message: "KataGo worker v1 raw capture. BSI/ADI not computed.",
+            message: "KataGo worker v1: BSI/ADI v1 computed from multi-turn; Deep Search not executed.",
           }
         : row.is_mock
           ? {

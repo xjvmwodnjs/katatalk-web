@@ -60,12 +60,12 @@ export default function KatagoWorkerV1ResultPanel({ data, lang }: KatagoWorkerV1
 
   const notice =
     lang === "ko"
-      ? "KataGo 원시(raw) 분석만 완료되었습니다. BSI·ADI·자연어 해설은 다음 단계에서 제공될 예정입니다."
+      ? "KataGo raw 분석과 BSI·ADI v1 내부 수치가 포함되었습니다. Deep Search·자연어 해설은 실행·제공되지 않습니다."
       : lang === "en"
-        ? "KataGo raw analysis only. BSI, ADI, and natural-language commentary are planned for a later stage."
+        ? "KataGo raw plus BSI/ADI v1 numeric signals. Deep search and NL commentary are not run."
         : lang === "zh"
-          ? "当前仅完成 KataGo 原始分析。BSI、ADI 与自然语言解说将在后续阶段提供。"
-          : "KataGo の raw 分析のみ完了しています。BSI/ADI・自然言語解説は今後の段階で提供予定です。";
+          ? "包含 KataGo 原始与 BSI/ADI v1 数值。未执行 Deep Search 与自然语言解说。"
+          : "KataGo raw と BSI/ADI v1 を含みます。Deep Search・自然言語解説は未実行です。";
 
   const winrateCaption =
     lang === "ko"

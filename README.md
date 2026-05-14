@@ -18,8 +18,8 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 - **순차 모드(`KATAGO_MULTI_TURN_BATCH=0`)**: 디버그·호환용. 기본은 **`id` 없으면 해당 턴 failed**. `KATAGO_MULTI_TURN_ALLOW_IDLESS_SEQUENTIAL_FALLBACK=true` 일 때만 `pickPrimaryAnalysisObject` 폴백을 허용하며, 성공 시 해당 턴에 `fallbackUsed: true`.
 - **`KATAGO_MULTI_TURN_MAX` / `multiTurnAnalysis.maxTurnsRequested`**: **분석 시도 상한**이지 `completedCount` 와 같지 않다. `attemptedCount`·`completedCount`·`failedCount`·`allFailed`·`partialFailure` 를 함께 본다.
 - **Primary `KATAGO_MAX_VISITS`** 와 **`KATAGO_MULTI_TURN_MAX_VISITS`** 는 서로 다를 수 있다(최종 국면 1회 vs multi 쿼리).
-- **최종 국면 단일 분석이 성공**하면 v1 에서는 **multi-turn 이 전부 failed여도 job 은 `completed`일 수 있다**. 이 경우 **`multiTurnAnalysis.allFailed===true`** 이며, **ADI·패착 단정·자연어 해설은 하지 않는다**. **`result.bsiV1`** 은 multi-turn **`turnAnalyses` 중 `ok` 행**이 있을 때만 수치 신호(`signals`)로 채워진다(추가 KataGo 없음).
-- `result.turnAnalyses`·`multiTurnAnalysis`·선택 `bsiV1` 에 요약만 저장한다(raw stdout DB 저장 없음). LLM·Q&A 없음.
+- **최종 국면 단일 분석이 성공**하면 v1 에서는 **multi-turn 이 전부 failed여도 job 은 `completed`일 수 있다**. 이 경우 **`multiTurnAnalysis.allFailed===true`** 이며, **Deep Search·패착 단정·자연어 해설은 하지 않는다**. **`result.bsiV1`** / **`result.adiV1`** 은 multi-turn **`turnAnalyses` 중 `ok` 행**이 있을 때만 수치 신호(`signals`)로 채워진다(추가 KataGo 없음).
+- `result.turnAnalyses`·`multiTurnAnalysis`·선택 `bsiV1`·`adiV1` 에 요약만 저장한다(raw stdout DB 저장 없음). LLM·Q&A 없음.
 
 ### BSI v1 (multi-turn 기반 수치만)
 
@@ -30,7 +30,10 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 - **`bsiScore`**: visits 가중과 지수 포화로 **0~100** 사용 가능; `bsiRaw`·`components.zComposite` 등 원시·블렌드 입력은 ADI·LES 전 단계용.
 - **`severity` / `bsiBand`**: 내부 numerical band 별칭일 뿐 사용자 패착 판정이 아님.
 
-## 로컬 실행
+### ADI v1 (multi-turn + BSI 기반 내부 signal만)
+
+`server/adiV1.ts`·`shared/adiV1.ts`. **Adaptive Deepening Index** — 후보 `visits`/순위/PV·BSI 등으로 **0~1** 내부 값과 `deepSearchCandidate` 불리언만 저장한다. **실제 Deep Search(추가 visits)는 실행하지 않는다.** `turnAnalyses[].candidateMoves`(상위 N개 요약)와 `bsiV1.signals`를 사용하며, `ownershipVolatility`는 v1에서 `null`이고 가중치 재정규화한다. `top_mistakes`·자연어·LLM·Concept Tagger·Q&A 없음.
+
 
 ```bash
 pnpm install
