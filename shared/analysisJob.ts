@@ -3,6 +3,7 @@
  *
  * 서버는 Supabase `analysis_jobs` 를 authoritative source 로 두고,
  * mock 파이프라인은 동일 테이블을 갱신한다. 운영 규모에서는 queue/worker 가 필요하다.
+ * Worker claim 은 `claim_next_analysis_job`(007 이후) 로 `locked_at` / `attempt_count` 등 lease 필드를 갱신한다.
  */
 
 /** Terminal and in-progress states exposed to the client. */

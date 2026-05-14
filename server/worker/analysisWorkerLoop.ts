@@ -2,7 +2,13 @@ import { ENV, isMockAnalysisAllowed, validateServerEnv } from "../_core/env";
 import type { AnalysisJobDbRow } from "../creditService";
 import { claimNextAnalysisJobRpc } from "../creditService";
 import { assertKatagoPathsConfiguredOrThrow, getAnalysisEngineName } from "./analysisEngines";
+import { getResolvedAnalysisWorkerId } from "./analysisWorkerId";
 import { processClaimedAnalysisJob } from "./processClaimedAnalysisJob";
+
+function readClaimStaleSeconds(): number {
+  const n = parseInt(process.env.ANALYSIS_CLAIM_STALE_SECONDS ?? "900", 10);
+  return Number.isFinite(n) && n >= 1 ? n : 900;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -25,7 +31,10 @@ export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Pr
 
     let job: AnalysisJobDbRow | null = null;
     try {
-      job = await claimNextAnalysisJobRpc();
+      job = await claimNextAnalysisJobRpc({
+        workerId: getResolvedAnalysisWorkerId(),
+        staleSeconds: readClaimStaleSeconds(),
+      });
     } catch (e) {
       console.error("[analysis-worker] claim_next_analysis_job 실패", e);
       await sleep(IDLE_MS);

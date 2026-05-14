@@ -24,7 +24,7 @@
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
-- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004 마이그레이션** 적용 필요.
+- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004+007** 마이그레이션 적용 필요.
 - [ ] **SGF 원문 보존 정책 확정** — MVP 는 `analysis_jobs.sgf_content` DB 컬럼; 운영 확대 시 **Supabase Storage/S3 이전**, **TTL 삭제**, 사용자 삭제 요청, raw artifact 권한 분리(README «SGF 원문 저장» 절 참고).
 - [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
 - [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI v1 수치·LLM 없음, Deep Search 미실행). timeout 시 SIGTERM→SIGKILL 시도.
@@ -39,7 +39,7 @@
 
 ## 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006** 적용 (**006**: SECURITY DEFINER RPC 에 `anon`/`authenticated`/`PUBLIC` EXECUTE REVOKE — README「SECURITY DEFINER RPC 권한 검증」SQL 로 적용 후 확인)
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (**006**: SECURITY DEFINER RPC EXECUTE 잠금, **007**: `analysis_jobs` lease·`claim_next_analysis_job(worker_id, stale_seconds)` stale 재claim — README「SECURITY DEFINER RPC 권한 검증」·마이그레이션 목록 참고)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종

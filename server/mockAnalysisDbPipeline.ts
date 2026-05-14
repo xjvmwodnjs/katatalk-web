@@ -36,6 +36,8 @@ export async function runMockAnalysisDbPipeline(args: {
       result: data,
       completed_at: new Date().toISOString(),
       is_mock: true,
+      locked_at: null,
+      locked_by: null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
@@ -45,6 +47,8 @@ export async function runMockAnalysisDbPipeline(args: {
         progress: null,
         error_message: message,
         completed_at: new Date().toISOString(),
+        locked_at: null,
+        locked_by: null,
       });
     } catch (patchErr) {
       console.error("[mockAnalysisDbPipeline] failed to persist failure state", patchErr);

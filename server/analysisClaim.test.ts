@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimNextAnalysisJobRpc } from "./creditService";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 
@@ -30,6 +30,23 @@ describe("claim_next_analysis_job (RPC)", () => {
     vitestAnalysisJobsStore.clear();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const baseJobFields = {
+    user_id: "user_a",
+    file_name: "game.sgf",
+    language: "ko",
+    credit_cost: 1,
+    credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+    is_mock: true,
+    progress: 0,
+    result: null,
+    error_message: null,
+    completed_at: null,
+  } as const;
+
   it("returns null when no queued jobs", async () => {
     await expect(claimNextAnalysisJobRpc()).resolves.toBeNull();
   });
@@ -41,6 +58,9 @@ describe("claim_next_analysis_job (RPC)", () => {
     expect(claimed?.id).toBe("job-older");
     expect((vitestAnalysisJobsStore.get("job-older") as { status: string }).status).toBe("running");
     expect((vitestAnalysisJobsStore.get("job-newer") as { status: string }).status).toBe("queued");
+    expect(claimed?.attempt_count).toBe(1);
+    expect(claimed?.locked_by).toBe("unknown");
+    expect(claimed?.locked_at).toBeTruthy();
   });
 
   it("second claim returns the next queued job", async () => {
@@ -64,5 +84,105 @@ describe("claim_next_analysis_job (RPC)", () => {
     expect(claimed?.sgf_content).toBe(sgf);
     expect(claimed?.sgf_sha256).toBe("abc123");
     expect(claimed?.sgf_size_bytes).toBe(42);
+    expect(claimed?.attempt_count).toBe(1);
+  });
+
+  it("does not claim queued when next_retry_at is in the future", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-06-01T12:00:00.000Z"));
+    seedQueued("q-later", "2025-01-01T00:00:00.000Z", {
+      next_retry_at: "2030-01-01T00:00:00.000Z",
+    });
+    seedQueued("q-now", "2025-02-01T00:00:00.000Z");
+    const c = await claimNextAnalysisJobRpc({ staleSeconds: 60 });
+    expect(c?.id).toBe("q-now");
+  });
+
+  it("skips non-stale running and claims queued instead", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-06-01T12:00:00.000Z"));
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "warm-run",
+      status: "running",
+      locked_at: "2025-06-01T11:59:30.000Z",
+      locked_by: "other-worker",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2024-01-01T00:00:00.000Z",
+    });
+    seedQueued("pick-q", "2025-06-01T11:00:00.000Z");
+    const c = await claimNextAnalysisJobRpc({ staleSeconds: 900 });
+    expect(c?.id).toBe("pick-q");
+  });
+
+  it("reclaims stale running (older created_at wins over queued)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-06-01T15:00:00.000Z"));
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "stale-run",
+      status: "running",
+      locked_at: "2025-06-01T12:00:00.000Z",
+      locked_by: "dead-worker",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2024-01-01T00:00:00.000Z",
+    });
+    seedQueued("younger-q", "2025-06-01T00:00:00.000Z");
+    const c = await claimNextAnalysisJobRpc({ staleSeconds: 120 });
+    expect(c?.id).toBe("stale-run");
+    expect((vitestAnalysisJobsStore.get("stale-run") as { attempt_count: number }).attempt_count).toBe(2);
+  });
+
+  it("does not claim queued rows with attempt_count >= max_attempts", async () => {
+    seedQueued("exhausted", "2025-01-01T00:00:00.000Z", {
+      attempt_count: 3,
+      max_attempts: 3,
+    });
+    seedQueued("still-good", "2025-02-01T00:00:00.000Z");
+    const c = await claimNextAnalysisJobRpc();
+    expect(c?.id).toBe("still-good");
+  });
+
+  it("fails stale running at max attempts without returning a claim row", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-06-01T20:00:00.000Z"));
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "dead-max",
+      status: "running",
+      locked_at: "2025-06-01T18:00:00.000Z",
+      attempt_count: 3,
+      max_attempts: 3,
+      created_at: "2024-01-01T00:00:00.000Z",
+    });
+    const c = await claimNextAnalysisJobRpc({ staleSeconds: 60 });
+    expect(c).toBeNull();
+    expect((vitestAnalysisJobsStore.get("dead-max") as { status: string }).status).toBe("failed");
+  });
+
+  it("does not claim completed jobs", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "done-job",
+      status: "completed",
+      progress: 100,
+      created_at: "2024-01-01T00:00:00.000Z",
+      completed_at: "2024-01-02T00:00:00.000Z",
+    });
+    await expect(claimNextAnalysisJobRpc()).resolves.toBeNull();
+  });
+
+  it("does not claim failed jobs", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "failed-job",
+      status: "failed",
+      progress: null,
+      created_at: "2024-01-01T00:00:00.000Z",
+      completed_at: "2024-01-02T00:00:00.000Z",
+    });
+    await expect(claimNextAnalysisJobRpc()).resolves.toBeNull();
   });
 });

@@ -21,6 +21,8 @@ export async function runKatagoAnalysisDbPipeline(args: {
         progress: null,
         error_message: "MISSING_SGF_CONTENT: KataGo 분석에는 저장된 SGF 원문이 필요합니다.",
         completed_at: new Date().toISOString(),
+        locked_at: null,
+        locked_by: null,
       });
       await onJobFailed?.();
       return;
@@ -42,6 +44,8 @@ export async function runKatagoAnalysisDbPipeline(args: {
       result,
       completed_at: new Date().toISOString(),
       is_mock: false,
+      locked_at: null,
+      locked_by: null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
@@ -51,6 +55,8 @@ export async function runKatagoAnalysisDbPipeline(args: {
         progress: null,
         error_message: message,
         completed_at: new Date().toISOString(),
+        locked_at: null,
+        locked_by: null,
       });
     } catch (patchErr) {
       console.error("[katagoAnalysisDbPipeline] failed to persist failure state", patchErr);
