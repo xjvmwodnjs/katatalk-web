@@ -1,6 +1,9 @@
 import type { AnalysisJobLanguage } from "../analysisJobStore.types";
 import type { AnalysisJobDbRow } from "../creditService";
-import { refundCreditIfJobFailedByProfileId } from "../creditService";
+import {
+  analysisJobProcessingLeaseFromClaimedRow,
+  refundCreditIfJobFailedByProfileId,
+} from "../creditService";
 import { runMockAnalysisDbPipeline } from "../mockAnalysisDbPipeline";
 import { getAnalysisEngineName } from "./analysisEngines";
 import { runKatagoAnalysisDbPipeline } from "./katagoAnalysisDbPipeline";
@@ -19,6 +22,7 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
   const engine = getAnalysisEngineName();
   const fileName = row.file_name?.trim() || "uploaded.sgf";
   const language = coerceLanguage(row.language);
+  const lease = analysisJobProcessingLeaseFromClaimedRow(row);
   const onFail = async (): Promise<void> => {
     const r = await refundCreditIfJobFailedByProfileId(row.user_id, row.id, row.credit_cost);
     if (!r.ok) {
@@ -37,6 +41,7 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
       row,
       fileName,
       language,
+      lease,
       onJobFailed: onFail,
     });
     return;
@@ -46,6 +51,7 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
     jobId: row.id,
     fileName,
     language,
+    lease,
     onJobFailed: onFail,
   });
 }

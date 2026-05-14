@@ -289,7 +289,33 @@ export type AnalysisJobDbRow = {
   sgf_content?: string | null;
   sgf_sha256?: string | null;
   sgf_size_bytes?: number | null;
+  /** 마이그레이션 007 — worker claim lease */
+  locked_at?: string | null;
+  locked_by?: string | null;
+  attempt_count?: number;
+  max_attempts?: number;
+  next_retry_at?: string | null;
+  last_error_code?: string | null;
 };
+
+/** Claim 직후 DB 행 기준으로만 유효한 처리 lease (stale 재claim 시 이전 worker 차단). */
+export type AnalysisJobProcessingLease = {
+  lockedBy: string;
+  attemptCount: number;
+};
+
+export type UpdateAnalysisJobLeaseResult =
+  | { ok: true }
+  | { ok: false; reason: "LEASE_LOST" };
+
+export function analysisJobProcessingLeaseFromClaimedRow(row: AnalysisJobDbRow): AnalysisJobProcessingLease | null {
+  const lockedBy = row.locked_by?.trim();
+  const ac = row.attempt_count;
+  if (!lockedBy || typeof ac !== "number" || !Number.isFinite(ac)) {
+    return null;
+  }
+  return { lockedBy, attemptCount: ac };
+}
 
 export async function insertAnalysisJobQueued(args: {
   jobId: string;
@@ -339,7 +365,17 @@ export async function updateAnalysisJobRow(
   patch: Partial<
     Pick<
       AnalysisJobDbRow,
-      "status" | "progress" | "result" | "error_message" | "completed_at" | "is_mock"
+      | "status"
+      | "progress"
+      | "result"
+      | "error_message"
+      | "completed_at"
+      | "is_mock"
+      | "locked_at"
+      | "locked_by"
+      | "last_error_code"
+      | "next_retry_at"
+      | "attempt_count"
     >
   >
 ): Promise<void> {
@@ -348,6 +384,49 @@ export async function updateAnalysisJobRow(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+/**
+ * running + 동일 lease(locked_by, attempt_count) 일 때만 갱신한다.
+ * stale 재claim 으로 lease 가 바뀐 뒤 이전 worker 가 결과를 덮어쓰지 못하게 한다.
+ */
+export async function updateAnalysisJobRowWithLease(
+  jobId: string,
+  lease: AnalysisJobProcessingLease,
+  patch: Partial<
+    Pick<
+      AnalysisJobDbRow,
+      | "status"
+      | "progress"
+      | "result"
+      | "error_message"
+      | "completed_at"
+      | "is_mock"
+      | "locked_at"
+      | "locked_by"
+      | "last_error_code"
+      | "next_retry_at"
+      | "attempt_count"
+    >
+  >
+): Promise<UpdateAnalysisJobLeaseResult> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .update(patch)
+    .eq("id", jobId)
+    .eq("status", "running")
+    .eq("locked_by", lease.lockedBy)
+    .eq("attempt_count", lease.attemptCount)
+    .select("id");
+  if (error) {
+    throw new Error(error.message);
+  }
+  const rows = Array.isArray(data) ? data : data != null ? [data] : [];
+  if (rows.length === 0) {
+    return { ok: false, reason: "LEASE_LOST" };
+  }
+  return { ok: true };
 }
 
 function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
@@ -382,16 +461,37 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
     sgf_content: typeof row.sgf_content === "string" ? row.sgf_content : null,
     sgf_sha256: typeof row.sgf_sha256 === "string" ? row.sgf_sha256 : null,
     sgf_size_bytes: typeof row.sgf_size_bytes === "number" ? row.sgf_size_bytes : null,
+    locked_at: row.locked_at === null || typeof row.locked_at === "string" ? (row.locked_at as string | null) : undefined,
+    locked_by: typeof row.locked_by === "string" || row.locked_by === null ? (row.locked_by as string | null) : undefined,
+    attempt_count: typeof row.attempt_count === "number" ? row.attempt_count : undefined,
+    max_attempts: typeof row.max_attempts === "number" ? row.max_attempts : undefined,
+    next_retry_at:
+      row.next_retry_at === null || typeof row.next_retry_at === "string"
+        ? (row.next_retry_at as string | null)
+        : undefined,
+    last_error_code:
+      typeof row.last_error_code === "string" || row.last_error_code === null
+        ? (row.last_error_code as string | null)
+        : undefined,
   };
 }
 
 /**
- * queued job 1건을 running 으로 원자 claim. 없으면 null.
- * DB 에 `004_analysis_job_claim_rpc.sql` 의 RPC 가 적용되어 있어야 한다.
+ * queued 또는 stale running job 1건을 running 으로 원자 claim. 없으면 null.
+ * Supabase `007_analysis_job_lease_retry.sql` (및 이후) RPC 시그니처: (p_worker_id, p_stale_seconds).
  */
-export async function claimNextAnalysisJobRpc(): Promise<AnalysisJobDbRow | null> {
+export async function claimNextAnalysisJobRpc(options?: {
+  workerId?: string;
+  staleSeconds?: number;
+}): Promise<AnalysisJobDbRow | null> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.rpc("claim_next_analysis_job");
+  const staleRaw = options?.staleSeconds ?? parseInt(process.env.ANALYSIS_CLAIM_STALE_SECONDS ?? "900", 10);
+  const staleSeconds = Number.isFinite(staleRaw) && staleRaw >= 1 ? staleRaw : 900;
+  const workerId = (options?.workerId ?? "unknown").trim() || "unknown";
+  const { data, error } = await sb.rpc("claim_next_analysis_job", {
+    p_worker_id: workerId,
+    p_stale_seconds: staleSeconds,
+  });
   if (error) {
     throw new Error(error.message);
   }
