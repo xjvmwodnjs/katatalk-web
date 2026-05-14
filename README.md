@@ -53,7 +53,9 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 ### 분석 결과 ViewModel v1 (`analysis-result-viewmodel-v1`)
 
-프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 라벨)·`variationPreview`(raw stdout 미사용)·`warnings` 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. **바둑판 렌더·승률 차트 컴포넌트·LLM·top_mistakes 생성은 포함하지 않는다.** SGF 재생은 `sgfPlayback.placeholder` 만 유지.
+프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 라벨)·`variationPreview`(raw stdout 미사용)·`warnings` 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. **LLM·top_mistakes 생성은 ViewModel 에 포함하지 않는다.** SGF 재생은 `sgfPlayback.placeholder` 만 유지.
+
+**결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `AnalysisVariationPreview` 가 ViewModel 을 바인딩한다(간이 SVG 승률 그래프·참고도 PV·바둑판 placeholder). 실제 바둑판 렌더·흑백 승률 토글은 미포함.
 
 ## 로컬 실행
 

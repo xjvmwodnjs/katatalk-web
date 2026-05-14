@@ -18,11 +18,11 @@ const NEUTRAL_LABELS = [
 ] as const;
 
 const DEFAULT_WARNINGS_KO = [
-  "현재 결과는 KataGo 수치 기반 베타 분석이며 패착 확정 해설이 아닙니다.",
+  "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
 ] as const;
 
 const MOCK_WARNING_KO =
-  "이 결과는 mock/데모용 JSON일 수 있으며, 운영 KataGo 분석과 다릅니다. 패착·악수·정답으로 해석하지 마세요.";
+  "이 결과는 mock/데모용 JSON일 수 있으며, 운영 KataGo 분석과 다릅니다. 단정적인 기보·평가 해석으로 사용하지 마세요.";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);

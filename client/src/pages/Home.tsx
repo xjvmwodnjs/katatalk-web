@@ -12,7 +12,7 @@ import {
   KATATALK_UI_LANG_EVENT,
 } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
+import { ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
@@ -25,15 +25,9 @@ import {
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
-import GameInfoHeader from "@/components/GameInfoHeader";
-import KatagoWorkerV1ResultPanel, {
-  type KatagoWorkerV1ResultData,
-} from "@/components/KatagoWorkerV1ResultPanel";
-import MistakeCard from "@/components/MistakeCard";
+import type { KatagoWorkerV1ResultData } from "@/components/KatagoWorkerV1ResultPanel";
+import AnalysisResultView from "@/components/AnalysisResultView";
 import UploadHero from "@/components/UploadHero";
-
-const HERO_IMAGE =
-  "https://d2xsxph8kpxj0f.cloudfront.net/310519663648529385/J5iSKFXJDtYwWjNTkpCAQf/baduk-hero-banner-a8g9rYbRNcDesQ8M9KrgCA.webp";
 
 type View = "upload" | "loading" | "result";
 
@@ -771,61 +765,9 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Analysis Results */}
+            {/* Analysis Results — ViewModel v1 (KataGo / mock-legacy / unknown) */}
             <div className="py-6 md:py-10">
-              {katagoWorkerV1Result ? (
-                <KatagoWorkerV1ResultPanel data={katagoWorkerV1Result} lang={lang} />
-              ) : (
-                <GameInfoHeader report={report} t={t} lang={lang} heroImageUrl={HERO_IMAGE} />
-              )}
-
-              {/* Mistakes Section (mock / full report only — KataGo v1 raw has no BSI mistakes yet) */}
-              {!katagoWorkerV1Result ? (
-                <section>
-                  <p
-                    className="text-xs text-slate-500 mb-4 leading-relaxed max-w-3xl"
-                    style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
-                  >
-                    {t.reportDemoNotice}
-                  </p>
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-400" />
-                      <h2
-                        className="text-lg font-bold text-amber-100"
-                        style={{ fontFamily: "'Noto Serif KR', serif" }}
-                      >
-                        {t.topMistakes}
-                      </h2>
-                    </div>
-                    <div
-                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: "rgba(201, 168, 76, 0.15)",
-                        border: "1px solid rgba(201, 168, 76, 0.3)",
-                        color: "#C9A84C",
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}
-                    >
-                      {report.top_mistakes.length}
-                      {lang === "en" ? " " : ""}
-                      {t.mistakeCount}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-5">
-                    {report.top_mistakes.map((mistake, i) => (
-                      <MistakeCard
-                        key={`${mistake.turn}-${mistake.player}`}
-                        mistake={mistake}
-                        index={i}
-                        t={t}
-                        lang={lang}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ) : null}
+              <AnalysisResultView data={katagoWorkerV1Result ?? (report as unknown)} lang={lang} />
             </div>
           </>
         )}

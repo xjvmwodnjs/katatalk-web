@@ -15,6 +15,8 @@ export interface Mistake {
 }
 
 export interface AnalysisReport {
+  /** 데모 리포트 — `buildAnalysisResultViewModel` 이 `mock-legacy` 로 분류 */
+  source?: { mock: true };
   game_info: {
     black_player: string;
     white_player: string;
@@ -28,6 +30,7 @@ export interface AnalysisReport {
 }
 
 export const MOCK_DATA: AnalysisReport = {
+  source: { mock: true },
   game_info: {
     black_player: "김민준 (3단)",
     white_player: "이서연 (2단)",
