@@ -49,5 +49,5 @@
 - [ ] 결제 후 credits 증가 수동 테스트·`credit_logs` 확인
 - [ ] Rate limit 429 동작 확인 (멀티 인스턴스 시 Redis/Upstash 등 검토)
 - [ ] Production 에서 **mock 전용** 비활성(`KATATALK_ALLOW_MOCK_ANALYSIS`) 및 **KataGo 실분석**(`ANALYSIS_ENGINE=katago` + `ANALYSIS_WORKER_MODE=external`) enqueue 동작 확인
-- [ ] KataGo·LLM 미구현 상태 UI/문서 표시
+- [x] **KataGo·LLM 미구현 범위 UI/README 표기** — GPT-4o·자연어 해설·패착 확정 등 과장 문구 완화, BSI/ADI/deepSearchPlan 은 내부 신호임을 명시.
 - [ ] 환불 정책·약관 법무 검토

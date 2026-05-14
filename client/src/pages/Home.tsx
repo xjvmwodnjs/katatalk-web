@@ -782,6 +782,12 @@ export default function Home() {
               {/* Mistakes Section (mock / full report only — KataGo v1 raw has no BSI mistakes yet) */}
               {!katagoWorkerV1Result ? (
                 <section>
+                  <p
+                    className="text-xs text-slate-500 mb-4 leading-relaxed max-w-3xl"
+                    style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                  >
+                    {t.reportDemoNotice}
+                  </p>
                   <div className="flex items-center gap-3 mb-5">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-400" />
