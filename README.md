@@ -380,17 +380,17 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 ## 분석 job (`analysis_jobs`)
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
-- **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.  
-  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job(worker_id, stale_seconds)`** 으로 queued·stale running 을 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.  
+- **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.
+  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job(worker_id, stale_seconds)`** 으로 queued·stale running 을 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
 - mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
 **로컬 수동 검증 (`external` + worker):**
 
-1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 과 **`007_analysis_job_lease_retry.sql`** 이 적용되어 있어야 합니다(007 이 004 의 무인자 `claim_next_analysis_job()` 을 대체합니다). 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.  
-2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)  
-3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`  
-4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.  
+1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 과 **`007_analysis_job_lease_retry.sql`** 이 적용되어 있어야 합니다(007 이 004 의 무인자 `claim_next_analysis_job()` 을 대체합니다). 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.
+2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)
+3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`
+4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.
 5. **`corepack pnpm worker:analysis`** 는 **`dist/worker/analysisWorker.js`** 를 사용하므로, 로컬에서 이 명령만 돌릴 때는 먼저 **`corepack pnpm build`** 가 필요합니다(Railway 등은 Build 단계에서 동일하게 `pnpm build` 가 선행되면 됩니다).
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
@@ -440,12 +440,12 @@ order by created_at desc;
 
 ## Supabase 마이그레이션
 
-- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
-- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC  
-- [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`  
-- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** 초안(007 적용 시 시그니처 대체)  
-- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)  
-- [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼  
+- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)
+- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
+- [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`
+- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** 초안(007 적용 시 시그니처 대체)
+- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
+- [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼
 - [`006_lock_down_security_definer_rpc.sql`](supabase/migrations/006_lock_down_security_definer_rpc.sql) — **SECURITY DEFINER RPC** 에 대해 `PUBLIC` / `anon` / `authenticated` 의 **EXECUTE 를 REVOKE**하고 **`service_role` 만 GRANT** (임의 크레딧·큐 claim 방지)
 
 ### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
