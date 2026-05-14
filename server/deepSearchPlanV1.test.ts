@@ -358,7 +358,7 @@ describe("computeDeepSearchPlanV1", () => {
     expect(r.candidates[0]!.selectionScore).toBeLessThanOrEqual(1);
   });
 
-  it("dedupes duplicate turnIndex in pool", () => {
+  it("duplicate turnIndex keeps highest selectionScore; others get replaced_duplicate_turn_index", () => {
     const plan = basePlan([
       { turnIndex: 8, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 1 },
     ]);
@@ -377,22 +377,182 @@ describe("computeDeepSearchPlanV1", () => {
       partialCount: 0,
       insufficientCount: 0,
       signals: [
-        adiSig(8, { adiScore: 0.7, deepSearchCandidate: true }),
-        adiSig(8, { adiScore: 0.71, deepSearchCandidate: false }),
+        adiSig(8, { adiScore: 0.7, deepSearchCandidate: false }),
+        adiSig(8, { adiScore: 0.9, deepSearchCandidate: false }),
       ],
     };
     const r = computeDeepSearchPlanV1({ analysisPlan: plan, turnAnalyses: turns, bsiV1: bsi, adiV1: adi });
     expect(r.candidates.filter((c) => c.turnIndex === 8)).toHaveLength(1);
-    expect(r.notSelected.some((n) => n.reason === "duplicate_turn_index")).toBe(true);
+    expect(r.candidates[0]!.adiScore).toBe(0.9);
+    expect(r.notSelected.filter((n) => n.reason === "replaced_duplicate_turn_index")).toHaveLength(1);
+  });
+
+  it("duplicate turnIndex tie-break: same selectionScore prefers deepSearchCandidate then adiScore", () => {
+    const plan = basePlan([
+      { turnIndex: 8, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 1 },
+    ]);
+    const turns: TurnAnalysisEntryV1[] = [okTurn(8)];
+    const bsi: BsiV1Result = {
+      ...emptyAdiBsi().bsi,
+      candidateCount: 1,
+      scoredCount: 1,
+      insufficientCount: 0,
+      signals: [bsiSig(8, 55)],
+    };
+    const adi: AdiV1Result = {
+      ...emptyAdiBsi().adi,
+      candidateCount: 2,
+      scoredCount: 2,
+      partialCount: 0,
+      insufficientCount: 0,
+      signals: [
+        adiSig(8, { adiScore: 0.75, deepSearchCandidate: false }),
+        adiSig(8, { adiScore: 0.75, deepSearchCandidate: true }),
+      ],
+    };
+    const r = computeDeepSearchPlanV1({ analysisPlan: plan, turnAnalyses: turns, bsiV1: bsi, adiV1: adi });
+    expect(r.candidates[0]!.reasons).toContain("deep_search_flag");
+    expect(r.notSelected.some((n) => n.reason === "replaced_duplicate_turn_index")).toBe(true);
+  });
+
+  it("ADI-only: missing bsiScore skips minBsiScore filter; turn stays candidate (not below_min_bsi_score)", () => {
+    const plan = basePlan([
+      { turnIndex: 12, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 1 },
+    ]);
+    const turns: TurnAnalysisEntryV1[] = [okTurn(12)];
+    const bsi: BsiV1Result = {
+      ...emptyAdiBsi().bsi,
+      candidateCount: 1,
+      scoredCount: 0,
+      insufficientCount: 0,
+      signals: [
+        {
+          ...bsiSig(12, 0),
+          bsiScore: undefined,
+        } as BsiV1Signal,
+      ],
+    };
+    const adi: AdiV1Result = {
+      ...emptyAdiBsi().adi,
+      candidateCount: 1,
+      scoredCount: 1,
+      partialCount: 0,
+      insufficientCount: 0,
+      signals: [adiSig(12, { adiScore: 0.8, deepSearchCandidate: true })],
+    };
+    const env = { DEEP_SEARCH_PLAN_MIN_BSI_SCORE: "90" } as NodeJS.ProcessEnv;
+    const r = computeDeepSearchPlanV1({ analysisPlan: plan, turnAnalyses: turns, bsiV1: bsi, adiV1: adi, env });
+    expect(r.candidates.map((c) => c.turnIndex)).toEqual([12]);
+    expect(r.notSelected.some((n) => n.reason === "below_min_bsi_score")).toBe(false);
+  });
+
+  it("eligible-only priority denominator: huge final_position priority does not shrink non-final selectionScore", () => {
+    const planHugeFinal = basePlan([
+      { turnIndex: 10, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 100 },
+      {
+        turnIndex: 99,
+        player: "B",
+        move: "Q16",
+        gtpMove: "Q16",
+        reason: "final_position",
+        priority: 1e15,
+      },
+    ]);
+    const planFinalOnly = basePlan([
+      { turnIndex: 10, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 100 },
+    ]);
+    const turns: TurnAnalysisEntryV1[] = [okTurn(10), okTurn(99)];
+    const bsi: BsiV1Result = {
+      ...emptyAdiBsi().bsi,
+      candidateCount: 2,
+      scoredCount: 2,
+      insufficientCount: 0,
+      signals: [bsiSig(10, 50), bsiSig(99, 50)],
+    };
+    const adi: AdiV1Result = {
+      ...emptyAdiBsi().adi,
+      candidateCount: 2,
+      scoredCount: 2,
+      partialCount: 0,
+      insufficientCount: 0,
+      signals: [
+        adiSig(10, { adiScore: 0.82, deepSearchCandidate: true }),
+        adiSig(99, { adiScore: 0.99, deepSearchCandidate: true }),
+      ],
+    };
+    const rWith = computeDeepSearchPlanV1({
+      analysisPlan: planHugeFinal,
+      turnAnalyses: turns,
+      bsiV1: bsi,
+      adiV1: adi,
+    });
+    const rWithout = computeDeepSearchPlanV1({
+      analysisPlan: planFinalOnly,
+      turnAnalyses: [okTurn(10)],
+      bsiV1: { ...bsi, signals: [bsiSig(10, 50)] },
+      adiV1: { ...adi, signals: [adiSig(10, { adiScore: 0.82, deepSearchCandidate: true })] },
+    });
+    const sWith = rWith.candidates.find((c) => c.turnIndex === 10)!.selectionScore;
+    const sWithout = rWithout.candidates[0]!.selectionScore;
+    expect(Math.abs(sWith - sWithout)).toBeLessThan(1e-9);
+  });
+
+  it("does not attach top_mistakes or deep search execution payload", () => {
+    const plan = basePlan([
+      { turnIndex: 7, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 1 },
+    ]);
+    const turns: TurnAnalysisEntryV1[] = [okTurn(7)];
+    const bsi: BsiV1Result = {
+      ...emptyAdiBsi().bsi,
+      candidateCount: 1,
+      scoredCount: 1,
+      insufficientCount: 0,
+      signals: [bsiSig(7, 60)],
+    };
+    const adi: AdiV1Result = {
+      ...emptyAdiBsi().adi,
+      candidateCount: 1,
+      scoredCount: 1,
+      partialCount: 0,
+      insufficientCount: 0,
+      signals: [adiSig(7, { adiScore: 0.8, deepSearchCandidate: true })],
+    };
+    const r = computeDeepSearchPlanV1({ analysisPlan: plan, turnAnalyses: turns, bsiV1: bsi, adiV1: adi });
+    const keys = new Set(Object.keys(r as Record<string, unknown>));
+    expect(keys.has("topMistakes")).toBe(false);
+    expect(keys.has("top_mistakes")).toBe(false);
+    expect(keys.has("deepSearchResults")).toBe(false);
   });
 });
 
 describe("readDeepSearchPlanPolicyFromEnv", () => {
-  it("defaults", () => {
-    const p = readDeepSearchPlanPolicyFromEnv({});
-    expect(p.maxCandidates).toBe(3);
-    expect(p.minAdiScore).toBe(0.5);
-    expect(p.minBsiScore).toBe(30);
+  it("defaults for empty / invalid max", () => {
+    const d = readDeepSearchPlanPolicyFromEnv({});
+    expect(d.maxCandidates).toBe(3);
+    expect(d.minAdiScore).toBe(0.5);
+    expect(d.minBsiScore).toBe(30);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "0" }).maxCandidates).toBe(3);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "-3" }).maxCandidates).toBe(3);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "nope" }).maxCandidates).toBe(3);
+  });
+
+  it("maxCandidates clamps to 1..10", () => {
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "1" }).maxCandidates).toBe(1);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "10" }).maxCandidates).toBe(10);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MAX_CANDIDATES: "25" }).maxCandidates).toBe(10);
+  });
+
+  it("minAdiScore invalid uses default; valid clamps 0..1", () => {
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_ADI_SCORE: "x" }).minAdiScore).toBe(0.5);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_ADI_SCORE: "1.5" }).minAdiScore).toBe(1);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_ADI_SCORE: "-0.1" }).minAdiScore).toBe(0);
+  });
+
+  it("minBsiScore invalid uses default; valid clamps 0..100", () => {
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_BSI_SCORE: "" }).minBsiScore).toBe(30);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_BSI_SCORE: "bad" }).minBsiScore).toBe(30);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_BSI_SCORE: "-5" }).minBsiScore).toBe(0);
+    expect(readDeepSearchPlanPolicyFromEnv({ DEEP_SEARCH_PLAN_MIN_BSI_SCORE: "150" }).minBsiScore).toBe(100);
   });
 });
 

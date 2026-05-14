@@ -36,7 +36,11 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 ### Deep Search Candidate Selector v1 (`deep-search-plan-v1`)
 
-`server/deepSearchPlanV1.ts`·`shared/deepSearchPlanV1.ts`. **`result.deepSearchPlan`** — ADI/BSI/`analysisPlan`/`turnAnalyses`(ok)만으로 **Deep Search 후보 수순(최대 3)** 을 선정한다. **추가 KataGo 호출·실제 Deep Search 실행 없음.** 기본 정책: `analysisPlan` 에서 **`final_position` reason 턴은 후보에서 제외**(마지막 국면은 primary 분석이 이미 있고, 전체 요약 성격이 큼). 임계값은 `DEEP_SEARCH_PLAN_MAX_CANDIDATES`, `DEEP_SEARCH_PLAN_MIN_ADI_SCORE`, `DEEP_SEARCH_PLAN_MIN_BSI_SCORE` 환경변수로 조절(미설정 시 3 / 0.5 / 30).
+`server/deepSearchPlanV1.ts`·`shared/deepSearchPlanV1.ts`. **`result.deepSearchPlan`** — ADI/BSI/`analysisPlan`/`turnAnalyses`(ok)만으로 **Deep Search 후보 수순(최대 3)** 을 선정한다. **추가 KataGo 호출·실제 Deep Search 실행 없음.** 기본 정책: `analysisPlan` 에서 **`final_position` reason 턴은 후보에서 제외**(마지막 국면은 primary 분석이 이미 있고, 전체 요약 성격이 큼). **ADI-only 후보는 v1에서 허용**한다(`bsiV1` 해당 턴에 유효한 `bsiScore` 숫자가 없으면 `minBsiScore` 임계값을 적용하지 않음).
+
+**`DEEP_SEARCH_PLAN_*` env (clamp·기본값):** 값이 비어 있거나 숫자로 파싱되지 않으면 기본을 쓴다. `DEEP_SEARCH_PLAN_MAX_CANDIDATES`: 0 이하·NaN → 기본 **3**; 양의 정수면 **1~10**으로 clamp. `DEEP_SEARCH_PLAN_MIN_ADI_SCORE`: NaN → 기본 **0.5**; 유효하면 **0~1** clamp. `DEEP_SEARCH_PLAN_MIN_BSI_SCORE`: NaN → 기본 **30**; 유효하면 **0~100** clamp.
+
+**실행 결과 저장:** v1에서 `deepSearchPlan` 은 **후보 선정만** 담는다. 향후 실제 Deep Search를 돌리면 산출물은 **`deepSearchResults` v1** 스키마로 분리해 저장하는 정책이다(계획 객체에 실행 결과를 합치지 않음).
 
 ## 로컬 실행
 
