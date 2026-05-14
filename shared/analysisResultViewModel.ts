@@ -9,20 +9,36 @@ import type { BsiV1Result, BsiV1Signal } from "./bsiV1";
 import type { DeepSearchPlanCandidateV1, DeepSearchPlanV1Result } from "./deepSearchPlanV1";
 import type { DeepSearchResultsV1Result, DeepSearchSingleResultOkV1 } from "./deepSearchResultsV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
+import {
+  buildSgfPlaybackStateV1,
+  readSgfContentFromResultPayload,
+  type SgfPlaybackPlaceholderV1,
+  type SgfPlaybackViewModelV1,
+} from "./sgfPlaybackV1";
 
-const NEUTRAL_LABELS = [
-  "검토 후보",
-  "추가 분석 후보",
-  "변화가 큰 장면",
-  "실전수와 후보수 차이가 큰 장면",
+export type AnalysisResultVmWarningCodeV1 =
+  | "beta_numeric_reference"
+  | "mock_demo_disclaimer"
+  | "unknown_result_format";
+
+export type AnalysisResultVmWarningV1 = {
+  code: AnalysisResultVmWarningCodeV1;
+  params?: Record<string, string | number>;
+};
+
+/** UI 번역 키 — `translatePlaceholderMessageKey` */
+export const SGF_PLACEHOLDER_NO_SOURCE = "sgf_ph_no_source";
+export const SGF_PLACEHOLDER_MOCK_SCOPE = "sgf_ph_mock_scope";
+export const SGF_PLACEHOLDER_UNKNOWN = "sgf_ph_unknown";
+
+const NEUTRAL_LABEL_KEYS = [
+  "ar_label_review_candidate",
+  "ar_label_followup_candidate",
+  "ar_label_large_delta",
+  "ar_label_played_vs_candidate_gap",
 ] as const;
 
-const DEFAULT_WARNINGS_KO = [
-  "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
-] as const;
-
-const MOCK_WARNING_KO =
-  "이 결과는 mock/데모용 JSON일 수 있으며, 운영 KataGo 분석과 다릅니다. 단정적인 기보·평가 해석으로 사용하지 마세요.";
+const DEFAULT_VM_WARNINGS: AnalysisResultVmWarningV1[] = [{ code: "beta_numeric_reference" }];
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
@@ -36,8 +52,8 @@ function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-function labelForIndex(i: number): string {
-  return NEUTRAL_LABELS[i % NEUTRAL_LABELS.length]!;
+function labelKeyForIndex(i: number): string {
+  return NEUTRAL_LABEL_KEYS[i % NEUTRAL_LABEL_KEYS.length]!;
 }
 
 function turnReasonFromPlan(analysisPlan: AnalysisPlanV1 | undefined, turnIndex: number): AnalysisPlanCandidateReasonV1 | null {
@@ -146,7 +162,8 @@ export type AnalysisResultKeyMoveCandidateV1 = {
   player: "B" | "W";
   playedMove: string;
   bestMove: string | null;
-  label: string;
+  /** UI에서 `translateCandidateLabelKey` */
+  labelKey: string;
   bsiScore: number | null;
   adiScore: number | null;
   deepSearchSelected: boolean;
@@ -181,13 +198,9 @@ export type KatagoWorkerV1AnalysisViewModel = {
   };
   keyMoveCandidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
-  warnings: string[];
-  /** 보드 복원·SGF 재생은 후속 — 구조만 유지 */
-  sgfPlayback: {
-    placeholder: true;
-    note: "SGF 기반 바둑판 복원은 미구현. 원문은 job 메타/스토리지에서 별도 로드.";
-    totalMovesHint: number | null;
-  };
+  warnings: AnalysisResultVmWarningV1[];
+  /** SGF 원문(`sgf_content`/`sgfContent`)이 있으면 재생 ViewModel, 없으면 placeholder */
+  sgfPlayback: SgfPlaybackViewModelV1;
 };
 
 export type MockLegacyAnalysisViewModel = {
@@ -207,12 +220,8 @@ export type MockLegacyAnalysisViewModel = {
   graph: { winrateSeries: [] };
   keyMoveCandidates: [];
   variationPreview: [];
-  warnings: string[];
-  sgfPlayback: {
-    placeholder: true;
-    note: string;
-    totalMovesHint: number | null;
-  };
+  warnings: AnalysisResultVmWarningV1[];
+  sgfPlayback: SgfPlaybackPlaceholderV1;
 };
 
 export type UnknownAnalysisViewModel = {
@@ -232,12 +241,13 @@ export type UnknownAnalysisViewModel = {
   graph: { winrateSeries: [] };
   keyMoveCandidates: [];
   variationPreview: [];
-  warnings: string[];
-  sgfPlayback: {
-    placeholder: true;
-    note: string;
-    totalMovesHint: null;
-  };
+  warnings: AnalysisResultVmWarningV1[];
+  sgfPlayback: SgfPlaybackPlaceholderV1;
+};
+
+export type BuildAnalysisResultViewModelOpts = {
+  /** null 이면 메인라인 마지막 수까지 재생 */
+  selectedTurnIndex?: number | null;
 };
 
 export type AnalysisResultViewModel = KatagoWorkerV1AnalysisViewModel | MockLegacyAnalysisViewModel | UnknownAnalysisViewModel;
@@ -288,13 +298,13 @@ function mergeReasons(planReasons: string[] | undefined, extras: string[]): stri
 function extrasFromSignals(adi?: AdiV1Signal | null, bsi?: BsiV1Signal | null): string[] {
   const r: string[] = [];
   if (adi?.adiScore != null && adi.adiScore >= 0.65) {
-    r.push("높은 ADI");
+    r.push("signal_high_adi");
   }
   if (bsi?.bsiScore != null && bsi.bsiScore >= 45) {
-    r.push("BSI 신호");
+    r.push("signal_bsi");
   }
   if (bsi?.playedMoveRank != null && bsi.playedMoveRank > 3) {
-    r.push("실전수 후보 순위 낮음");
+    r.push("played_candidate_rank_gap");
   }
   return r;
 }
@@ -439,14 +449,14 @@ function buildKeyMoveVmList(
     const deepOk = getDeepOkRow(deep, row.turnIndex);
     const extras = extrasFromSignals(adiRow, bsiRow);
     const reasons = mergeReasons(row.planReasons, extras);
-    const label = labelForIndex(i);
+    const labelKey = labelKeyForIndex(i);
     i += 1;
     out.push({
       turnIndex: row.turnIndex,
       player: row.player,
       playedMove: row.playedMove,
       bestMove: row.bestMove,
-      label,
+      labelKey,
       bsiScore: row.bsiScore,
       adiScore: row.adiScore,
       deepSearchSelected: planTurns.has(row.turnIndex),
@@ -527,8 +537,9 @@ function isMockLegacyResult(data: unknown): boolean {
 
 /**
  * `GET /api/analyze/:jobId` 의 `data`(또는 `analysis_jobs.result`)를 ViewModel 로 변환.
+ * `selectedTurnIndex` 는 SGF 재생 스냅샷용(결과 JSON에 `sgf_content` 가 있을 때만 반영).
  */
-export function buildAnalysisResultViewModel(data: unknown): AnalysisResultViewModel {
+export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysisResultViewModelOpts): AnalysisResultViewModel {
   if (isKatagoWorkerV1Payload(data)) {
     const result = data;
     const analysisPlan = (isPlainObject(result.analysisPlan) ? (result.analysisPlan as AnalysisPlanV1) : undefined) ?? undefined;
@@ -545,6 +556,20 @@ export function buildAnalysisResultViewModel(data: unknown): AnalysisResultViewM
     const acc = buildCandidateAccumulator(analysisPlan, turnAnalyses, plan, adi, bsi, 5);
     const keyMoveCandidates = buildKeyMoveVmList(acc, plan, deep, adi, bsi);
     const variationPreview = buildVariationPreview(keyMoveCandidates, turnAnalyses, deep);
+
+    const sgfText = readSgfContentFromResultPayload(result);
+    const sgfPlayback: SgfPlaybackViewModelV1 =
+      sgfText != null && sgfText.trim().length > 0
+        ? buildSgfPlaybackStateV1({
+            sgfText,
+            selectedTurnIndex: opts?.selectedTurnIndex ?? null,
+            totalMovesHint: totalMoves,
+          })
+        : {
+            placeholder: true,
+            messageKey: SGF_PLACEHOLDER_NO_SOURCE,
+            totalMovesHint: totalMoves > 0 ? totalMoves : null,
+          };
 
     const vm: KatagoWorkerV1AnalysisViewModel = {
       kind: "katago-worker-v1",
@@ -565,12 +590,8 @@ export function buildAnalysisResultViewModel(data: unknown): AnalysisResultViewM
       },
       keyMoveCandidates,
       variationPreview,
-      warnings: [...DEFAULT_WARNINGS_KO],
-      sgfPlayback: {
-        placeholder: true,
-        note: "SGF 기반 바둑판 복원은 미구현. 원문은 job 메타/스토리지에서 별도 로드.",
-        totalMovesHint: totalMoves > 0 ? totalMoves : null,
-      },
+      warnings: [...DEFAULT_VM_WARNINGS],
+      sgfPlayback,
     };
     return vm;
   }
@@ -596,10 +617,10 @@ export function buildAnalysisResultViewModel(data: unknown): AnalysisResultViewM
       graph: { winrateSeries: [] },
       keyMoveCandidates: [],
       variationPreview: [],
-      warnings: [MOCK_WARNING_KO, ...DEFAULT_WARNINGS_KO],
+      warnings: [{ code: "mock_demo_disclaimer" }, { code: "beta_numeric_reference" }],
       sgfPlayback: {
         placeholder: true,
-        note: "mock 결과에서는 ViewModel 이 후보/PV 를 노출하지 않습니다.",
+        messageKey: SGF_PLACEHOLDER_MOCK_SCOPE,
         totalMovesHint: tm,
       },
     };
@@ -624,10 +645,10 @@ export function buildAnalysisResultViewModel(data: unknown): AnalysisResultViewM
     graph: { winrateSeries: [] },
     keyMoveCandidates: [],
     variationPreview: [],
-    warnings: ["알 수 없는 분석 결과 형식입니다.", ...DEFAULT_WARNINGS_KO],
+    warnings: [{ code: "unknown_result_format" }, { code: "beta_numeric_reference" }],
     sgfPlayback: {
       placeholder: true,
-      note: "형식을 확인한 뒤 파서를 확장하세요.",
+      messageKey: SGF_PLACEHOLDER_UNKNOWN,
       totalMovesHint: null,
     },
   };

@@ -93,6 +93,7 @@ export function isKatagoWorkerV1ResultPayload(data: unknown): boolean {
 export {
   buildAnalysisResultViewModel,
   type AnalysisResultViewModel,
+  type BuildAnalysisResultViewModelOpts,
   type KatagoWorkerV1AnalysisViewModel,
   type MockLegacyAnalysisViewModel,
   type UnknownAnalysisViewModel,
@@ -100,6 +101,25 @@ export {
   type AnalysisResultKeyMoveCandidateV1,
   type AnalysisResultVariationPreviewV1,
 } from "./analysisResultViewModel";
+
+export type {
+  SgfPlaybackViewModelV1,
+  SgfPlaybackActiveV1,
+  SgfPlaybackPlaceholderV1,
+  SgfPlaybackStoneV1,
+  SgfPlaybackLastMoveV1,
+  SgfPlaybackWarningV1,
+  SgfPlaybackWarningCodeV1,
+} from "./sgfPlaybackV1";
+
+export {
+  buildSgfPlaybackStateV1,
+  extractMainlineBwMoves,
+  sgfLetterToCoordIndex,
+  indexToGtpColumn,
+  sgfPointToGtp,
+  readSgfContentFromResultPayload,
+} from "./sgfPlaybackV1";
 
 /** `analysis_jobs.result.analysisPlan` 등 — 상세는 `shared/analysisPlanV1.ts` */
 export type {

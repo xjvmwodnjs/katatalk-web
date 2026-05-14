@@ -16,7 +16,7 @@ describe("analysisResultUiHelpers", () => {
 
   it("maps unknown snake_case reason codes to internal signal", () => {
     expect(mapReasonPhraseForUi("interval_sample", "ko")).toBe("내부 참고 신호");
-    expect(mapReasonPhraseForUi("some_future_flag", "en")).toBe("Internal signal");
+    expect(mapReasonPhraseForUi("some_future_flag", "en")).toBe("Internal reference signal");
   });
 
   it("filters forbidden fragments in unknown reasons", () => {
