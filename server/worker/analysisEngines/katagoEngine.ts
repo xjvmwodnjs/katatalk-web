@@ -1,6 +1,7 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
 import { computeAdiV1FromTurnAnalysesAndBsi } from "../../adiV1";
 import { computeBsiV1FromTurnAnalyses } from "../../bsiV1";
+import { computeDeepSearchResultsV1 } from "../../deepSearchResultsV1";
 import { computeDeepSearchPlanV1 } from "../../deepSearchPlanV1";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
 import { readKatagoMaxVisits, readKatagoMaxVisitsFrom, readKatagoMultiTurnMaxVisitsFrom } from "./config";
@@ -125,6 +126,16 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     env: process.env,
   });
 
+  const deepSearchResults = await computeDeepSearchResultsV1({
+    env: process.env,
+    jobId: input.jobId,
+    parsed,
+    deepSearchPlan,
+    sgfSha256,
+    sgfSizeBytes,
+    spawnFn: input.__testSpawnFn,
+  });
+
   const result: NormalizedAnalysisResult = {
     ok: true,
     source: "katago-worker-v1",
@@ -150,7 +161,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     },
     normalized: {
       summary:
-        "KataGo raw + BSI/ADI v1 + deep-search-plan-v1 (candidate turns only; no Deep Search execution, no NL).",
+        "KataGo raw + BSI/ADI v1 + deep-search-plan-v1 + deep-search-results-v1 (optional high-visits replays; no NL).",
       sampleMoveInfos: document.normalized.sampleMoveInfos,
     },
     algorithmStage: {
@@ -162,9 +173,9 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
         "bsi_v1",
         "adi_v1",
         "deep_search_plan_v1",
+        "deep_search_results_v1",
       ],
       notYetImplemented: [
-        "deep_search_execution",
         "concept_tags",
         "explanation_planner",
         "claim_verification",
@@ -177,10 +188,10 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       date: new Date().toISOString().slice(0, 10),
       total_moves: parsed.moves.length,
       result: {
-        ko: "KataGo raw + BSI/ADI v1 내부 수치(Deep Search·자연어 미실행)",
-        en: "KataGo raw + BSI/ADI v1 numeric signals (no Deep Search / NL)",
-        zh: "KataGo 原始 + BSI/ADI v1 数值（不执行 Deep Search/自然语言）",
-        ja: "KataGo raw + BSI/ADI v1（Deep Search/NL なし）",
+        ko: "KataGo raw + BSI/ADI v1 + 선택적 Deep Search 재분석(기본 비활성; 자연어 미실행)",
+        en: "KataGo raw + BSI/ADI v1 + optional Deep Search replays (off by default; no NL)",
+        zh: "KataGo 原始 + BSI/ADI v1 + 可选 Deep Search 复盘（默认关闭；无自然语言）",
+        ja: "KataGo raw + BSI/ADI v1 + 任意 Deep Search 再解析（既定オフ・NL なし）",
       },
       komi: parsed.komi,
     },
@@ -191,6 +202,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     bsiV1,
     adiV1,
     deepSearchPlan,
+    deepSearchResults,
   };
 
   return result;

@@ -638,11 +638,15 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     const algo = result.algorithmStage as { notYetImplemented?: string[]; implemented?: string[] };
     expect(algo.implemented).toContain("bsi_v1");
     expect(algo.implemented).toContain("deep_search_plan_v1");
+    expect(algo.implemented).toContain("deep_search_results_v1");
     expect((result as { deepSearchPlan?: { version?: string } }).deepSearchPlan?.version).toBe(
       "deep-search-plan-v1"
     );
+    const ds = result as { deepSearchResults?: { enabled?: boolean; version?: string } };
+    expect(ds.deepSearchResults?.version).toBe("deep-search-results-v1");
+    expect(ds.deepSearchResults?.enabled).toBe(false);
     expect(algo.notYetImplemented).not.toContain("bsi");
-    expect(algo.notYetImplemented).toContain("deep_search_execution");
+    expect(algo.notYetImplemented).toContain("llm_commentary");
     expect((result as { bsiV1?: { version?: string } }).bsiV1?.version).toBe("bsi-v1");
     expect((result as { adiV1?: { version?: string } }).adiV1?.version).toBe("adi-v1");
     expect(JSON.stringify(result)).not.toMatch(/"llm_commentary"\s*:/i);

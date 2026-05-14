@@ -44,7 +44,7 @@ type StrictStdoutMatch =
  * 기대 id 집합 밖의 id 는 unknownResponseIdCount 만 증가.
  * 동일 id 가 두 번 이상이면 실패(KATAGO_MULTI_TURN_DUPLICATE_ID).
  */
-function matchStdoutByExpectedIds(stdout: string, expectedIds: readonly string[]): StrictStdoutMatch {
+export function matchStdoutByExpectedIds(stdout: string, expectedIds: readonly string[]): StrictStdoutMatch {
   const expectedSet = new Set(expectedIds);
   const seen = new Set<string>();
   const byId = new Map<string, Record<string, unknown>>();

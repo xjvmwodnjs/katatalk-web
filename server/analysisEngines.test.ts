@@ -212,7 +212,11 @@ describe("analyzeSgfKatago (worker v1)", () => {
     const algo = r.algorithmStage as { notYetImplemented: string[]; implemented?: string[] };
     expect(algo.implemented).toContain("bsi_v1");
     expect(algo.notYetImplemented).not.toContain("bsi");
+    expect(algo.implemented).toContain("deep_search_results_v1");
     expect(algo.notYetImplemented).toContain("llm_commentary");
+    const ds = r.deepSearchResults as { enabled?: boolean; version?: string } | undefined;
+    expect(ds?.version).toBe("deep-search-results-v1");
+    expect(ds?.enabled).toBe(false);
 
     const q = JSON.parse(stdinCaptured.trim()) as { maxVisits: number; moves: [string, string][] };
     expect(q.maxVisits).toBe(40);
