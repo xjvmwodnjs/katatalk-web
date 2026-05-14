@@ -39,7 +39,7 @@
 
 ## 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004** 적용
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006** 적용 (**006**: SECURITY DEFINER RPC 에 `anon`/`authenticated`/`PUBLIC` EXECUTE REVOKE — README「SECURITY DEFINER RPC 권한 검증」SQL 로 적용 후 확인)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종
