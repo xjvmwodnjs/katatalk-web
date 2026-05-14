@@ -1,6 +1,7 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
+import { computeBsiV1FromTurnAnalyses } from "../../bsiV1";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
-import { readKatagoMaxVisits } from "./config";
+import { readKatagoMaxVisits, readKatagoMaxVisitsFrom, readKatagoMultiTurnMaxVisitsFrom } from "./config";
 import { runMultiTurnKatagoRawV1 } from "./katagoMultiTurnRun";
 import {
   buildKatagoSmokeNormalized,
@@ -107,6 +108,13 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     spawnFn: input.__testSpawnFn,
   });
 
+  const baseMaxVisits = readKatagoMaxVisitsFrom(process.env);
+  const multiTurnMaxVisits = readKatagoMultiTurnMaxVisitsFrom(process.env, baseMaxVisits);
+  const bsiV1 = computeBsiV1FromTurnAnalyses(turnAnalyses, {
+    engineMaxVisits: maxVisits,
+    multiTurnMaxVisits,
+  });
+
   const result: NormalizedAnalysisResult = {
     ok: true,
     source: "katago-worker-v1",
@@ -131,14 +139,13 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       hasOwnership: document.normalized.hasOwnership,
     },
     normalized: {
-      summary: "KataGo raw analysis captured. BSI/ADI not computed yet.",
+      summary: "KataGo raw + BSI v1 numeric signals from multi-turn (no ADI, no NL).",
       sampleMoveInfos: document.normalized.sampleMoveInfos,
     },
     algorithmStage: {
       v25Reference: V25_REF,
-      implemented: ["katago_raw_capture", "analysis_plan_v1", "multi_turn_katago_raw_v1"],
+      implemented: ["katago_raw_capture", "analysis_plan_v1", "multi_turn_katago_raw_v1", "bsi_v1"],
       notYetImplemented: [
-        "bsi",
         "adi",
         "concept_tags",
         "explanation_planner",
@@ -152,10 +159,10 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
       date: new Date().toISOString().slice(0, 10),
       total_moves: parsed.moves.length,
       result: {
-        ko: "KataGo raw 분석 완료(BSI/ADI 미계산)",
-        en: "KataGo raw done (BSI/ADI not computed)",
-        zh: "KataGo 原始分析完成（未计算 BSI/ADI）",
-        ja: "KataGo raw 完了(BSI/ADI 未実装)",
+        ko: "KataGo raw + BSI v1 수치 신호(ADI·자연어 없음)",
+        en: "KataGo raw + BSI v1 numeric signals (no ADI / NL)",
+        zh: "KataGo 原始 + BSI v1 数值信号（无 ADI/自然语言）",
+        ja: "KataGo raw + BSI v1 数値(ADI/NL なし)",
       },
       komi: parsed.komi,
     },
@@ -163,6 +170,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     analysisPlan,
     turnAnalyses,
     multiTurnAnalysis,
+    bsiV1,
   };
 
   return result;

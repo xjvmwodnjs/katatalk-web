@@ -100,3 +100,16 @@ export type {
   TurnAnalysisEntryFailedV1,
   MultiTurnKatagoAnalysisMetaV1,
 } from "./multiTurnKatagoAnalysisV1";
+
+/** `analysis_jobs.result.bsiV1` — `shared/bsiV1.ts` */
+export type {
+  BsiV1Result,
+  BsiV1Signal,
+  BsiV1SignalStatus,
+  BsiV1Severity,
+  BsiV1Confidence,
+  BsiV1SignalComponents,
+  BsiV1ScoreMetricUsed,
+  BsiV1Perspective,
+  BsiV1InterpretationStatus,
+} from "./bsiV1";

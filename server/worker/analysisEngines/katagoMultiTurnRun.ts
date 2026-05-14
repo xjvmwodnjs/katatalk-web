@@ -6,6 +6,8 @@ import type {
   TurnAnalysisEntrySuccessV1,
   TurnAnalysisEntryV1,
   TurnAnalysisKatagoSliceV1,
+  TurnAnalysisMovePairSummaryV1,
+  TurnAnalysisMoveSummaryV1,
 } from "@shared/multiTurnKatagoAnalysisV1";
 import { MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION } from "@shared/multiTurnKatagoAnalysisV1";
 import {
@@ -94,6 +96,36 @@ function buildComparisonReady(playedMove: string, moveInfos: unknown[]): TurnAna
   };
 }
 
+function summarizeMoveRow(row: unknown): TurnAnalysisMoveSummaryV1 | null {
+  if (!isPlainObject(row) || typeof row.move !== "string" || row.move.length === 0) {
+    return null;
+  }
+  const winrate = typeof row.winrate === "number" && Number.isFinite(row.winrate) ? row.winrate : undefined;
+  const scoreLead = typeof row.scoreLead === "number" && Number.isFinite(row.scoreLead) ? row.scoreLead : undefined;
+  const scoreMean = typeof row.scoreMean === "number" && Number.isFinite(row.scoreMean) ? row.scoreMean : undefined;
+  const visits = typeof row.visits === "number" && Number.isFinite(row.visits) && row.visits >= 0 ? row.visits : undefined;
+  return {
+    move: row.move,
+    ...(winrate !== undefined ? { winrate } : {}),
+    ...(scoreLead !== undefined ? { scoreLead } : {}),
+    ...(scoreMean !== undefined ? { scoreMean } : {}),
+    ...(visits !== undefined ? { visits } : {}),
+  };
+}
+
+function buildMovePairSummary(playedGtp: string, moveInfos: unknown[]): TurnAnalysisMovePairSummaryV1 {
+  const best = moveInfos.length > 0 ? summarizeMoveRow(moveInfos[0]) : null;
+  let playedRow: unknown;
+  for (const m of moveInfos) {
+    if (isPlainObject(m) && m.move === playedGtp) {
+      playedRow = m;
+      break;
+    }
+  }
+  const played = playedRow != null ? summarizeMoveRow(playedRow) : null;
+  return { best, played };
+}
+
 type PreparedTurn = {
   candidate: AnalysisPlanCandidateTurnV1;
   queryId: string;
@@ -175,6 +207,7 @@ function entryForPrepared(
       hasScoreLead: doc.normalized.hasScoreLead,
       hasOwnership: doc.normalized.hasOwnership,
     };
+    const moveSummary = buildMovePairSummary(p.playedMoveGtp, moveInfos);
     const success: TurnAnalysisEntrySuccessV1 = {
       status: "ok",
       turnIndex: p.candidate.turnIndex,
@@ -185,6 +218,7 @@ function entryForPrepared(
       query: p.query,
       katago,
       comparisonReady: buildComparisonReady(p.playedMoveGtp, moveInfos),
+      moveSummary,
       ...(opts?.fallbackUsed ? { fallbackUsed: true } : {}),
     };
     return success;
