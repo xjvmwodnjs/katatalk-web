@@ -8,13 +8,16 @@ import type { BsiV1Result } from "@shared/bsiV1";
 import type { TurnAnalysisEntryV1 } from "@shared/multiTurnKatagoAnalysisV1";
 import type { AnalysisPlanV1 } from "@shared/analysisPlanV1";
 
-const FORBIDDEN = ["패착", "악수", "정답", "완착"];
+const ALLOWED_LABEL_KEYS = new Set([
+  "ar_label_review_candidate",
+  "ar_label_followup_candidate",
+  "ar_label_large_delta",
+  "ar_label_played_vs_candidate_gap",
+]);
 
-function assertNoForbiddenLabels(vm: { keyMoveCandidates: { label: string }[] }) {
+function assertAllowedLabelKeys(vm: { keyMoveCandidates: { labelKey: string }[] }) {
   for (const k of vm.keyMoveCandidates) {
-    for (const w of FORBIDDEN) {
-      expect(k.label).not.toContain(w);
-    }
+    expect(ALLOWED_LABEL_KEYS.has(k.labelKey)).toBe(true);
   }
 }
 
@@ -260,7 +263,7 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.keyMoveCandidates[0]!.deepSearchCompleted).toBe(false);
     expect(vm.graph.winrateSeries.some((p) => p.turnIndex === 10)).toBe(true);
     expect(vm.graph.winrateSeries.every((p) => p.displayPerspective === "katago_output")).toBe(true);
-    assertNoForbiddenLabels(vm);
+    assertAllowedLabelKeys(vm);
     const pv = vm.variationPreview.find((v) => v.turnIndex === 10);
     expect(pv?.source).toBe("multi-turn");
     expect(pv?.pv.length).toBeGreaterThan(0);
@@ -290,7 +293,7 @@ describe("buildAnalysisResultViewModel", () => {
     }
     expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
     expect(vm.keyMoveCandidates[0]!.turnIndex).not.toBe(50);
-    assertNoForbiddenLabels(vm);
+    assertAllowedLabelKeys(vm);
   });
 
   it("falls back to BSI when ADI empty", () => {
@@ -304,7 +307,7 @@ describe("buildAnalysisResultViewModel", () => {
       return;
     }
     expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
-    assertNoForbiddenLabels(vm);
+    assertAllowedLabelKeys(vm);
   });
 
   it("uses deep-search PV when deep ok row exists", () => {

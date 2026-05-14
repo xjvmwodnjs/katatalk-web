@@ -1,0 +1,626 @@
+/**
+ * Analysis result page copy + reason/SGF/vm warning translation (ko/en/ja/zh).
+ * UI 레이어에서만 사용 — ViewModel은 code/key만 제공.
+ */
+
+import type { SgfPlaybackWarningV1 } from "./sgfPlaybackV1";
+
+export type AnalysisResultLang = "ko" | "en" | "ja" | "zh";
+
+export function normalizeAnalysisResultLang(lang: string | null | undefined): AnalysisResultLang {
+  const l = (lang ?? "ko").toLowerCase();
+  if (l === "en" || l === "ja" || l === "zh" || l === "ko") {
+    return l;
+  }
+  return "ko";
+}
+
+function interp(template: string, params?: Record<string, string | number>): string {
+  if (!params) {
+    return template;
+  }
+  return template.replace(/\{(\w+)\}/g, (_, key: string) =>
+    params[key] !== undefined && params[key] !== null ? String(params[key]) : ""
+  );
+}
+
+const FORBIDDEN_BY_LANG: Record<AnalysisResultLang, readonly string[]> = {
+  ko: ["패착", "악수", "정답", "완착"],
+  en: ["blunder", "mistake", "best move", "correct answer"],
+  ja: ["悪手", "正解", "最善手"],
+  zh: ["恶手", "正解", "最佳手"],
+};
+
+/** UI 노출 금지 단어 포함 여부 — 언어 지정 시에도 ko/en/ja/zh 금지어를 모두 검사(교차 노출 방지) */
+export function uiTextContainsForbiddenLabel(text: string, _lang?: AnalysisResultLang): boolean {
+  const t = text.trim();
+  if (!t) {
+    return false;
+  }
+  const langs: AnalysisResultLang[] = ["ko", "en", "ja", "zh"];
+  for (const L of langs) {
+    const hay = L === "en" ? t.toLowerCase() : t;
+    for (const w of FORBIDDEN_BY_LANG[L]) {
+      const needle = L === "en" ? w.toLowerCase() : w;
+      if (hay.includes(needle)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+const INTERNAL_SIGNAL: Record<AnalysisResultLang, string> = {
+  ko: "내부 참고 신호",
+  en: "Internal reference signal",
+  zh: "内部参考信号",
+  ja: "内部参照シグナル",
+};
+
+const REASON_CODE_I18N: Record<string, Record<AnalysisResultLang, string>> = {
+  high_adi: {
+    ko: "추가 검토 필요도 높음",
+    en: "Higher review priority (internal index)",
+    zh: "复查优先度较高（内部指标）",
+    ja: "再検討の優先度が高い（内部指標）",
+  },
+  deep_search_flag: {
+    ko: "추가 분석 후보",
+    en: "Further analysis candidate",
+    zh: "进一步分析候选",
+    ja: "追加解析の候補",
+  },
+  meaningful_bsi: {
+    ko: "수치 차이 감지",
+    en: "Numeric spread detected",
+    zh: "数值差异信号",
+    ja: "数値差のシグナル",
+  },
+  rare_user_move: {
+    ko: "후보 분포와 다른 실전수",
+    en: "Played move unlike candidate spread",
+    zh: "与候选分布不同的实战手",
+    ja: "候補分布と異なる実戦手",
+  },
+  partial_signal: {
+    ko: "일부 신호 감지",
+    en: "Partial signal detected",
+    zh: "部分信号",
+    ja: "一部シグナル",
+  },
+  high_rank_instability: {
+    ko: "후보 간 차이 작음",
+    en: "Small spread among top candidates",
+    zh: "前列候选差异较小",
+    ja: "上位候補間の差が小さい",
+  },
+  qualified: {
+    ko: "검토 조건 충족",
+    en: "Review criteria met",
+    zh: "满足复核条件",
+    ja: "検討条件を満たす",
+  },
+  multi_signal: {
+    ko: "일부 신호 감지",
+    en: "Multiple partial signals",
+    zh: "多重部分信号",
+    ja: "複数の部分シグナル",
+  },
+  signal_high_adi: {
+    ko: "추가 검토 필요도 높음",
+    en: "Higher review priority (internal index)",
+    zh: "复查优先度较高（内部指标）",
+    ja: "再検討の優先度が高い（内部指標）",
+  },
+  signal_bsi: {
+    ko: "수치 차이 감지",
+    en: "Numeric spread detected",
+    zh: "数值差异信号",
+    ja: "数値差のシグナル",
+  },
+  played_candidate_rank_gap: {
+    ko: "후보 순위 차이",
+    en: "Candidate rank spread",
+    zh: "候选排名差异",
+    ja: "候補順位の差",
+  },
+};
+
+const LEGACY_KO_PHRASES: Record<string, Record<AnalysisResultLang, string>> = {
+  "높은 ADI": {
+    ko: "추가 검토 필요도 높음",
+    en: "Higher review priority (internal index)",
+    zh: "复查优先度较高（内部指标）",
+    ja: "再検討の優先度が高い（内部指標）",
+  },
+  "BSI 신호": {
+    ko: "수치 차이 감지",
+    en: "Numeric spread detected",
+    zh: "数值差异信号",
+    ja: "数値差のシグナル",
+  },
+  "실전수 후보 순위 낮음": {
+    ko: "후보 순위 차이",
+    en: "Candidate rank spread",
+    zh: "候选排名差异",
+    ja: "候補順位の差",
+  },
+};
+
+function looksLikeReasonCodeToken(s: string): boolean {
+  return /^[a-z][a-z0-9_]*$/i.test(s.trim());
+}
+
+export function internalReferenceSignalLabel(lang: AnalysisResultLang): string {
+  return INTERNAL_SIGNAL[lang];
+}
+
+export function mapReasonPhraseForUi(reason: string, lang: AnalysisResultLang): string {
+  const r = reason.trim();
+  const legacy = LEGACY_KO_PHRASES[r];
+  if (legacy) {
+    return legacy[lang];
+  }
+  const codeKey = r.toLowerCase();
+  const codeRow = REASON_CODE_I18N[codeKey];
+  if (codeRow) {
+    return codeRow[lang];
+  }
+  if (looksLikeReasonCodeToken(r)) {
+    return INTERNAL_SIGNAL[lang];
+  }
+  if (uiTextContainsForbiddenLabel(r, lang)) {
+    return INTERNAL_SIGNAL[lang];
+  }
+  return r;
+}
+
+const SGF_WARN: Record<
+  SgfPlaybackWarningV1["code"],
+  Record<AnalysisResultLang, string>
+> = {
+  no_root: {
+    ko: "루트 '(;' 를 찾지 못해 메인라인을 읽지 못했습니다.",
+    en: "Could not find a root '(;' node; mainline was not parsed.",
+    ja: "ルートの '(;' が見つからず、メインラインを読み取れませんでした。",
+    zh: "未找到根节点 '(;'，无法解析主线。",
+  },
+  setup_markers_ignored: {
+    ko: "AB[]/AW[]/AE[] 등 설치 표기가 있습니다. v1은 메인라인 착점만 반영합니다.",
+    en: "Setup markers (AB[]/AW[]/AE[]) are present. v1 applies mainline moves only.",
+    ja: "AB[]/AW[]/AE[] などの配置マーカーがあります。v1 はメインラインの着手のみ反映します。",
+    zh: "存在 AB[]/AW[]/AE[] 等布局标记。v1 仅应用主线落子。",
+  },
+  unbalanced_parens: {
+    ko: "괄호 균형이 맞지 않아 여기까지 파싱했습니다.",
+    en: "Unbalanced parentheses; parsing stopped at this point.",
+    ja: "括弧の対応が不十分なため、ここまで解析しました。",
+    zh: "括号不平衡，解析在此停止。",
+  },
+  invalid_sz: {
+    ko: "SZ 값이 비정상입니다({raw}). 19로 가정합니다.",
+    en: "Invalid SZ value ({raw}); assuming 19.",
+    ja: "SZ 値が不正です（{raw}）。19 とみなします。",
+    zh: "SZ 值无效（{raw}），按 19 处理。",
+  },
+  sz_not_19: {
+    ko: "SZ가 19가 아닙니다({size}). 좌표는 SGF 열·행 규칙 그대로입니다.",
+    en: "SZ is not 19 ({size}). Coordinates follow raw SGF column/row letters.",
+    ja: "SZ が 19 ではありません（{size}）。座標は SGF の列・行のままです。",
+    zh: "SZ 不是 19（{size}）。坐标按 SGF 列/行规则。",
+  },
+  selected_turn_clamped_negative: {
+    ko: "selectedTurnIndex가 음수여서 0으로 맞췄습니다.",
+    en: "selectedTurnIndex was negative; clamped to 0.",
+    ja: "selectedTurnIndex が負のため 0 に調整しました。",
+    zh: "selectedTurnIndex 为负，已钳制为 0。",
+  },
+  selected_turn_clamped_high: {
+    ko: "selectedTurnIndex가 메인라인 길이({max})를 넘어 맞췄습니다.",
+    en: "selectedTurnIndex exceeded mainline length ({max}); clamped.",
+    ja: "selectedTurnIndex がメインライン長（{max}）を超えたため調整しました。",
+    zh: "selectedTurnIndex 超过主线长度（{max}），已钳制。",
+  },
+  invalid_point_format: {
+    ko: "수 {turnIndex}: 착점 표기({point})를 해석하지 못해 건너뜁니다.",
+    en: "Move {turnIndex}: could not parse coordinate ({point}); skipped.",
+    ja: "手 {turnIndex}: 着手表記（{point}）を解釈できずスキップしました。",
+    zh: "第 {turnIndex} 手：无法解析坐标（{point}），已跳过。",
+  },
+  coord_len_error: {
+    ko: "수 {turnIndex}: 좌표 길이 오류({point}) — 건너뜀.",
+    en: "Move {turnIndex}: coordinate length error ({point}) — skipped.",
+    ja: "手 {turnIndex}: 座標長エラー（{point}）— スキップ。",
+    zh: "第 {turnIndex} 手：坐标长度错误（{point}）— 已跳过。",
+  },
+  coord_out_of_range: {
+    ko: "수 {turnIndex}: 좌표 범위 밖({point}) — 건너뜀.",
+    en: "Move {turnIndex}: coordinate out of range ({point}) — skipped.",
+    ja: "手 {turnIndex}: 座標が範囲外（{point}）— スキップ。",
+    zh: "第 {turnIndex} 手：坐标越界（{point}）— 已跳过。",
+  },
+  duplicate_move: {
+    ko: "수 {turnIndex}: 이미 돌이 있는 교차점({point}) — 덮어쓰지 않고 건너뜀.",
+    en: "Move {turnIndex}: intersection already occupied ({point}) — skipped without overwrite.",
+    ja: "手 {turnIndex}: 交点に既に石があります（{point}）— 上書きせずスキップ。",
+    zh: "第 {turnIndex} 手：交叉点已有棋子（{point}）— 未覆盖，已跳过。",
+  },
+};
+
+export function translateSgfPlaybackWarning(warning: SgfPlaybackWarningV1, lang: AnalysisResultLang): string {
+  const row = SGF_WARN[warning.code];
+  if (!row) {
+    return warning.code;
+  }
+  return interp(row[lang], warning.params);
+}
+
+const VM_WARN: Record<string, Record<AnalysisResultLang, string>> = {
+  beta_numeric_reference: {
+    ko: "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
+    en: "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
+    ja: "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
+    zh: "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
+  },
+  mock_demo_disclaimer: {
+    ko: "이 결과는 mock/데모용 JSON일 수 있으며, 운영 KataGo 분석과 다릅니다. 단정적인 기보·평가 해석으로 사용하지 마세요.",
+    en: "This payload may be mock/demo JSON and differs from production KataGo output. Do not treat it as authoritative game commentary.",
+    ja: "この結果は mock/デモ用 JSON の可能性があり、本番の KataGo 解析と異なります。断定的な棋譜・評価として扱わないでください。",
+    zh: "此结果可能为 mock/演示 JSON，与线上 KataGo 分析不同。请勿当作定论棋谱或评价。",
+  },
+  unknown_result_format: {
+    ko: "지원하지 않는 결과 형식입니다.",
+    en: "Unsupported result format.",
+    ja: "未対応の結果形式です。",
+    zh: "不支持的结果格式。",
+  },
+};
+
+export function translateVmWarning(
+  warning: { code: string; params?: Record<string, string | number> },
+  lang: AnalysisResultLang
+): string {
+  const row = VM_WARN[warning.code];
+  if (!row) {
+    return warning.code;
+  }
+  return interp(row[lang], warning.params);
+}
+
+const PLACEHOLDER: Record<string, Record<AnalysisResultLang, string>> = {
+  sgf_ph_no_source: {
+    ko: "SGF 원문(sgf_content)이 결과에 없어 재생 ViewModel을 만들 수 없습니다. DB·별도 API에서 로드하는 경우 필드에 포함하세요.",
+    en: "No SGF text (sgf_content) in the result, so a playback view model cannot be built. Include the field when loading from a DB or another API.",
+    ja: "結果に SGF 本文（sgf_content）がないため再生 ViewModel を作成できません。DB などから読み込む場合はフィールドを含めてください。",
+    zh: "结果中缺少 SGF 正文（sgf_content），无法构建回放视图模型。从数据库或其他接口加载时请包含该字段。",
+  },
+  sgf_ph_mock_scope: {
+    ko: "mock 결과에서는 ViewModel이 후보/PV를 노출하지 않습니다.",
+    en: "Mock results do not expose candidates/PV in this view model.",
+    ja: "mock 結果ではこの ViewModel は候補/PV を表示しません。",
+    zh: "mock 结果不在此视图模型中展示候选/PV。",
+  },
+  sgf_ph_unknown: {
+    ko: "형식을 확인한 뒤 파서를 확장하세요.",
+    en: "Verify the format, then extend the parser as needed.",
+    ja: "形式を確認し、必要に応じてパーサを拡張してください。",
+    zh: "请确认格式后按需扩展解析器。",
+  },
+};
+
+export function translatePlaceholderMessageKey(key: string, lang: AnalysisResultLang): string {
+  const row = PLACEHOLDER[key];
+  if (!row) {
+    return key;
+  }
+  return row[lang];
+}
+
+const LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
+  ar_label_review_candidate: {
+    ko: "검토 후보",
+    en: "Review candidate",
+    ja: "検討候補",
+    zh: "复核候选",
+  },
+  ar_label_followup_candidate: {
+    ko: "추가 분석 후보",
+    en: "Further analysis candidate",
+    ja: "追加解析候補",
+    zh: "进一步分析候选",
+  },
+  ar_label_large_delta: {
+    ko: "변화가 큰 장면",
+    en: "Large numeric swing",
+    ja: "変化が大きい局面",
+    zh: "变化较大的局面",
+  },
+  ar_label_played_vs_candidate_gap: {
+    ko: "실전수와 후보수 차이가 큰 장면",
+    en: "Large gap between played move and top candidates",
+    ja: "実戦手と候補手の差が大きい局面",
+    zh: "实战手与候选手差异较大的局面",
+  },
+};
+
+export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang): string {
+  const row = LABEL_KEYS[key];
+  if (!row) {
+    return key;
+  }
+  return row[lang];
+}
+
+type UiBlock = {
+  summaryStatusComplete: string;
+  summaryTitle: string;
+  betaNote: string;
+  engine: string;
+  totalMoves: string;
+  flagsSectionTitle: string;
+  flagMT: string;
+  flagBSI: string;
+  flagADI: string;
+  flagDSP: string;
+  flagDSR: string;
+  deepSearchRowTitle: string;
+  dsOn: string;
+  dsOff: string;
+  yesShort: string;
+  noShort: string;
+  mockBanner: string;
+  unknownBanner: string;
+  boardTitle: string;
+  boardBadge: string;
+  boardPhGrid: string;
+  boardSnapshotHint: string;
+  boardDebugOrder: string;
+  boardDebugLast: string;
+  boardDebugStones: string;
+  boardDebugSz: string;
+  boardNoLast: string;
+  winrateTitle: string;
+  winrateYAxis: string;
+  winrateEmpty: string;
+  winrateToggleNote: string;
+  winratePerspectiveNote: string;
+  winrateClickHint: string;
+  chartAriaTurn: string;
+  candidatesTitle: string;
+  candidatesEmpty: string;
+  playedMove: string;
+  candidateMove: string;
+  bsi: string;
+  adi: string;
+  dsSelected: string;
+  dsCompleted: string;
+  candidateSelected: string;
+  variationTitle: string;
+  variationSubDeep: string;
+  variationSubMulti: string;
+  variationEmpty: string;
+  variationTurn: string;
+  variationPlayed: string;
+  variationCandidate: string;
+  variationPvDisclaimer: string;
+};
+
+const UI: Record<AnalysisResultLang, UiBlock> = {
+  ko: {
+    summaryStatusComplete: "분석 완료",
+    summaryTitle: "분석 요약",
+    betaNote:
+      "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
+    engine: "엔진",
+    totalMoves: "총 수순",
+    flagsSectionTitle: "신호·플랜",
+    flagMT: "Multi-turn",
+    flagBSI: "BSI",
+    flagADI: "ADI",
+    flagDSP: "Deep Search Plan",
+    flagDSR: "Deep Search Results",
+    deepSearchRowTitle: "Deep Search",
+    dsOn: "Deep Search 실행됨",
+    dsOff: "Deep Search 미실행(요약만)",
+    yesShort: "예",
+    noShort: "아니오",
+    mockBanner: "데모용 예시 결과입니다. 실제 KataGo 분석 결과가 아닙니다.",
+    unknownBanner: "지원하지 않는 결과 형식입니다.",
+    boardTitle: "바둑판",
+    boardBadge: "준비 중 · 다음 단계 제공 예정",
+    boardPhGrid: "바둑판 재생은 다음 단계에서 제공됩니다.",
+    boardSnapshotHint: "SGF 메인라인 스냅샷(텍스트만, 격자 없음)",
+    boardDebugOrder: "현재 수순(메인라인)",
+    boardDebugLast: "마지막 착수(GTP)",
+    boardDebugStones: "돌 개수",
+    boardDebugSz: "보드 크기(SZ)",
+    boardNoLast: "(없음 — 패스만 또는 초기)",
+    winrateTitle: "승률 / 흐름",
+    winrateYAxis: "KataGo 기준 승률 (%)",
+    winrateEmpty: "표시할 승률 추이가 없습니다.",
+    winrateToggleNote: "흑/백 관점 전환 — 준비 중",
+    winratePerspectiveNote: "KataGo 출력 관점이며 흑/백 고정 해석이 아닙니다.",
+    winrateClickHint: "점을 눌러 해당 수순을 선택할 수 있습니다.",
+    chartAriaTurn: "수",
+    candidatesTitle: "핵심 검토 후보",
+    candidatesEmpty: "표시할 검토 후보가 없습니다.",
+    playedMove: "실전수",
+    candidateMove: "후보수",
+    bsi: "BSI",
+    adi: "ADI",
+    dsSelected: "Deep Search 선택",
+    dsCompleted: "Deep Search 완료",
+    candidateSelected: "선택됨",
+    variationTitle: "KataGo 참고도",
+    variationSubDeep: "Deep Search 참고도",
+    variationSubMulti: "Multi-turn 참고도",
+    variationEmpty: "표시할 참고도 없음",
+    variationTurn: "수순",
+    variationPlayed: "실전수",
+    variationCandidate: "후보수",
+    variationPvDisclaimer: "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
+  },
+  en: {
+    summaryStatusComplete: "Analysis complete",
+    summaryTitle: "Analysis summary",
+    betaNote: "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
+    engine: "Engine",
+    totalMoves: "Total moves",
+    flagsSectionTitle: "Signals / plan",
+    flagMT: "Multi-turn",
+    flagBSI: "BSI",
+    flagADI: "ADI",
+    flagDSP: "Deep Search Plan",
+    flagDSR: "Deep Search Results",
+    deepSearchRowTitle: "Deep Search",
+    dsOn: "Deep Search ran",
+    dsOff: "Deep Search off (summary only)",
+    yesShort: "Yes",
+    noShort: "No",
+    mockBanner: "Demo sample result — not a live KataGo analysis output.",
+    unknownBanner: "Unsupported result format.",
+    boardTitle: "Board",
+    boardBadge: "Coming soon — next release",
+    boardPhGrid: "Board replay will arrive in a later release.",
+    boardSnapshotHint: "SGF mainline snapshot (text only, no grid)",
+    boardDebugOrder: "Current move index (mainline)",
+    boardDebugLast: "Last stone (GTP)",
+    boardDebugStones: "Stone count",
+    boardDebugSz: "Board size (SZ)",
+    boardNoLast: "(none — pass only or empty)",
+    winrateTitle: "Winrate / flow",
+    winrateYAxis: "KataGo output winrate (%)",
+    winrateEmpty: "No winrate series to display.",
+    winrateToggleNote: "Black/white perspective — coming soon",
+    winratePerspectiveNote: "Shown as KataGo output; not fixed as black-only or white-only winrate.",
+    winrateClickHint: "Click a point to select that move index.",
+    chartAriaTurn: "Move",
+    candidatesTitle: "Key review candidates",
+    candidatesEmpty: "No review candidates to show.",
+    playedMove: "Played move",
+    candidateMove: "Top candidate",
+    bsi: "BSI",
+    adi: "ADI",
+    dsSelected: "Deep Search selected",
+    dsCompleted: "Deep Search completed",
+    candidateSelected: "Selected",
+    variationTitle: "KataGo reference line",
+    variationSubDeep: "Deep Search reference line",
+    variationSubMulti: "Multi-turn reference line",
+    variationEmpty: "No reference line to show",
+    variationTurn: "Move",
+    variationPlayed: "Played",
+    variationCandidate: "Candidate",
+    variationPvDisclaimer: "Reference PV only — not a single authoritative continuation.",
+  },
+  ja: {
+    summaryStatusComplete: "解析完了",
+    summaryTitle: "分析サマリ",
+    betaNote: "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
+    engine: "エンジン",
+    totalMoves: "総手数",
+    flagsSectionTitle: "シグナル/プラン",
+    flagMT: "Multi-turn",
+    flagBSI: "BSI",
+    flagADI: "ADI",
+    flagDSP: "Deep Search Plan",
+    flagDSR: "Deep Search Results",
+    deepSearchRowTitle: "Deep Search",
+    dsOn: "Deep Search 実行",
+    dsOff: "Deep Search オフ（要約のみ）",
+    yesShort: "はい",
+    noShort: "いいえ",
+    mockBanner: "デモ用のサンプルで、本番の KataGo 解析ではありません。",
+    unknownBanner: "未対応の結果形式です。",
+    boardTitle: "碁盤",
+    boardBadge: "準備中 · 次段階で提供予定",
+    boardPhGrid: "盤面再生は次の段階で提供予定です。",
+    boardSnapshotHint: "SGF メインラインスナップショット（テキストのみ・格子なし）",
+    boardDebugOrder: "現在の手数（メインライン）",
+    boardDebugLast: "最終着手（GTP）",
+    boardDebugStones: "石の数",
+    boardDebugSz: "盤サイズ（SZ）",
+    boardNoLast: "（なし — pass のみまたは空）",
+    winrateTitle: "勝率 / 推移",
+    winrateYAxis: "KataGo 出力の勝率 (%)",
+    winrateEmpty: "表示できる勝率系列がありません。",
+    winrateToggleNote: "黒白視点の切替 — 準備中",
+    winratePerspectiveNote: "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
+    winrateClickHint: "点をクリックして手数を選べます。",
+    chartAriaTurn: "手",
+    candidatesTitle: "主要な検討候補",
+    candidatesEmpty: "表示する検討候補がありません。",
+    playedMove: "実戦手",
+    candidateMove: "候補手",
+    bsi: "BSI",
+    adi: "ADI",
+    dsSelected: "Deep Search 選択",
+    dsCompleted: "Deep Search 完了",
+    candidateSelected: "選択中",
+    variationTitle: "KataGo 参照",
+    variationSubDeep: "Deep Search 参照",
+    variationSubMulti: "Multi-turn 参照",
+    variationEmpty: "表示する参考がありません",
+    variationTurn: "手数",
+    variationPlayed: "実戦手",
+    variationCandidate: "候補手",
+    variationPvDisclaimer: "参考用の変化（PV）であり、単一の断定手順としては扱いません。",
+  },
+  zh: {
+    summaryStatusComplete: "分析完成",
+    summaryTitle: "分析摘要",
+    betaNote: "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
+    engine: "引擎",
+    totalMoves: "总手数",
+    flagsSectionTitle: "信号与计划",
+    flagMT: "Multi-turn",
+    flagBSI: "BSI",
+    flagADI: "ADI",
+    flagDSP: "Deep Search Plan",
+    flagDSR: "Deep Search Results",
+    deepSearchRowTitle: "Deep Search",
+    dsOn: "已运行 Deep Search",
+    dsOff: "Deep Search 关闭（仅摘要）",
+    yesShort: "是",
+    noShort: "否",
+    mockBanner: "演示用示例，不是真实 KataGo 分析结果。",
+    unknownBanner: "不支持的结果格式。",
+    boardTitle: "棋盘",
+    boardBadge: "准备中 · 下阶段提供",
+    boardPhGrid: "棋盘回放将在后续版本提供。",
+    boardSnapshotHint: "SGF 主线快照（仅文本，无网格）",
+    boardDebugOrder: "当前手数（主线）",
+    boardDebugLast: "最后一手（GTP）",
+    boardDebugStones: "棋子数",
+    boardDebugSz: "棋盘大小（SZ）",
+    boardNoLast: "（无实子 — 仅 pass 或空）",
+    winrateTitle: "胜率 / 走势",
+    winrateYAxis: "KataGo 输出胜率 (%)",
+    winrateEmpty: "没有可显示的胜率序列。",
+    winrateToggleNote: "黑/白视角 — 准备中",
+    winratePerspectiveNote: "为 KataGo 输出视角，不作黑方或白方固定解读。",
+    winrateClickHint: "点击节点可选择对应手数。",
+    chartAriaTurn: "手",
+    candidatesTitle: "重点复核候选",
+    candidatesEmpty: "没有可显示的复核候选。",
+    playedMove: "实战手",
+    candidateMove: "候选手",
+    bsi: "BSI",
+    adi: "ADI",
+    dsSelected: "Deep Search 已选",
+    dsCompleted: "Deep Search 已完成",
+    candidateSelected: "已选择",
+    variationTitle: "KataGo 参考图",
+    variationSubDeep: "Deep Search 参考",
+    variationSubMulti: "Multi-turn 参考",
+    variationEmpty: "无参考变化可显示",
+    variationTurn: "手数",
+    variationPlayed: "实战手",
+    variationCandidate: "候选手",
+    variationPvDisclaimer: "仅为参考变化（PV），不作为唯一权威应手序列。",
+  },
+};
+
+export function getAnalysisResultUiStrings(lang: AnalysisResultLang): UiBlock {
+  return UI[lang];
+}
