@@ -1,6 +1,8 @@
 import type { AnalysisJobDbRow } from "../creditService";
 import {
   type AnalysisJobProcessingLease,
+  heartbeatAnalysisJobLease,
+  readAnalysisWorkerHeartbeatSeconds,
   updateAnalysisJobRow,
   updateAnalysisJobRowWithLease,
 } from "../creditService";
@@ -8,15 +10,25 @@ import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
 
 type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
 
+function leaseLockedAtRefresh(lease: AnalysisJobProcessingLease | null | undefined): Pick<LeasePatch, "locked_at"> | null {
+  if (!lease) {
+    return null;
+  }
+  return { locked_at: new Date().toISOString() };
+}
+
 async function updateJobForPipeline(
   jobId: string,
   lease: AnalysisJobProcessingLease | null | undefined,
   patch: LeasePatch
 ): Promise<{ ok: true } | { ok: false; reason: "LEASE_LOST" }> {
+  const touch = leaseLockedAtRefresh(lease);
+  const merged =
+    touch && patch.status === "running" ? ({ ...patch, ...touch } as LeasePatch) : patch;
   if (lease) {
-    return updateAnalysisJobRowWithLease(jobId, lease, patch);
+    return updateAnalysisJobRowWithLease(jobId, lease, merged);
   }
-  await updateAnalysisJobRow(jobId, patch);
+  await updateAnalysisJobRow(jobId, merged);
   return { ok: true };
 }
 
@@ -57,13 +69,51 @@ export async function runKatagoAnalysisDbPipeline(args: {
       return;
     }
 
-    const result = await analyzeSgfKatago({
-      jobId,
-      sgfContent: content,
-      language,
-      maxVisits: readKatagoMaxVisits(),
-      fileName,
-    });
+    let leaseLostDuringRun = false;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    if (lease) {
+      const periodMs = readAnalysisWorkerHeartbeatSeconds() * 1000;
+      heartbeatTimer = setInterval(() => {
+        void (async () => {
+          const hb = await heartbeatAnalysisJobLease(jobId, lease);
+          if (!hb.ok) {
+            leaseLostDuringRun = true;
+            if (heartbeatTimer) {
+              clearInterval(heartbeatTimer);
+              heartbeatTimer = undefined;
+            }
+            console.warn("[katagoAnalysisDbPipeline] heartbeat lease_lost", { jobId });
+          }
+        })();
+      }, periodMs);
+    }
+
+    let result: Awaited<ReturnType<typeof analyzeSgfKatago>>;
+    try {
+      result = await analyzeSgfKatago({
+        jobId,
+        sgfContent: content,
+        language,
+        maxVisits: readKatagoMaxVisits(),
+        fileName,
+      });
+    } finally {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
+    }
+
+    if (lease) {
+      const postRun = await heartbeatAnalysisJobLease(jobId, lease);
+      if (!postRun.ok) {
+        leaseLostDuringRun = true;
+      }
+    }
+
+    if (leaseLostDuringRun) {
+      console.warn("[katagoAnalysisDbPipeline] lease_lost skip post-analyze write", { jobId });
+      return;
+    }
 
     const cr = await updateJobForPipeline(jobId, lease, {
       status: "completed",

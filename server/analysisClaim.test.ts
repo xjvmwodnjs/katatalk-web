@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   analysisJobProcessingLeaseFromClaimedRow,
   claimNextAnalysisJobRpc,
+  heartbeatAnalysisJobLease,
   updateAnalysisJobRowWithLease,
 } from "./creditService";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
@@ -232,5 +233,120 @@ describe("claim_next_analysis_job (RPC)", () => {
         completed_at: null,
       })
     ).toBeNull();
+  });
+});
+
+describe("heartbeatAnalysisJobLease", () => {
+  const baseJobFields = {
+    user_id: "user_a",
+    file_name: "game.sgf",
+    language: "ko",
+    credit_cost: 1,
+    credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+    is_mock: true,
+    progress: 15,
+    result: null,
+    error_message: null,
+    completed_at: null,
+  } as const;
+
+  beforeEach(() => {
+    vitestAnalysisJobsStore.clear();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-08-10T14:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refreshes locked_at when lease matches", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "hb-1",
+      status: "running",
+      locked_at: "2020-01-01T00:00:00.000Z",
+      locked_by: "worker-h1",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
+    });
+    const r = await heartbeatAnalysisJobLease("hb-1", { lockedBy: "worker-h1", attemptCount: 1 });
+    expect(r.ok).toBe(true);
+    expect((vitestAnalysisJobsStore.get("hb-1") as { locked_at: string }).locked_at).toBe("2025-08-10T14:00:00.000Z");
+  });
+
+  it("returns LEASE_LOST when locked_by changed", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "hb-2",
+      status: "running",
+      locked_at: "2025-08-10T13:00:00.000Z",
+      locked_by: "worker-b",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
+    });
+    const r = await heartbeatAnalysisJobLease("hb-2", { lockedBy: "worker-a", attemptCount: 1 });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected LEASE_LOST");
+    expect(r.reason).toBe("LEASE_LOST");
+  });
+
+  it("returns LEASE_LOST when attempt_count changed", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "hb-3",
+      status: "running",
+      locked_at: "2025-08-10T13:00:00.000Z",
+      locked_by: "worker-x",
+      attempt_count: 2,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
+    });
+    const r = await heartbeatAnalysisJobLease("hb-3", { lockedBy: "worker-x", attemptCount: 1 });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected LEASE_LOST");
+    expect(r.reason).toBe("LEASE_LOST");
+  });
+
+  it("returns LEASE_LOST when status is completed", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "hb-4",
+      status: "completed",
+      progress: 100,
+      locked_at: null,
+      locked_by: null,
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
+    });
+    const r = await heartbeatAnalysisJobLease("hb-4", { lockedBy: "worker-x", attemptCount: 1 });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected LEASE_LOST");
+    expect(r.reason).toBe("LEASE_LOST");
+  });
+
+  it("running progress update with lease refreshes locked_at", async () => {
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "hb-5",
+      status: "running",
+      locked_at: "2025-08-10T12:00:00.000Z",
+      locked_by: "worker-p",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
+    });
+    vi.setSystemTime(new Date("2025-08-10T15:30:00.000Z"));
+    const r = await updateAnalysisJobRowWithLease(
+      "hb-5",
+      { lockedBy: "worker-p", attemptCount: 1 },
+      { status: "running", progress: 42, locked_at: new Date().toISOString() }
+    );
+    expect(r.ok).toBe(true);
+    expect((vitestAnalysisJobsStore.get("hb-5") as { locked_at: string }).locked_at).toBe("2025-08-10T15:30:00.000Z");
+    expect((vitestAnalysisJobsStore.get("hb-5") as { progress: number }).progress).toBe(42);
   });
 });

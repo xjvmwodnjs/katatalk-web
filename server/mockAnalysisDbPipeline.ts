@@ -12,15 +12,25 @@ function sleep(ms: number): Promise<void> {
 
 type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
 
+function leaseLockedAtRefresh(lease: AnalysisJobProcessingLease | null | undefined): Pick<LeasePatch, "locked_at"> | null {
+  if (!lease) {
+    return null;
+  }
+  return { locked_at: new Date().toISOString() };
+}
+
 async function updateJobForPipeline(
   jobId: string,
   lease: AnalysisJobProcessingLease | null | undefined,
   patch: LeasePatch
 ): Promise<{ ok: true } | { ok: false; reason: "LEASE_LOST" }> {
+  const touch = leaseLockedAtRefresh(lease);
+  const merged =
+    touch && patch.status === "running" ? ({ ...patch, ...touch } as LeasePatch) : patch;
   if (lease) {
-    return updateAnalysisJobRowWithLease(jobId, lease, patch);
+    return updateAnalysisJobRowWithLease(jobId, lease, merged);
   }
-  await updateAnalysisJobRow(jobId, patch);
+  await updateAnalysisJobRow(jobId, merged);
   return { ok: true };
 }
 
