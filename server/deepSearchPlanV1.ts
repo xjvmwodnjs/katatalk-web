@@ -18,6 +18,11 @@ const W_PRI = 0.1;
 const W_RARE = 0.1;
 const W_RANK = 0.05;
 
+const DEFAULT_MAX_CANDIDATES = 3;
+const DEFAULT_MIN_ADI_SCORE = 0.5;
+const DEFAULT_MIN_BSI_SCORE = 30;
+const MAX_CANDIDATES_CAP = 10;
+
 function clamp01(x: number): number {
   if (!Number.isFinite(x)) {
     return 0;
@@ -25,15 +30,49 @@ function clamp01(x: number): number {
   return Math.min(1, Math.max(0, x));
 }
 
+function clampBsiMinScore(x: number): number {
+  return Math.min(100, Math.max(0, x));
+}
+
+/**
+ * 환경변수 기반 정책. 잘못된 값은 기본값, 범위는 clamp.
+ * - `maxCandidates`: 비어 있거나 NaN·0 이하 → 기본 3; 유효하면 1~10 clamp
+ * - `minAdiScore`: 비어 있거나 NaN → 기본 0.5; 유효하면 0~1 clamp
+ * - `minBsiScore`: 비어 있거나 NaN → 기본 30; 유효하면 0~100 clamp
+ */
 export function readDeepSearchPlanPolicyFromEnv(env: NodeJS.ProcessEnv): DeepSearchPlanPolicyV1 {
-  const maxC = Number.parseInt(env.DEEP_SEARCH_PLAN_MAX_CANDIDATES?.trim() ?? "", 10);
-  const minAdi = Number.parseFloat(env.DEEP_SEARCH_PLAN_MIN_ADI_SCORE?.trim() ?? "");
-  const minBsi = Number.parseFloat(env.DEEP_SEARCH_PLAN_MIN_BSI_SCORE?.trim() ?? "");
+  const maxRaw = env.DEEP_SEARCH_PLAN_MAX_CANDIDATES?.trim();
+  let maxCandidates = DEFAULT_MAX_CANDIDATES;
+  if (maxRaw) {
+    const n = Number.parseInt(maxRaw, 10);
+    if (Number.isFinite(n) && n > 0) {
+      maxCandidates = Math.min(MAX_CANDIDATES_CAP, Math.max(1, n));
+    }
+  }
+
+  const minAdiRaw = env.DEEP_SEARCH_PLAN_MIN_ADI_SCORE?.trim();
+  let minAdiScore = DEFAULT_MIN_ADI_SCORE;
+  if (minAdiRaw) {
+    const v = Number.parseFloat(minAdiRaw);
+    if (Number.isFinite(v)) {
+      minAdiScore = clamp01(v);
+    }
+  }
+
+  const minBsiRaw = env.DEEP_SEARCH_PLAN_MIN_BSI_SCORE?.trim();
+  let minBsiScore = DEFAULT_MIN_BSI_SCORE;
+  if (minBsiRaw) {
+    const v = Number.parseFloat(minBsiRaw);
+    if (Number.isFinite(v)) {
+      minBsiScore = clampBsiMinScore(v);
+    }
+  }
+
   return {
     mode: "standard",
-    maxCandidates: Number.isFinite(maxC) && maxC > 0 ? maxC : 3,
-    minAdiScore: Number.isFinite(minAdi) ? minAdi : 0.5,
-    minBsiScore: Number.isFinite(minBsi) ? minBsi : 30,
+    maxCandidates,
+    minAdiScore,
+    minBsiScore,
   };
 }
 
@@ -50,9 +89,17 @@ export function selectionBandFromSelectionScore(s: number): DeepSearchPlanSelect
   return "very_high";
 }
 
-function normalizePlanPriority(plan: AnalysisPlanV1, rawPriority: number): number {
-  const maxP = Math.max(1e-9, ...plan.candidateTurns.map((c) => c.priority));
-  return clamp01(rawPriority / maxP);
+/** `final_position` 제외한 plan 후보만으로 priority 정규화 분모 계산 */
+function eligiblePriorityDenominator(plan: AnalysisPlanV1): number {
+  const eligible = plan.candidateTurns.filter((c) => c.reason !== "final_position");
+  if (eligible.length === 0) {
+    return 1e-9;
+  }
+  return Math.max(1e-9, ...eligible.map((c) => c.priority));
+}
+
+function normalizePlanPriority(rawPriority: number, eligibleDenom: number): number {
+  return clamp01(rawPriority / eligibleDenom);
 }
 
 function computeSelectionScore(args: {
@@ -123,8 +170,45 @@ type PoolRow = {
   deepSearchCandidate: boolean;
 };
 
+/** 동일 turnIndex 중 보존 행 선택: selectionScore → deepSearchCandidate → adiScore */
+function comparePoolRowsForKeeper(a: PoolRow, b: PoolRow): number {
+  if (b.selectionScore !== a.selectionScore) {
+    return b.selectionScore - a.selectionScore;
+  }
+  if (Boolean(b.deepSearchCandidate) !== Boolean(a.deepSearchCandidate)) {
+    return b.deepSearchCandidate ? 1 : -1;
+  }
+  const ae = a.adi.adiScore ?? 0;
+  const be = b.adi.adiScore ?? 0;
+  return be - ae;
+}
+
+function mergeDuplicateTurnRows(pool: PoolRow[], notSelected: DeepSearchPlanNotSelectedV1[]): PoolRow[] {
+  const byTurn = new Map<number, PoolRow[]>();
+  for (const r of pool) {
+    const arr = byTurn.get(r.turnIndex) ?? [];
+    arr.push(r);
+    byTurn.set(r.turnIndex, arr);
+  }
+  const out: PoolRow[] = [];
+  for (const [turnIndex, rows] of Array.from(byTurn.entries())) {
+    if (rows.length === 1) {
+      out.push(rows[0]!);
+      continue;
+    }
+    const sorted = [...rows].sort(comparePoolRowsForKeeper);
+    const keeper = sorted[0]!;
+    out.push(keeper);
+    for (let i = 1; i < sorted.length; i++) {
+      notSelected.push({ turnIndex, reason: "replaced_duplicate_turn_index" });
+    }
+  }
+  return out;
+}
+
 /**
  * ADI/BSI/analysisPlan·multi-turn `ok` 턴만 사용. **추가 KataGo·Deep Search 실행 없음.**
+ * `bsiScore` 가 없으면 `minBsiScore` 필터를 적용하지 않는다(ADI-only 후보 v1 허용).
  */
 export function computeDeepSearchPlanV1(opts: {
   analysisPlan: AnalysisPlanV1;
@@ -140,6 +224,7 @@ export function computeDeepSearchPlanV1(opts: {
   const okTurn = new Set(
     opts.turnAnalyses.filter((t) => t.status === "ok").map((t) => t.turnIndex)
   );
+  const eligiblePriDenom = eligiblePriorityDenominator(opts.analysisPlan);
 
   const notSelected: DeepSearchPlanNotSelectedV1[] = [];
   const pool: PoolRow[] = [];
@@ -185,7 +270,7 @@ export function computeDeepSearchPlanV1(opts: {
       continue;
     }
 
-    const priNorm = normalizePlanPriority(opts.analysisPlan, planTurn.priority);
+    const priNorm = normalizePlanPriority(planTurn.priority, eligiblePriDenom);
     const selectionScore = computeSelectionScore({
       adiScore: adi.adiScore,
       bsiScore: typeof bsiScore === "number" ? bsiScore : undefined,
@@ -204,16 +289,7 @@ export function computeDeepSearchPlanV1(opts: {
     });
   }
 
-  const seen = new Set<number>();
-  const uniq: PoolRow[] = [];
-  for (const r of pool) {
-    if (seen.has(r.turnIndex)) {
-      notSelected.push({ turnIndex: r.turnIndex, reason: "duplicate_turn_index" });
-      continue;
-    }
-    seen.add(r.turnIndex);
-    uniq.push(r);
-  }
+  const uniq = mergeDuplicateTurnRows(pool, notSelected);
 
   uniq.sort((a, b) => {
     if (a.deepSearchCandidate !== b.deepSearchCandidate) {
