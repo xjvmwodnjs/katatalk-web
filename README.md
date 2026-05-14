@@ -174,7 +174,7 @@ Railway **Web** 와 **Worker** 는 별도 서비스로 두는 것을 전제로 �
 | **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 | **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 
-Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수.
+Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수. **007은 stale 재claim·시도 상한을 제공하고**, 앱 측에서는 **`locked_by` + `attempt_count` + `status=running` 조건의 lease-aware DB 갱신**으로 stale 이후 **이전 worker 가 completed/failed 를 덮어쓰지 못하게**(lease fencing) 한다. **주기적 heartbeat(`locked_at` 연장)** 는 아직 없음(`docs/TODO`).
 
 #### 2) Railway public — analysis disabled mode
 

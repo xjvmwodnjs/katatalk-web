@@ -25,6 +25,7 @@
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
 - [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004+007** 마이그레이션 적용 필요.
+- [ ] **analysis_jobs worker heartbeat** — 장기 실행 job 의 `locked_at` 을 주기적으로 갱신해 정상 처리 중인 running 을 stale 로 오인하지 않도록 함(현재는 lease fencing 만 적용).
 - [ ] **SGF 원문 보존 정책 확정** — MVP 는 `analysis_jobs.sgf_content` DB 컬럼; 운영 확대 시 **Supabase Storage/S3 이전**, **TTL 삭제**, 사용자 삭제 요청, raw artifact 권한 분리(README «SGF 원문 저장» 절 참고).
 - [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
 - [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI v1 수치·LLM 없음, Deep Search 미실행). timeout 시 SIGTERM→SIGKILL 시도.

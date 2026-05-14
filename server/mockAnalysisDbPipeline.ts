@@ -1,9 +1,27 @@
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
 import { buildMockAnalysisReport } from "./mockAnalysisResult";
-import { updateAnalysisJobRow } from "./creditService";
+import {
+  type AnalysisJobProcessingLease,
+  updateAnalysisJobRow,
+  updateAnalysisJobRowWithLease,
+} from "./creditService";
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
+
+async function updateJobForPipeline(
+  jobId: string,
+  lease: AnalysisJobProcessingLease | null | undefined,
+  patch: LeasePatch
+): Promise<{ ok: true } | { ok: false; reason: "LEASE_LOST" }> {
+  if (lease) {
+    return updateAnalysisJobRowWithLease(jobId, lease, patch);
+  }
+  await updateAnalysisJobRow(jobId, patch);
+  return { ok: true };
 }
 
 /**
@@ -14,23 +32,37 @@ export async function runMockAnalysisDbPipeline(args: {
   jobId: string;
   fileName: string;
   language: AnalysisJobLanguage;
+  /** Claim 경로 worker 전용; 없으면(인라인 mock) 기존 id-only update */
+  lease?: AnalysisJobProcessingLease | null;
   onJobFailed?: () => void | Promise<void>;
 }): Promise<void> {
-  const { jobId, fileName, language, onJobFailed } = args;
+  const { jobId, fileName, language, lease, onJobFailed } = args;
   try {
     await sleep(350);
-    await updateAnalysisJobRow(jobId, { status: "running", progress: 25 });
+    let r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 25 });
+    if (!r.ok) {
+      console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 25 });
+      return;
+    }
 
     await sleep(450);
-    await updateAnalysisJobRow(jobId, { status: "running", progress: 55 });
+    r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 55 });
+    if (!r.ok) {
+      console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 55 });
+      return;
+    }
 
     await sleep(400);
-    await updateAnalysisJobRow(jobId, { status: "running", progress: 85 });
+    r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 85 });
+    if (!r.ok) {
+      console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 85 });
+      return;
+    }
 
     await sleep(300);
 
     const data = buildMockAnalysisReport({ fileName, language });
-    await updateAnalysisJobRow(jobId, {
+    r = await updateJobForPipeline(jobId, lease, {
       status: "completed",
       progress: 100,
       result: data,
@@ -39,10 +71,13 @@ export async function runMockAnalysisDbPipeline(args: {
       locked_at: null,
       locked_by: null,
     });
+    if (!r.ok) {
+      console.warn("[mockAnalysisDbPipeline] lease_lost skip completed write", { jobId });
+    }
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     try {
-      await updateAnalysisJobRow(jobId, {
+      const r = await updateJobForPipeline(jobId, lease, {
         status: "failed",
         progress: null,
         error_message: message,
@@ -50,6 +85,10 @@ export async function runMockAnalysisDbPipeline(args: {
         locked_at: null,
         locked_by: null,
       });
+      if (!r.ok) {
+        console.warn("[mockAnalysisDbPipeline] lease_lost skip failed write/refund", { jobId });
+        return;
+      }
     } catch (patchErr) {
       console.error("[mockAnalysisDbPipeline] failed to persist failure state", patchErr);
     }

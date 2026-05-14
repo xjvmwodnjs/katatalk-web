@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { claimNextAnalysisJobRpc } from "./creditService";
+import {
+  analysisJobProcessingLeaseFromClaimedRow,
+  claimNextAnalysisJobRpc,
+  updateAnalysisJobRowWithLease,
+} from "./creditService";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 
 function seedQueued(
@@ -174,15 +178,59 @@ describe("claim_next_analysis_job (RPC)", () => {
     await expect(claimNextAnalysisJobRpc()).resolves.toBeNull();
   });
 
-  it("does not claim failed jobs", async () => {
+  it("lease fencing rejects updates after another worker reclaims (locked_by/attempt_count)", async () => {
     vitestSeedAnalysisJob({
       ...baseJobFields,
-      id: "failed-job",
-      status: "failed",
-      progress: null,
-      created_at: "2024-01-01T00:00:00.000Z",
-      completed_at: "2024-01-02T00:00:00.000Z",
+      id: "fence-1",
+      status: "running",
+      locked_at: "2025-01-01T00:00:00.000Z",
+      locked_by: "worker-a",
+      attempt_count: 1,
+      max_attempts: 3,
+      created_at: "2025-01-01T00:00:00.000Z",
     });
-    await expect(claimNextAnalysisJobRpc()).resolves.toBeNull();
+    const row = vitestAnalysisJobsStore.get("fence-1") as Record<string, unknown>;
+    Object.assign(row, { locked_by: "worker-b", attempt_count: 2 });
+
+    let r = await updateAnalysisJobRowWithLease("fence-1", { lockedBy: "worker-a", attemptCount: 1 }, {
+      status: "completed",
+      progress: 100,
+      completed_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected lease loss");
+    expect(r.reason).toBe("LEASE_LOST");
+
+    r = await updateAnalysisJobRowWithLease("fence-1", { lockedBy: "worker-b", attemptCount: 2 }, {
+      status: "completed",
+      progress: 100,
+      completed_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+    });
+    expect(r.ok).toBe(true);
+    expect((vitestAnalysisJobsStore.get("fence-1") as { status: string }).status).toBe("completed");
+  });
+
+  it("analysisJobProcessingLeaseFromClaimedRow returns null without lease fields", () => {
+    expect(
+      analysisJobProcessingLeaseFromClaimedRow({
+        id: "x",
+        user_id: "u",
+        status: "running",
+        file_name: null,
+        language: null,
+        credit_cost: 1,
+        credit_log_id: null,
+        result: null,
+        error_message: null,
+        is_mock: true,
+        created_at: "",
+        updated_at: "",
+        completed_at: null,
+      })
+    ).toBeNull();
   });
 });

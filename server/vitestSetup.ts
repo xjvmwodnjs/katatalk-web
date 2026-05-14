@@ -82,13 +82,52 @@ function analysisJobsTableBuilder() {
       return Promise.resolve({ error: null });
     },
     update(patch: Record<string, unknown>) {
-      return {
-        eq(col: string, id: string) {
-          const existing = vitestAnalysisJobsStore.get(id);
-          if (existing) {
-            Object.assign(existing, patch, { updated_at: isoNow() });
+      const filters: Array<{ col: string; val: unknown }> = [];
+      function rowMatches(existing: Record<string, unknown>): boolean {
+        for (const f of filters) {
+          const cur = existing[f.col];
+          if (f.col === "attempt_count") {
+            if (Number(cur) !== Number(f.val)) return false;
+          } else if (cur !== f.val) {
+            return false;
           }
-          return Promise.resolve({ error: null });
+        }
+        return true;
+      }
+      function runUpdate(leaseSelectMode: boolean): { data?: unknown[]; error: null } {
+        const idFilter = filters.find(f => f.col === "id");
+        const id = idFilter?.val != null ? String(idFilter.val) : "";
+        const existing = id ? vitestAnalysisJobsStore.get(id) : undefined;
+        if (!existing) {
+          return leaseSelectMode ? { data: [], error: null } : { error: null };
+        }
+        const ex = existing as Record<string, unknown>;
+        if (filters.length === 1 && filters[0].col === "id") {
+          Object.assign(existing, patch, { updated_at: isoNow() });
+          return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+        }
+        if (!rowMatches(ex)) {
+          return leaseSelectMode ? { data: [], error: null } : { error: null };
+        }
+        Object.assign(existing, patch, { updated_at: isoNow() });
+        return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+      }
+      const tail = {
+        eq(col: string, val: unknown) {
+          filters.push({ col, val });
+          return tail;
+        },
+        select() {
+          return Promise.resolve(runUpdate(true));
+        },
+        then(onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
+          return Promise.resolve(runUpdate(false)).then(onFulfilled, onRejected);
+        },
+      };
+      return {
+        eq(col: string, val: unknown) {
+          filters.push({ col, val });
+          return tail;
         },
       };
     },
