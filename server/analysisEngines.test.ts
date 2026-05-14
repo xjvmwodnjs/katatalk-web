@@ -209,8 +209,9 @@ describe("analyzeSgfKatago (worker v1)", () => {
     expect(r.ok).toBe(true);
     expect((r.engine as { maxVisits: number }).maxVisits).toBe(40);
     expect(r.top_mistakes).toEqual([]);
-    const algo = r.algorithmStage as { notYetImplemented: string[] };
-    expect(algo.notYetImplemented).toContain("bsi");
+    const algo = r.algorithmStage as { notYetImplemented: string[]; implemented?: string[] };
+    expect(algo.implemented).toContain("bsi_v1");
+    expect(algo.notYetImplemented).not.toContain("bsi");
     expect(algo.notYetImplemented).toContain("llm_commentary");
 
     const q = JSON.parse(stdinCaptured.trim()) as { maxVisits: number; moves: [string, string][] };

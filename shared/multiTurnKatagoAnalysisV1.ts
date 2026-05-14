@@ -1,11 +1,25 @@
 /**
  * multi-turn-katago-analysis-v1 — analysisPlan 후보별 “착수 직전 국면” raw 분석 요약.
- * BSI/ADI·LLM 없음. 근거: docs/algorithm/KataTalk_Algorithm_V2.5.md (전체 미구현).
+ * ADI·LLM 없음. BSI v1 은 `moveSummary` + `turnAnalyses` 후처리(`shared/bsiV1.ts`, `server/bsiV1.ts`). 근거: docs/algorithm/KataTalk_Algorithm_V2.5.md.
  */
 
 import type { AnalysisPlanCandidateReasonV1 } from "./analysisPlanV1";
 
 export const MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION = "multi-turn-katago-analysis-v1" as const;
+
+/** KataGo `moveInfos` 한 행 요약(BSI 등 후처리용, 전체 후보 배열 미저장) */
+export type TurnAnalysisMoveSummaryV1 = {
+  move: string;
+  winrate?: number;
+  scoreLead?: number;
+  scoreMean?: number;
+  visits?: number;
+};
+
+export type TurnAnalysisMovePairSummaryV1 = {
+  best: TurnAnalysisMoveSummaryV1 | null;
+  played: TurnAnalysisMoveSummaryV1 | null;
+};
 
 export type TurnAnalysisQueryMetaV1 = {
   movesBeforeCount: number;
@@ -39,6 +53,8 @@ export type TurnAnalysisEntrySuccessV1 = {
   query: TurnAnalysisQueryMetaV1;
   katago: TurnAnalysisKatagoSliceV1;
   comparisonReady: TurnAnalysisComparisonReadyV1;
+  /** `moveInfos` 에서 best·played 행만 요약(추가 KataGo 호출 없음) */
+  moveSummary?: TurnAnalysisMovePairSummaryV1;
   /** 순차 모드에서 `id` 없이 `pickPrimaryAnalysisObject` 폴백을 썼을 때만 true */
   fallbackUsed?: boolean;
 };

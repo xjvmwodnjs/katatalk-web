@@ -18,8 +18,12 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 - **순차 모드(`KATAGO_MULTI_TURN_BATCH=0`)**: 디버그·호환용. 기본은 **`id` 없으면 해당 턴 failed**. `KATAGO_MULTI_TURN_ALLOW_IDLESS_SEQUENTIAL_FALLBACK=true` 일 때만 `pickPrimaryAnalysisObject` 폴백을 허용하며, 성공 시 해당 턴에 `fallbackUsed: true`.
 - **`KATAGO_MULTI_TURN_MAX` / `multiTurnAnalysis.maxTurnsRequested`**: **분석 시도 상한**이지 `completedCount` 와 같지 않다. `attemptedCount`·`completedCount`·`failedCount`·`allFailed`·`partialFailure` 를 함께 본다.
 - **Primary `KATAGO_MAX_VISITS`** 와 **`KATAGO_MULTI_TURN_MAX_VISITS`** 는 서로 다를 수 있다(최종 국면 1회 vs multi 쿼리).
-- **최종 국면 단일 분석이 성공**하면 v1 에서는 **multi-turn 이 전부 failed여도 job 은 `completed`일 수 있다**. 이 경우 **`multiTurnAnalysis.allFailed===true`** 이며 **BSI/ADI 는 계산하면 안 된다**(미구현 유지).
-- `result.turnAnalyses`·`multiTurnAnalysis` 에 요약만 저장한다(raw stdout DB 저장 없음). BSI/ADI·LLM 은 없다.
+- **최종 국면 단일 분석이 성공**하면 v1 에서는 **multi-turn 이 전부 failed여도 job 은 `completed`일 수 있다**. 이 경우 **`multiTurnAnalysis.allFailed===true`** 이며, **ADI·패착 단정·자연어 해설은 하지 않는다**. **`result.bsiV1`** 은 multi-turn **`turnAnalyses` 중 `ok` 행**이 있을 때만 수치 신호(`signals`)로 채워진다(추가 KataGo 없음).
+- `result.turnAnalyses`·`multiTurnAnalysis`·선택 `bsiV1` 에 요약만 저장한다(raw stdout DB 저장 없음). LLM·Q&A 없음.
+
+### BSI v1 (multi-turn 기반 수치만)
+
+`server/bsiV1.ts`·`shared/bsiV1.ts`. **패착/`top_mistakes` 선정·자연어 없음.** `turnAnalyses[].moveSummary`(best·played 행 요약)와 `comparisonReady`만 사용한다.
 
 ## 로컬 실행
 
