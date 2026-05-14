@@ -37,4 +37,19 @@ describe("analysisResultI18n", () => {
     expect(uiTextContainsForbiddenLabel("reference only", "en")).toBe(false);
     expect(uiTextContainsForbiddenLabel("패착", "ko")).toBe(true);
   });
+
+  it("checks forbidden lists across locales when lang is specified", () => {
+    expect(uiTextContainsForbiddenLabel("悪手", "en")).toBe(true);
+    expect(uiTextContainsForbiddenLabel("blunder", "ko")).toBe(true);
+  });
+
+  it("keeps PV disclaimer free of verdict words in all UI languages", () => {
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const d = getAnalysisResultUiStrings(lang).variationPvDisclaimer;
+      expect(d).not.toContain("정답");
+      expect(d).not.toContain("正解");
+      expect(d.toLowerCase()).not.toContain("correct answer");
+      expect(d.toLowerCase()).not.toContain("best move");
+    }
+  });
 });

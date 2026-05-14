@@ -31,13 +31,13 @@ const FORBIDDEN_BY_LANG: Record<AnalysisResultLang, readonly string[]> = {
   zh: ["恶手", "正解", "最佳手"],
 };
 
-/** UI 노출 금지 단어 포함 여부 — lang 없으면 모든 언어 목록으로 검사 */
-export function uiTextContainsForbiddenLabel(text: string, lang?: AnalysisResultLang): boolean {
+/** UI 노출 금지 단어 포함 여부 — 언어 지정 시에도 ko/en/ja/zh 금지어를 모두 검사(교차 노출 방지) */
+export function uiTextContainsForbiddenLabel(text: string, _lang?: AnalysisResultLang): boolean {
   const t = text.trim();
   if (!t) {
     return false;
   }
-  const langs: AnalysisResultLang[] = lang ? [lang] : ["ko", "en", "ja", "zh"];
+  const langs: AnalysisResultLang[] = ["ko", "en", "ja", "zh"];
   for (const L of langs) {
     const hay = L === "en" ? t.toLowerCase() : t;
     for (const w of FORBIDDEN_BY_LANG[L]) {
@@ -458,7 +458,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     variationTurn: "수순",
     variationPlayed: "실전수",
     variationCandidate: "후보수",
-    variationPvDisclaimer: "참고 변화(PV)이며 단일 정답 수순으로 고정하지 않습니다.",
+    variationPvDisclaimer: "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
   },
   en: {
     summaryStatusComplete: "Analysis complete",
