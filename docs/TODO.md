@@ -35,7 +35,8 @@
 - [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1`·`components`·perspective 메타(`provisional`). KataGo score/winrate 축은 샘플 검증 후 확정. `top_mistakes`/해설 미사용.
 - [x] **ADI v1 (signal only)** — `result.adiV1`·`deepSearchCandidate`·components(`visitEntropy` 등). **Deep Search 실행·`top_mistakes`/해설/LLM 없음.** `docs/algorithm/KataTalk_Algorithm_V2.5.md` 기준 Value & Search 단계 일부.
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
-- [x] **`deepSearchResults` v1 (실행)** — Worker `analyzeSgfKatago` 가 `KATAGO_DEEP_SEARCH_ENABLED=true` 일 때만 `deepSearchPlan.candidates` 대상 추가 KataGo 순차 실행·`result.deepSearchResults` 저장. 기본 OFF·Railway CPU 경고는 README. stdin 배치(`KATAGO_DEEP_SEARCH_BATCH`)는 미구현(TODO).
+- [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·승률 시리즈(katago_output 원시만), 중립 라벨·경고문. 바둑판/차트 UI 미포함.
+- [ ] **결과 페이지 UI** — ViewModel 바인딩·레이아웃. **흑/백 승률 표시 토글**은 미구현(ViewModel 에 `rawWinrate` / `displayPerspective` / `playerToMove` 등만 준비, 다음 단계에서 TODO 해소).
 - [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
 
 ## 최신 master 배포 전 smoke (체크리스트)
