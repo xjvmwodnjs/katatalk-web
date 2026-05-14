@@ -1,6 +1,7 @@
 import type { AnalysisPlanCandidateTurnV1, AnalysisPlanV1 } from "@shared/analysisPlanV1";
 import type {
   MultiTurnKatagoAnalysisMetaV1,
+  TurnAnalysisCandidateMoveSummaryV1,
   TurnAnalysisComparisonReadyV1,
   TurnAnalysisEntryFailedV1,
   TurnAnalysisEntrySuccessV1,
@@ -126,6 +127,48 @@ function buildMovePairSummary(playedGtp: string, moveInfos: unknown[]): TurnAnal
   return { best, played };
 }
 
+const MAX_CANDIDATE_MOVE_SUMMARY_ROWS = 16;
+
+function buildCandidateMovesSummary(moveInfos: unknown[]): TurnAnalysisCandidateMoveSummaryV1[] {
+  const out: TurnAnalysisCandidateMoveSummaryV1[] = [];
+  for (let i = 0; i < moveInfos.length && out.length < MAX_CANDIDATE_MOVE_SUMMARY_ROWS; i++) {
+    const row = moveInfos[i];
+    if (!isPlainObject(row) || typeof row.move !== "string" || row.move.length === 0) {
+      continue;
+    }
+    const order = i + 1;
+    const visits =
+      typeof row.visits === "number" && Number.isFinite(row.visits) && row.visits >= 0 ? row.visits : undefined;
+    const prior =
+      typeof row.prior === "number" && Number.isFinite(row.prior)
+        ? row.prior
+        : typeof row.policy === "number" && Number.isFinite(row.policy)
+          ? row.policy
+          : undefined;
+    const winrate =
+      typeof row.winrate === "number" && Number.isFinite(row.winrate) ? row.winrate : undefined;
+    const scoreLead =
+      typeof row.scoreLead === "number" && Number.isFinite(row.scoreLead) ? row.scoreLead : undefined;
+    const scoreMean =
+      typeof row.scoreMean === "number" && Number.isFinite(row.scoreMean) ? row.scoreMean : undefined;
+    let pvLength = 0;
+    if (Array.isArray(row.pv)) {
+      pvLength = row.pv.length;
+    }
+    out.push({
+      move: row.move,
+      order,
+      pvLength,
+      ...(visits !== undefined ? { visits } : {}),
+      ...(prior !== undefined ? { prior } : {}),
+      ...(winrate !== undefined ? { winrate } : {}),
+      ...(scoreLead !== undefined ? { scoreLead } : {}),
+      ...(scoreMean !== undefined ? { scoreMean } : {}),
+    });
+  }
+  return out;
+}
+
 type PreparedTurn = {
   candidate: AnalysisPlanCandidateTurnV1;
   queryId: string;
@@ -208,6 +251,7 @@ function entryForPrepared(
       hasOwnership: doc.normalized.hasOwnership,
     };
     const moveSummary = buildMovePairSummary(p.playedMoveGtp, moveInfos);
+    const candidateMoves = buildCandidateMovesSummary(moveInfos);
     const success: TurnAnalysisEntrySuccessV1 = {
       status: "ok",
       turnIndex: p.candidate.turnIndex,
@@ -219,6 +263,7 @@ function entryForPrepared(
       katago,
       comparisonReady: buildComparisonReady(p.playedMoveGtp, moveInfos),
       moveSummary,
+      candidateMoves,
       ...(opts?.fallbackUsed ? { fallbackUsed: true } : {}),
     };
     return success;

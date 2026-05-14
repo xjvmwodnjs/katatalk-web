@@ -556,7 +556,7 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     process.env = { ...saved };
   });
 
-  it("returns turnAnalyses, bsiV1 signals, no ADI/NL", async () => {
+  it("returns turnAnalyses, bsiV1, adiV1, no Deep Search/NL", async () => {
     process.env.KATAGO_BINARY_PATH = "/fake/katago";
     process.env.KATAGO_CONFIG_PATH = "/fake/c.cfg";
     process.env.KATAGO_MODEL_PATH = "/fake/m.gz";
@@ -637,8 +637,11 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     });
     const algo = result.algorithmStage as { notYetImplemented?: string[]; implemented?: string[] };
     expect(algo.implemented).toContain("bsi_v1");
+    expect(algo.implemented).toContain("adi_v1");
     expect(algo.notYetImplemented).not.toContain("bsi");
+    expect(algo.notYetImplemented).toContain("deep_search_execution");
     expect((result as { bsiV1?: { version?: string } }).bsiV1?.version).toBe("bsi-v1");
+    expect((result as { adiV1?: { version?: string } }).adiV1?.version).toBe("adi-v1");
     expect(JSON.stringify(result)).not.toMatch(/"llm_commentary"\s*:/i);
   });
 
