@@ -264,7 +264,7 @@ Worker 는 Supabase **`claim_next_analysis_job`** 로 `analysis_jobs` 를 가져
 - **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다.  
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
-두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004_analysis_job_claim_rpc.sql` 의 `claim_next_analysis_job` RPC 가 적용되어 있어야** worker 가 job 을 가져갑니다.
+두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004` 의 `claim_next_analysis_job` RPC 및 `006` SECURITY DEFINER RPC 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(`006` 미적용 시 anon 등에 EXECUTE 가 남을 수 있음 — README「SECURITY DEFINER RPC 권한 검증」).
 
 mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
 
@@ -294,7 +294,7 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 ### 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004** 적용 (`004`: 분석 worker 용 `claim_next_analysis_job`)
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006** 적용 (`004`: `claim_next_analysis_job`, `006`: SECURITY DEFINER RPC 권한 잠금 — README 참고)
 - [ ] Clerk **production** 도메인·Redirect URL
 - [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
 - [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
@@ -443,7 +443,34 @@ order by created_at desc;
 - [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
 - [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC  
 - [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`  
-- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** (worker 가 queued 를 원자적으로 running 으로 claim)
+- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** (worker 가 queued 를 원자적으로 running 으로 claim)  
+- [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼  
+- [`006_lock_down_security_definer_rpc.sql`](supabase/migrations/006_lock_down_security_definer_rpc.sql) — **SECURITY DEFINER RPC** 에 대해 `PUBLIC` / `anon` / `authenticated` 의 **EXECUTE 를 REVOKE**하고 **`service_role` 만 GRANT** (임의 크레딧·큐 claim 방지)
+
+### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
+
+크레딧·결제·분석 큐 RPC 는 **브라우저·모바일 클라이언트(anon/authenticated JWT)에서 직접 호출되면 안 되며**, **서버만 `SUPABASE_SERVICE_ROLE_KEY`** 로 PostgREST/RPC 를 호출해야 한다. `006` 적용 후 Supabase **SQL Editor** 에서 아래로 확인한다(값·시크릿 출력 없음).
+
+`has_function_privilege` 의 함수 식별자는 **인자 타입까지 포함한 문자열**이어야 한다.
+
+```sql
+-- 예: ensure_profile — anon/authenticated 는 false, service_role 은 true
+select has_function_privilege('anon', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as anon_exec;
+select has_function_privilege('authenticated', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as auth_exec;
+select has_function_privilege('service_role', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as service_exec;
+```
+
+동일 패턴으로 다음 식별자를 점검한다(전부 `anon`/`authenticated` = false, `service_role` = true 기대).
+
+| RPC | `has_function_privilege` 두 번째 인자 (그대로 복사) |
+|-----|------------------------------------------------------|
+| `spend_credit_for_analysis` | `public.spend_credit_for_analysis(text,text,integer)` |
+| `refund_credit_for_analysis` | `public.refund_credit_for_analysis(text,text,integer)` |
+| `add_credits_from_stripe` | `public.add_credits_from_stripe(text,integer,text,text,text)` |
+| `add_credits_from_payment` | `public.add_credits_from_payment(text,integer,text,text,text,text,text,text)` |
+| `claim_next_analysis_job` | `public.claim_next_analysis_job()` |
+
+`pg_proc`·`information_schema.routine_privileges` 로 권한 행을 조회하는 방법도 있으나, 위 단일 함수 확인이 배포 전 스모크에 충분하다.
 
 ## 아직 구현되지 않은 것
 
