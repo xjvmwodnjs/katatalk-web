@@ -329,15 +329,14 @@ export const lemonsqueezyProvider: PaymentProvider = {
 
     /**
      * Idempotency / RPC 안정 키 (add_credits_from_payment 의 payment:<provider>:<stable>).
-     * 우선순위: meta.webhook_id → data.id(주문 id) → attributes.identifier → attributes.checkout_id.
-     * 실제 order_created 페이로드에서 webhook_id 가 주문마다 고유·안정적인지는 Lemon 대시보드/ngrok
-     * Inspector 로 redaction 후 fixture 를 추가해 검증할 것 (README·docs/TODO 참고).
+     * Lemon 재전달·재시도 시 meta.webhook_id 가 delivery 마다 달라질 수 있어, 주문 단위 안정 id 를 우선한다.
+     * 우선순위: data.id(주문 id) → attributes.identifier → attributes.checkout_id → meta.webhook_id(최후 폴백).
+     * 샘플 구조는 server/fixtures/lemonsqueezy/order_created.redacted.json 참고.
      */
     const stableOrderKey = orderIdStr ?? identifierStr ?? checkoutIdStr ?? null;
-    const paymentEventId = webhookId ?? stableOrderKey;
-    const paymentOrderId = stableOrderKey ?? webhookId;
+    const stableForIdempotency = stableOrderKey ?? webhookId;
 
-    if (!paymentEventId?.trim() && !paymentOrderId?.trim()) {
+    if (!stableForIdempotency?.trim()) {
       return {
         ok: false,
         reason: "MISSING_ORDER_IDENTIFIERS",
@@ -347,8 +346,8 @@ export const lemonsqueezyProvider: PaymentProvider = {
 
     const event: PaymentSucceededEvent = {
       provider: "lemonsqueezy",
-      paymentEventId: paymentEventId ?? paymentOrderId ?? null,
-      paymentOrderId: paymentOrderId ?? paymentEventId ?? null,
+      paymentEventId: stableForIdempotency.trim(),
+      paymentOrderId: (stableOrderKey ?? stableForIdempotency).trim(),
       paymentCheckoutId: checkoutIdStr,
       clerkUserId: clerkUserId.trim(),
       creditAmount: serverExpected,

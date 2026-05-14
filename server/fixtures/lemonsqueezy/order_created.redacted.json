@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "event_name": "order_created",
+    "webhook_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "test_mode": true,
+    "custom_id": null
+  },
+  "data": {
+    "type": "orders",
+    "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    "attributes": {
+      "identifier": "ord_katatalk_fixture_001",
+      "checkout_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "user_email": "[REDACTED]",
+      "user_name": "[REDACTED]",
+      "first_order_item": {
+        "id": 0,
+        "type": "order-items",
+        "attributes": {
+          "product_name": "[REDACTED]"
+        }
+      },
+      "custom_data": {
+        "clerkUserId": "user_a",
+        "creditPackageId": "starter",
+        "creditAmount": "20",
+        "paymentProvider": "lemonsqueezy"
+      }
+    }
+  }
+}

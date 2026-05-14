@@ -1,6 +1,6 @@
 # KataTalk
 
-React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 **mock 분석**만 제공합니다. **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 타이머 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작할 수 있습니다. **LLM·자연어 해설·패착 단정·Deep Search 실행·top_mistakes/Concept Tagger/Q&A 는 포함하지 않습니다.** **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
 
 ## 알고리즘 기준 문서
 
@@ -145,9 +145,9 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 3. Lemon Dashboard 웹훅 URL: `https://<ngrok-host>/api/billing/webhook/lemonsqueezy`  
 4. 포트 불일치 시 `POST /api/billing/create-checkout` 는 **`APP_BASE_URL_PORT_MISMATCH`**(503)로 막을 수 있습니다.
 
-### Lemon `order_created` idempotency·payload 검증 TODO
+### Lemon `order_created` idempotency·fixture
 
-웹훅 **idempotency 키**는 `server/paymentProviders/lemonsqueezyProvider.ts` 의 주석 우선순위를 따릅니다. **`meta.webhook_id` 가 주문마다 안정적인지** 등은 Lemon 실제 payload 로만 확정할 수 있으므로, **ngrok Inspector 또는 Lemon Dashboard** 에서 수집한 **`order_created` JSON 을 개인정보·카드 정보 제거(redaction)한 fixture** 를 저장소에 추가하고, 그 fixture 기준으로 idempotency 우선순위·테스트를 고정하는 작업이 남아 있습니다(확실하지 않은 필드는 코드 주석으로 “확인 필요” 유지).
+웹훅 **idempotency 키**는 `payment:lemonsqueezy:<stable>` 형태이며, **주문 단위 안정 id**를 우선합니다: **`data.id` → `attributes.identifier` → `attributes.checkout_id` → `meta.webhook_id`(재시도·재전달 시 delivery 마다 달라질 수 있어 최후 폴백)**. 실제 페이로드 형태에 맞춘 **redacted 샘플**은 `server/fixtures/lemonsqueezy/order_created.redacted.json` 이고, `server/paymentWebhook.test.ts`·`server/httpCreditsAnalyzeBilling.test.ts` 에서 파싱·중복·로그 누설 방지를 검증합니다.
 
 ### API Rate limiting
 
@@ -183,7 +183,7 @@ Railway **Web** 와 **Worker** 는 별도 서비스로 두는 것을 전제로 �
 | **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 | **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
 
-Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004)** 적용 필수.
+Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수. **007은 stale 재claim·시도 상한을 제공하고**, 앱 측에서는 **`locked_by` + `attempt_count` + `status=running` 조건의 lease-aware DB 갱신**으로 stale 이후 **이전 worker 가 completed/failed 를 덮어쓰지 못하게**(lease fencing) 한다. **장기 실행**에서는 **`heartbeatAnalysisJobLease`** 및 running **`progress` 갱신 시 `locked_at` 연장** + KataGo 구간 **`ANALYSIS_WORKER_HEARTBEAT_SECONDS`(기본 60초)** 주기 갱신으로 정상 처리 중 running 을 stale 로 오인하는 빈도를 줄인다. **heartbeat RPC 예외·`LEASE_LOST`** 는 분석 실패로 보지 않고 **`completed`/환불을 생략**하며 job 은 **running** 으로 두어 stale 재처리에 맡긴다.
 
 #### 2) Railway public — analysis disabled mode
 
@@ -205,7 +205,7 @@ GPU 서버(또는 전용 워커 호스트) 구독 후, **KataGo binary/model/con
 | **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** |
 | **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, production 공통(Clerk·`APP_BASE_URL` 등은 호스트 정책에 맞게) |
 
-Worker 는 Supabase **`claim_next_analysis_job`** 로 `analysis_jobs` 를 가져와 **KataGo `analysis` 1회** 실행 후 `result.source=katago-worker-v1` 형태로 저장합니다.
+Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 `analysis_jobs` 를 가져와 **KataGo `analysis` 1회** 실행 후 `result.source=katago-worker-v1` 형태로 저장합니다. **stale running** 은 `ANALYSIS_CLAIM_STALE_SECONDS`(기본 900) 경과 후 재claim 됩니다.
 
 ### Railway / Render — Production 환경 변수 체크리스트
 
@@ -265,7 +265,7 @@ Worker 는 Supabase **`claim_next_analysis_job`** 로 `analysis_jobs` 를 가져
 | 서비스 | 역할 | Start Command |
 |--------|------|----------------|
 | **Web** | HTTP·정적·Clerk·Lemon webhook | `corepack pnpm start` |
-| **Worker** | `claim_next_analysis_job` 로 queued 를 가져와 **`ANALYSIS_ENGINE`** 에 따라 mock 완료 또는 **KataGo v1** 분석 후 DB 갱신 | `corepack pnpm worker:analysis` |
+| **Worker** | `claim_next_analysis_job` 로 queued·**stale running** 을 가져와 **`ANALYSIS_ENGINE`** 에 따라 mock 완료 또는 **KataGo v1** 분석 후 DB 갱신 | `corepack pnpm worker:analysis` |
 
 **Worker 전용 — `ANALYSIS_ENGINE=katago` (v1)**  
 - **Worker Service** Variables 예: `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`. **Web Service**에는 이 `KATAGO_*` 가 **없어도 됩니다**(KataGo는 worker에서만 실행).  
@@ -273,7 +273,7 @@ Worker 는 Supabase **`claim_next_analysis_job`** 로 `analysis_jobs` 를 가져
 - **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다.  
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
-두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004_analysis_job_claim_rpc.sql` 의 `claim_next_analysis_job` RPC 가 적용되어 있어야** worker 가 job 을 가져갑니다.
+두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004`+`007` 의 `claim_next_analysis_job` RPC 및 `006` SECURITY DEFINER RPC 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(`006` 미적용 시 anon 등에 EXECUTE 가 남을 수 있음 — README「SECURITY DEFINER RPC 권한 검증」).
 
 mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
 
@@ -303,7 +303,7 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 ### 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004** 적용 (`004`: 분석 worker 용 `claim_next_analysis_job`)
+- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (`004`: 초기 `claim_next_analysis_job`, `007`: lease·stale 재claim·시도 상한, `006`: SECURITY DEFINER RPC 권한 잠금 — README 참고)
 - [ ] Clerk **production** 도메인·Redirect URL
 - [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
 - [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
@@ -389,17 +389,17 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 ## 분석 job (`analysis_jobs`)
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
-- **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.  
-  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job`** 으로 queued 를 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.  
+- **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.
+  - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job(worker_id, stale_seconds)`** 으로 queued·stale running 을 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
 - mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
 **로컬 수동 검증 (`external` + worker):**
 
-1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 이 적용되어 있어야 합니다. 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.  
-2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)  
-3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`  
-4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.  
+1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 과 **`007_analysis_job_lease_retry.sql`** 이 적용되어 있어야 합니다(007 이 004 의 무인자 `claim_next_analysis_job()` 을 대체합니다). 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.
+2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)
+3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`
+4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.
 5. **`corepack pnpm worker:analysis`** 는 **`dist/worker/analysisWorker.js`** 를 사용하므로, 로컬에서 이 명령만 돌릴 때는 먼저 **`corepack pnpm build`** 가 필요합니다(Railway 등은 Build 단계에서 동일하게 `pnpm build` 가 선행되면 됩니다).
 
 ## 결제 (Lemon Squeezy · Toss 는 향후 검토)
@@ -449,10 +449,38 @@ order by created_at desc;
 
 ## Supabase 마이그레이션
 
-- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)  
-- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC  
-- [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`  
-- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** (worker 가 queued 를 원자적으로 running 으로 claim)
+- [`001_create_katatalk_credit_system.sql`](supabase/migrations/001_create_katatalk_credit_system.sql)
+- [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
+- [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`
+- [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** 초안(007 적용 시 시그니처 대체)
+- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
+- [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼
+- [`006_lock_down_security_definer_rpc.sql`](supabase/migrations/006_lock_down_security_definer_rpc.sql) — **SECURITY DEFINER RPC** 에 대해 `PUBLIC` / `anon` / `authenticated` 의 **EXECUTE 를 REVOKE**하고 **`service_role` 만 GRANT** (임의 크레딧·큐 claim 방지)
+
+### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
+
+크레딧·결제·분석 큐 RPC 는 **브라우저·모바일 클라이언트(anon/authenticated JWT)에서 직접 호출되면 안 되며**, **서버만 `SUPABASE_SERVICE_ROLE_KEY`** 로 PostgREST/RPC 를 호출해야 한다. `006` 적용 후 Supabase **SQL Editor** 에서 아래로 확인한다(값·시크릿 출력 없음).
+
+`has_function_privilege` 의 함수 식별자는 **인자 타입까지 포함한 문자열**이어야 한다.
+
+```sql
+-- 예: ensure_profile — anon/authenticated 는 false, service_role 은 true
+select has_function_privilege('anon', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as anon_exec;
+select has_function_privilege('authenticated', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as auth_exec;
+select has_function_privilege('service_role', 'public.ensure_profile_with_signup_bonus(text,text,text)', 'execute') as service_exec;
+```
+
+동일 패턴으로 다음 식별자를 점검한다(전부 `anon`/`authenticated` = false, `service_role` = true 기대).
+
+| RPC | `has_function_privilege` 두 번째 인자 (그대로 복사) |
+|-----|------------------------------------------------------|
+| `spend_credit_for_analysis` | `public.spend_credit_for_analysis(text,text,integer)` |
+| `refund_credit_for_analysis` | `public.refund_credit_for_analysis(text,text,integer)` |
+| `add_credits_from_stripe` | `public.add_credits_from_stripe(text,integer,text,text,text)` |
+| `add_credits_from_payment` | `public.add_credits_from_payment(text,integer,text,text,text,text,text,text)` |
+| `claim_next_analysis_job` | `public.claim_next_analysis_job(text, integer)` |
+
+`pg_proc`·`information_schema.routine_privileges` 로 권한 행을 조회하는 방법도 있으나, 위 단일 함수 확인이 배포 전 스모크에 충분하다.
 
 ## 아직 구현되지 않은 것
 

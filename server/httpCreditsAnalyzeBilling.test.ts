@@ -2,6 +2,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import express from "express";
 import http from "http";
 import { createHmac } from "crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as resolve from "./_core/resolveRequestUser";
 import * as creditService from "./creditService";
 
@@ -15,6 +18,14 @@ import { creditsRouter } from "./creditsRoute";
 import { setServerListenPort, clearServerListenPort } from "./_core/serverListenPort";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import type { AuthenticatedUser } from "./_core/sdk";
+
+const __testDir = path.dirname(fileURLToPath(import.meta.url));
+const lemonOrderCreatedFixturePath = path.join(
+  __testDir,
+  "fixtures",
+  "lemonsqueezy",
+  "order_created.redacted.json"
+);
 
 function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolvePromise, reject) => {
@@ -408,7 +419,12 @@ describe("Payment webhooks HTTP", () => {
     expect(res.status).toBe(200);
     const grantedJson = (await res.json()) as { action?: string };
     expect(grantedJson.action).toBe("granted");
-    expect(spy).toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: "payment:lemonsqueezy:order_http_1",
+        paymentProvider: "lemonsqueezy",
+      })
+    );
   });
 
   it("Lemon webhook subscription_created returns 200 ignored_non_target_event", async () => {
@@ -551,5 +567,84 @@ describe("Payment webhooks HTTP", () => {
     const noId = (await res.json()) as { action?: string; reason?: string };
     expect(noId.action).toBe("verify_failed");
     expect(noId.reason).toBe("MISSING_ORDER_IDENTIFIERS");
+  });
+
+  it("Lemon fixture: same order with different webhook_id uses identical idempotency key on both deliveries", async () => {
+    const expectedIdem = "payment:lemonsqueezy:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let calls = 0;
+    const spy = vi.spyOn(creditService, "addCreditsFromPaymentWebhook").mockImplementation(async args => {
+      expect(args.idempotencyKey).toBe(expectedIdem);
+      calls += 1;
+      if (calls === 1) {
+        return { ok: true, duplicate: false, credits: 52, errorCode: null };
+      }
+      return { ok: true, duplicate: true, credits: 52, errorCode: null };
+    });
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const base = JSON.parse(readFileSync(lemonOrderCreatedFixturePath, "utf8")) as Record<string, unknown>;
+    const raw1 = JSON.stringify({
+      ...base,
+      meta: { ...(base.meta as Record<string, unknown>), webhook_id: "http-wh-variant-aaaa" },
+    });
+    const raw2 = JSON.stringify({
+      ...base,
+      meta: { ...(base.meta as Record<string, unknown>), webhook_id: "http-wh-variant-bbbb" },
+    });
+    const sig1 = createHmac("sha256", secret).update(raw1, "utf8").digest("hex");
+    const sig2 = createHmac("sha256", secret).update(raw2, "utf8").digest("hex");
+    const res1 = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig1 },
+      body: raw1,
+    });
+    expect(res1.status).toBe(200);
+    const j1 = (await res1.json()) as { action?: string };
+    expect(j1.action).toBe("granted");
+    const res2 = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig2 },
+      body: raw2,
+    });
+    expect(res2.status).toBe(200);
+    const j2 = (await res2.json()) as { action?: string; duplicate?: boolean };
+    expect(j2.action).toBe("duplicate");
+    expect(j2.duplicate).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it("GET /api/billing/webhook/lemonsqueezy does not grant credits (billing=success is client-only)", async () => {
+    const spy = vi.spyOn(creditService, "addCreditsFromPaymentWebhook");
+    const res = await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, { method: "GET" });
+    expect([404, 405]).toContain(res.status);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("Lemon webhook grant path does not log signing secret or full raw JSON body", async () => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? "";
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(creditService, "addCreditsFromPaymentWebhook").mockResolvedValue({
+      ok: true,
+      duplicate: false,
+      credits: 52,
+      errorCode: null,
+    });
+    const rawStr = readFileSync(lemonOrderCreatedFixturePath, "utf8");
+    const sig = createHmac("sha256", secret).update(rawStr, "utf8").digest("hex");
+    await fetch(`http://127.0.0.1:${port}/api/billing/webhook/lemonsqueezy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-signature": sig },
+      body: rawStr,
+    });
+    const all = [...infoSpy.mock.calls, ...warnSpy.mock.calls, ...errSpy.mock.calls]
+      .map(args => args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" "))
+      .join("\n");
+    expect(all).not.toContain(secret);
+    expect(all).not.toContain(rawStr);
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+    errSpy.mockRestore();
   });
 });

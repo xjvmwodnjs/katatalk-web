@@ -82,13 +82,52 @@ function analysisJobsTableBuilder() {
       return Promise.resolve({ error: null });
     },
     update(patch: Record<string, unknown>) {
-      return {
-        eq(col: string, id: string) {
-          const existing = vitestAnalysisJobsStore.get(id);
-          if (existing) {
-            Object.assign(existing, patch, { updated_at: isoNow() });
+      const filters: Array<{ col: string; val: unknown }> = [];
+      function rowMatches(existing: Record<string, unknown>): boolean {
+        for (const f of filters) {
+          const cur = existing[f.col];
+          if (f.col === "attempt_count") {
+            if (Number(cur) !== Number(f.val)) return false;
+          } else if (cur !== f.val) {
+            return false;
           }
-          return Promise.resolve({ error: null });
+        }
+        return true;
+      }
+      function runUpdate(leaseSelectMode: boolean): { data?: unknown[]; error: null } {
+        const idFilter = filters.find(f => f.col === "id");
+        const id = idFilter?.val != null ? String(idFilter.val) : "";
+        const existing = id ? vitestAnalysisJobsStore.get(id) : undefined;
+        if (!existing) {
+          return leaseSelectMode ? { data: [], error: null } : { error: null };
+        }
+        const ex = existing as Record<string, unknown>;
+        if (filters.length === 1 && filters[0].col === "id") {
+          Object.assign(existing, patch, { updated_at: isoNow() });
+          return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+        }
+        if (!rowMatches(ex)) {
+          return leaseSelectMode ? { data: [], error: null } : { error: null };
+        }
+        Object.assign(existing, patch, { updated_at: isoNow() });
+        return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+      }
+      const tail = {
+        eq(col: string, val: unknown) {
+          filters.push({ col, val });
+          return tail;
+        },
+        select() {
+          return Promise.resolve(runUpdate(true));
+        },
+        then(onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
+          return Promise.resolve(runUpdate(false)).then(onFulfilled, onRejected);
+        },
+      };
+      return {
+        eq(col: string, val: unknown) {
+          filters.push({ col, val });
+          return tail;
         },
       };
     },
@@ -123,6 +162,82 @@ function legacyQueryBuilder(table: string) {
     },
   };
   return builder;
+}
+
+function simulateClaimNextAnalysisJobRpc(args?: Record<string, unknown>): {
+  data: Record<string, unknown> | null;
+  error: null;
+} {
+  const wid = String(args?.p_worker_id ?? "unknown").trim() || "unknown";
+  const staleSec = Math.max(1, Number(args?.p_stale_seconds ?? 900));
+  const nowMs = Date.now();
+
+  for (const [, row] of Array.from(vitestAnalysisJobsStore.entries())) {
+    const r = row as Record<string, unknown>;
+    if (r.status !== "running") continue;
+    const ac = Number(r.attempt_count ?? 0);
+    const maxA = Number(r.max_attempts ?? 3);
+    if (ac < maxA) continue;
+    const lockedAt = r.locked_at as string | null | undefined;
+    const lockedMs = lockedAt ? new Date(lockedAt).getTime() : 0;
+    const stale = !lockedAt || nowMs - lockedMs > staleSec * 1000;
+    if (!stale) continue;
+    Object.assign(r, {
+      status: "failed",
+      progress: null,
+      error_message: "MAX_ATTEMPTS_EXCEEDED: worker lease exhausted",
+      last_error_code: "MAX_ATTEMPTS_EXCEEDED",
+      completed_at: isoNow(),
+      locked_at: null,
+      locked_by: null,
+      next_retry_at: null,
+      updated_at: isoNow(),
+    });
+  }
+
+  const candidates = Array.from(vitestAnalysisJobsStore.entries()).filter(([, row]) => {
+    const r = row as Record<string, unknown>;
+    const ac = Number(r.attempt_count ?? 0);
+    const maxA = Number(r.max_attempts ?? 3);
+    if (ac >= maxA) return false;
+
+    if (r.status === "queued") {
+      const nr = r.next_retry_at as string | null | undefined;
+      if (nr && new Date(nr).getTime() > nowMs) return false;
+      return true;
+    }
+    if (r.status === "running") {
+      const lockedAt = r.locked_at as string | null | undefined;
+      const lockedMs = lockedAt ? new Date(lockedAt).getTime() : 0;
+      return !lockedAt || nowMs - lockedMs > staleSec * 1000;
+    }
+    return false;
+  });
+
+  candidates.sort((a, b) =>
+    String((a[1] as { created_at?: string }).created_at ?? "").localeCompare(
+      String((b[1] as { created_at?: string }).created_at ?? "")
+    )
+  );
+
+  if (candidates.length === 0) {
+    return { data: null, error: null };
+  }
+
+  const [, row] = candidates[0]!;
+  const r = row as Record<string, unknown>;
+  Object.assign(r, {
+    status: "running",
+    progress: Math.max(Number(r.progress) || 0, 1),
+    locked_at: isoNow(),
+    locked_by: wid,
+    attempt_count: Number(r.attempt_count ?? 0) + 1,
+    completed_at: null,
+    error_message: null,
+    last_error_code: null,
+    updated_at: isoNow(),
+  });
+  return { data: r, error: null };
 }
 
 vi.mock("./_core/supabaseAdmin", () => {
@@ -173,27 +288,7 @@ vi.mock("./_core/supabaseAdmin", () => {
         return { data: { ok: true, duplicate: false, credits: 10, log_id: "00000000-0000-0000-0000-00000000cc01" }, error: null };
       }
       if (name === "claim_next_analysis_job") {
-        const queued = Array.from(vitestAnalysisJobsStore.entries())
-          .filter(([, r]) => (r as { status?: string }).status === "queued")
-          .sort((a, b) =>
-            String((a[1] as { created_at?: string }).created_at ?? "").localeCompare(
-              String((b[1] as { created_at?: string }).created_at ?? "")
-            )
-          );
-        if (queued.length === 0) {
-          return { data: null, error: null };
-        }
-        const [id, row] = queued[0]!;
-        const existing = vitestAnalysisJobsStore.get(id);
-        if (existing) {
-          Object.assign(existing, {
-            status: "running",
-            progress: Math.max(Number((existing as { progress?: number }).progress) || 0, 1),
-            updated_at: isoNow(),
-          });
-          return { data: existing, error: null };
-        }
-        return { data: null, error: null };
+        return simulateClaimNextAnalysisJobRpc(args);
       }
       if (name === "add_credits_from_payment") {
         return {
