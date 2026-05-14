@@ -32,14 +32,44 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
-function indexAnalysisObjectsById(stdout: string): Map<string, Record<string, unknown>> {
-  const m = new Map<string, Record<string, unknown>>();
+type StrictStdoutMatch =
+  | { ok: true; byId: Map<string, Record<string, unknown>>; unknownResponseIdCount: number }
+  | { ok: false; error: string };
+
+/**
+ * stdout JSON/JSONL에서 `id` 문자열이 있는 객체만 매칭 후보로 본다(`id` 없는 분석 객체는 무시).
+ * 기대 id 집합 밖의 id 는 unknownResponseIdCount 만 증가.
+ * 동일 id 가 두 번 이상이면 실패(KATAGO_MULTI_TURN_DUPLICATE_ID).
+ */
+function matchStdoutByExpectedIds(stdout: string, expectedIds: readonly string[]): StrictStdoutMatch {
+  const expectedSet = new Set(expectedIds);
+  const seen = new Set<string>();
+  const byId = new Map<string, Record<string, unknown>>();
+  let unknownResponseIdCount = 0;
+
   for (const o of extractJsonObjectsFromKatagoStdout(stdout)) {
-    if (isPlainObject(o) && typeof o.id === "string") {
-      m.set(o.id, o);
+    if (!isPlainObject(o)) {
+      continue;
+    }
+    const id = o.id;
+    if (typeof id !== "string" || id.length === 0) {
+      continue;
+    }
+    if (seen.has(id)) {
+      return {
+        ok: false,
+        error: `KATAGO_MULTI_TURN_DUPLICATE_ID: stdout 에 동일 id 가 중복되었습니다: ${id}`,
+      };
+    }
+    seen.add(id);
+    if (expectedSet.has(id)) {
+      byId.set(id, o);
+    } else {
+      unknownResponseIdCount += 1;
     }
   }
-  return m;
+
+  return { ok: true, byId, unknownResponseIdCount };
 }
 
 function buildComparisonReady(playedMove: string, moveInfos: unknown[]): TurnAnalysisComparisonReadyV1 {
@@ -120,7 +150,8 @@ function entryForPrepared(
   stderr: string,
   sgfSha256: string,
   sgfSizeBytes: number,
-  exitCode: number | null
+  exitCode: number | null,
+  opts?: { fallbackUsed?: boolean }
 ): TurnAnalysisEntryV1 {
   if (!rawObj) {
     return failedEntry(p, "KATAGO_MULTI_TURN_NO_RESPONSE: stdout 에 해당 id 의 JSON 을 찾지 못했습니다.");
@@ -154,6 +185,7 @@ function entryForPrepared(
       query: p.query,
       katago,
       comparisonReady: buildComparisonReady(p.playedMoveGtp, moveInfos),
+      ...(opts?.fallbackUsed ? { fallbackUsed: true } : {}),
     };
     return success;
   } catch (e) {
@@ -172,7 +204,7 @@ async function executeBatch(
     sgfSha256: string;
     sgfSizeBytes: number;
   }
-): Promise<TurnAnalysisEntryV1[]> {
+): Promise<{ entries: TurnAnalysisEntryV1[]; unknownResponseIdCount: number }> {
   const stdinPayload = prepared.map((p) => p.queryLine).join("");
   const batchTimeout = readKatagoMultiTurnBatchTimeoutMsFrom(opts.env, prepared.length);
   let stdout = "";
@@ -192,15 +224,36 @@ async function executeBatch(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const tail = summarizeKatagoStderrForDb(stderr);
-    return prepared.map((p) => failedEntry(p, `${msg}${tail ? ` ${tail}` : ""}`));
+    return {
+      entries: prepared.map((p) => failedEntry(p, `${msg}${tail ? ` ${tail}` : ""}`)),
+      unknownResponseIdCount: 0,
+    };
   }
   if (code !== 0 && code !== null) {
     const tail = summarizeKatagoStderrForDb(stderr);
     const msg = `KATAGO_EXIT_NONZERO: exit ${String(code)}${tail ? ` — ${tail}` : ""}`;
-    return prepared.map((p) => failedEntry(p, msg));
+    return { entries: prepared.map((p) => failedEntry(p, msg)), unknownResponseIdCount: 0 };
   }
-  const byId = indexAnalysisObjectsById(stdout);
-  return prepared.map((p) => entryForPrepared(p, byId.get(p.queryId), stderr, opts.sgfSha256, opts.sgfSizeBytes, code));
+
+  const expectedIds = prepared.map((p) => p.queryId);
+  const match = matchStdoutByExpectedIds(stdout, expectedIds);
+  if (!match.ok) {
+    return { entries: prepared.map((p) => failedEntry(p, match.error)), unknownResponseIdCount: 0 };
+  }
+  if (match.unknownResponseIdCount > 0) {
+    console.warn(
+      `[katago-multi-turn] stdout 에 기대 id 외 응답 ${String(match.unknownResponseIdCount)}건(원문 id 미로그)`
+    );
+  }
+
+  const entries = prepared.map((p) => {
+    const raw = match.byId.get(p.queryId);
+    if (!raw) {
+      return failedEntry(p, "KATAGO_MULTI_TURN_MISSING_ID: stdout 에 요청한 id 가 없습니다.");
+    }
+    return entryForPrepared(p, raw, stderr, opts.sgfSha256, opts.sgfSizeBytes, code);
+  });
+  return { entries, unknownResponseIdCount: match.unknownResponseIdCount };
 }
 
 async function executeSequential(
@@ -212,9 +265,13 @@ async function executeSequential(
     sgfSha256: string;
     sgfSizeBytes: number;
   }
-): Promise<TurnAnalysisEntryV1[]> {
+): Promise<{ entries: TurnAnalysisEntryV1[]; unknownResponseIdCount: number }> {
   const qTimeout = readKatagoMultiTurnQueryTimeoutMsFrom(opts.env);
+  const allowIdlessFallback =
+    opts.env.KATAGO_MULTI_TURN_ALLOW_IDLESS_SEQUENTIAL_FALLBACK?.trim().toLowerCase() === "true";
   const out: TurnAnalysisEntryV1[] = [];
+  let unknownTotal = 0;
+
   for (const p of prepared) {
     let stdout = "";
     let stderr = "";
@@ -235,32 +292,86 @@ async function executeSequential(
         out.push(failedEntry(p, `KATAGO_EXIT_NONZERO: exit ${String(code)}${tail ? ` — ${tail}` : ""}`));
         continue;
       }
-      const byId = indexAnalysisObjectsById(stdout);
-      const fallback = pickPrimaryAnalysisObject(extractJsonObjectsFromKatagoStdout(stdout));
-      const rawObj = (byId.get(p.queryId) ?? fallback) ?? undefined;
-      out.push(entryForPrepared(p, rawObj, stderr, opts.sgfSha256, opts.sgfSizeBytes, code));
+      const match = matchStdoutByExpectedIds(stdout, [p.queryId]);
+      if (!match.ok) {
+        out.push(failedEntry(p, match.error));
+        continue;
+      }
+      unknownTotal += match.unknownResponseIdCount;
+      if (match.unknownResponseIdCount > 0) {
+        console.warn(
+          `[katago-multi-turn] sequential stdout 에 기대 id 외 응답 ${String(match.unknownResponseIdCount)}건(원문 id 미로그)`
+        );
+      }
+
+      let rawObj = match.byId.get(p.queryId);
+      let fallbackUsed = false;
+      if (!rawObj && allowIdlessFallback) {
+        const fb = pickPrimaryAnalysisObject(extractJsonObjectsFromKatagoStdout(stdout));
+        if (fb && isPlainObject(fb)) {
+          rawObj = fb;
+          fallbackUsed = true;
+        }
+      }
+      if (!rawObj) {
+        out.push(
+          failedEntry(
+            p,
+            "KATAGO_MULTI_TURN_MISSING_ID: stdout 에 요청 id 가 없고 id-less 폴백도 비활성입니다."
+          )
+        );
+        continue;
+      }
+      out.push(entryForPrepared(p, rawObj, stderr, opts.sgfSha256, opts.sgfSizeBytes, code, { fallbackUsed }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const tail = summarizeKatagoStderrForDb(stderr);
       out.push(failedEntry(p, tail && !msg.includes(tail.slice(0, 12)) ? `${msg} ${tail}` : msg));
     }
   }
-  return out;
+  return { entries: out, unknownResponseIdCount: unknownTotal };
+}
+
+function buildMultiTurnMeta(args: {
+  maxRuns: number;
+  candidateCount: number;
+  completedCount: number;
+  failedCount: number;
+  unknownResponseIdCount: number;
+}): MultiTurnKatagoAnalysisMetaV1 {
+  const attemptedCount = args.candidateCount;
+  const allFailed = args.completedCount === 0 && args.failedCount > 0 && attemptedCount > 0;
+  const partialFailure = args.failedCount > 0 && args.completedCount > 0;
+  const meta: MultiTurnKatagoAnalysisMetaV1 = {
+    version: MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION,
+    maxTurnsRequested: args.maxRuns,
+    maxTurnsAnalyzed: args.maxRuns,
+    candidateCount: args.candidateCount,
+    attemptedCount,
+    completedCount: args.completedCount,
+    failedCount: args.failedCount,
+    allFailed,
+    partialFailure,
+  };
+  if (args.unknownResponseIdCount > 0) {
+    meta.unknownResponseIdCount = args.unknownResponseIdCount;
+  }
+  return meta;
 }
 
 function emptyMeta(maxRuns: number): MultiTurnKatagoAnalysisMetaV1 {
-  return {
-    version: MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION,
+  return buildMultiTurnMeta({
+    maxRuns,
     candidateCount: 0,
     completedCount: 0,
     failedCount: 0,
-    maxTurnsAnalyzed: maxRuns,
-  };
+    unknownResponseIdCount: 0,
+  });
 }
 
 /**
  * analysisPlan 후보별 “N번째 수 직전” 국면 KataGo raw (정규화 슬라이스만).
- * 기본은 stdin 여러 줄을 한 프로세스에 보냄 (`KATAGO_MULTI_TURN_BATCH=0` 이면 수순마다 별도 프로세스 — 비효율, README 참고).
+ * 기본은 stdin 여러 줄을 한 프로세스에 보냄 (`KATAGO_MULTI_TURN_BATCH=0` 이면 수순마다 별도 프로세스 — 비효율·README 참고).
  */
 export async function runMultiTurnKatagoRawV1(opts: {
   parsed: ParsedMinimalSgf;
@@ -285,7 +396,7 @@ export async function runMultiTurnKatagoRawV1(opts: {
   const prepared = prepareTurns(opts.parsed, candidates, mtMaxVisits, opts.jobId, ts);
 
   const useBatch = opts.env.KATAGO_MULTI_TURN_BATCH?.trim() !== "0";
-  const turnAnalyses = useBatch
+  const { entries: turnAnalyses, unknownResponseIdCount } = useBatch
     ? await executeBatch(prepared, opts)
     : await executeSequential(prepared, opts);
 
@@ -293,12 +404,12 @@ export async function runMultiTurnKatagoRawV1(opts: {
   const failedCount = turnAnalyses.filter((t) => t.status === "failed").length;
   return {
     turnAnalyses,
-    multiTurnAnalysis: {
-      version: MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION,
+    multiTurnAnalysis: buildMultiTurnMeta({
+      maxRuns,
       candidateCount: candidates.length,
       completedCount,
       failedCount,
-      maxTurnsAnalyzed: maxRuns,
-    },
+      unknownResponseIdCount,
+    }),
   };
 }

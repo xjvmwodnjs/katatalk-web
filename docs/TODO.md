@@ -29,7 +29,7 @@
 - [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
 - [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI·LLM 없음). timeout 시 SIGTERM→SIGKILL 시도.
 - [x] **analysis plan v1** — SGF 전체 수 파싱·`turnIndex`/`player`/`gtpMove`·간격+최종국면 후보(`shared/analysisPlanV1.ts`, `server/analysisPlan.ts`). KataGo는 1회; `result.analysisPlan`에 동봉.
-- [x] **multi-turn KataGo raw v1** — `analysisPlan` 후보별 착수 직전 국면 추가 분석(`turnAnalyses`, `multiTurnAnalysis`). 기본 stdin 배치; `KATAGO_MULTI_TURN_MAX` 등은 `.env.example` 참고. BSI/ADI 없음.
+- [x] **multi-turn KataGo raw v1** — `analysisPlan` 후보별 착수 직전 국면 추가 분석(`turnAnalyses`, `multiTurnAnalysis`). 배치 시 stdout `id` 중복·누락 검증, 순차 폴백은 env 로만. 운영 전 **로컬 KataGo로 stdin JSONL 배치 smoke** 필수(README).
 - [ ] **KataGo worker 고도화** — stdout 스트리밍·상한, raw Storage/artifact 정책, GPU 호스트 분리.
 - [ ] **KataGo / LLM** — BSI/ADI·해설 파이프라인(V2.5 문서 기준).
 

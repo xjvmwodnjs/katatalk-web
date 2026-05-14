@@ -39,6 +39,8 @@ export type TurnAnalysisEntrySuccessV1 = {
   query: TurnAnalysisQueryMetaV1;
   katago: TurnAnalysisKatagoSliceV1;
   comparisonReady: TurnAnalysisComparisonReadyV1;
+  /** 순차 모드에서 `id` 없이 `pickPrimaryAnalysisObject` 폴백을 썼을 때만 true */
+  fallbackUsed?: boolean;
 };
 
 export type TurnAnalysisEntryFailedV1 = {
@@ -56,8 +58,19 @@ export type TurnAnalysisEntryV1 = TurnAnalysisEntrySuccessV1 | TurnAnalysisEntry
 
 export type MultiTurnKatagoAnalysisMetaV1 = {
   version: typeof MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION;
+  /** `KATAGO_MULTI_TURN_MAX` 등으로 정한 상한(실제 성공 개수 아님) */
+  maxTurnsRequested: number;
+  /** @deprecated `maxTurnsRequested` 와 동일 의미 — 하위 호환용 */
+  maxTurnsAnalyzed: number;
   candidateCount: number;
+  /** 실제 multi-turn 시도 수(선택된 후보 수) */
+  attemptedCount: number;
   completedCount: number;
   failedCount: number;
-  maxTurnsAnalyzed: number;
+  /** `completedCount === 0` 이고 `failedCount > 0` 이고 시도가 있었을 때 */
+  allFailed: boolean;
+  /** 일부만 실패 */
+  partialFailure: boolean;
+  /** batch stdout 에 기대 id 집합 밖의 `id` 응답 줄 수(요약용) */
+  unknownResponseIdCount?: number;
 };
