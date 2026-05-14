@@ -136,9 +136,9 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 3. Lemon Dashboard 웹훅 URL: `https://<ngrok-host>/api/billing/webhook/lemonsqueezy`  
 4. 포트 불일치 시 `POST /api/billing/create-checkout` 는 **`APP_BASE_URL_PORT_MISMATCH`**(503)로 막을 수 있습니다.
 
-### Lemon `order_created` idempotency·payload 검증 TODO
+### Lemon `order_created` idempotency·fixture
 
-웹훅 **idempotency 키**는 `server/paymentProviders/lemonsqueezyProvider.ts` 의 주석 우선순위를 따릅니다. **`meta.webhook_id` 가 주문마다 안정적인지** 등은 Lemon 실제 payload 로만 확정할 수 있으므로, **ngrok Inspector 또는 Lemon Dashboard** 에서 수집한 **`order_created` JSON 을 개인정보·카드 정보 제거(redaction)한 fixture** 를 저장소에 추가하고, 그 fixture 기준으로 idempotency 우선순위·테스트를 고정하는 작업이 남아 있습니다(확실하지 않은 필드는 코드 주석으로 “확인 필요” 유지).
+웹훅 **idempotency 키**는 `payment:lemonsqueezy:<stable>` 형태이며, **주문 단위 안정 id**를 우선합니다: **`data.id` → `attributes.identifier` → `attributes.checkout_id` → `meta.webhook_id`(재시도·재전달 시 delivery 마다 달라질 수 있어 최후 폴백)**. 실제 페이로드 형태에 맞춘 **redacted 샘플**은 `server/fixtures/lemonsqueezy/order_created.redacted.json` 이고, `server/paymentWebhook.test.ts`·`server/httpCreditsAnalyzeBilling.test.ts` 에서 파싱·중복·로그 누설 방지를 검증합니다.
 
 ### API Rate limiting
 
