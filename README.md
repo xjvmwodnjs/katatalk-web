@@ -26,7 +26,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 `server/bsiV1.ts`·`shared/bsiV1.ts`. **디버그·내부 signal** — `top_mistakes`·자연어 해설·UI 패착 라벨에 쓰지 말 것. `turnAnalyses[].moveSummary`·`comparisonReady`만 사용(추가 KataGo 없음).
 
 - **KataGo `scoreLead` / `scoreMean` / `winrate` 관점**은 엔진·버전별로 다를 수 있으므로, 운영 전 **실제 샘플 JSON으로 perspective 검증** 후 `scorePerspective` / `winratePerspective` 값을 좁힐 것(현재 기본은 `katago_output` 또는 `unknown`).
-- **`scoreBestMinusPlayed` / `winrateBestMinusPlayed`**: best 행 − played 행을 0 이상으로 clamp 한 후보 간 차이일 뿐, 흑/백 손해로 단정하지 않음. 하위 호환 필드 `scoreDelta`/`winrateDelta`는 동일 값.
+- **`scoreBestMinusPlayed`**: best·played 가 **같은 score 축**(둘 다 `scoreLead` 또는 둘 다 `scoreMean`)일 때만 계산; **lead/mean 혼합 시 생략**(`scoreMetricUsed: "none"`, `components.scoreMetricMixed`). **`winrateBestMinusPlayed`** 는 양쪽 winrate 가 있으면 혼합 score 여부와 무관하게 계산 가능. 하위 호환 `scoreDelta`/`winrateDelta`는 동일 정책( mixed 시 score 쪽 생략).
 - **`bsiScore`**: visits 가중과 지수 포화로 **0~100** 사용 가능; `bsiRaw`·`components.zComposite` 등 원시·블렌드 입력은 ADI·LES 전 단계용.
 - **`severity` / `bsiBand`**: 내부 numerical band 별칭일 뿐 사용자 패착 판정이 아님.
 

@@ -86,6 +86,7 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     expect(s.confidence).toBeDefined();
     expect(s.visitConfidence).toBeLessThanOrEqual(1);
     expect(s.scoreMetricUsed).toBe("scoreLead");
+    expect(s.components.scoreMetricMixed).toBe(false);
     expect(s.scorePerspective).toBe("katago_output");
     expect(s.winratePerspective).toBe("katago_output");
     expect(s.interpretationStatus).toBe("provisional");
@@ -143,6 +144,7 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     const r = computeBsiV1FromTurnAnalyses([t]);
     expect(r.signals[0]!.status).toBe("scored");
     expect(r.signals[0]!.scoreMetricUsed).toBe("scoreMean");
+    expect(r.signals[0]!.components.scoreMetricMixed).toBe(false);
     expect(r.signals[0]!.scoreBestMinusPlayed).toBeCloseTo(1, 5);
   });
 
@@ -211,5 +213,42 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     const json = JSON.stringify(r);
     expect(json).not.toMatch(/패착|악수|mistake/i);
     expect(json).not.toMatch(/top_mistakes/);
+  });
+
+  it("mixed scoreLead / scoreMean: no scoreBestMinusPlayed; winrate still scored", () => {
+    const t = baseOk({
+      moveSummary: {
+        best: { move: "D16", scoreLead: 3, winrate: 0.7, visits: 200 },
+        played: { move: "Q16", scoreMean: 0.5, winrate: 0.5, visits: 200 },
+      },
+    });
+    const r = computeBsiV1FromTurnAnalyses([t]);
+    const s = r.signals[0]!;
+    expect(s.status).toBe("scored");
+    expect(s.scoreMetricUsed).toBe("none");
+    expect(s.scoreBestMinusPlayed).toBeUndefined();
+    expect(s.scoreDelta).toBeUndefined();
+    expect(s.components.scoreMetricMixed).toBe(true);
+    expect(s.components.bestScoreMetric).toBe("scoreLead");
+    expect(s.components.playedScoreMetric).toBe("scoreMean");
+    expect(s.winrateBestMinusPlayed).toBeCloseTo(0.2, 5);
+    expect(s.bsiScore).toBeGreaterThanOrEqual(0);
+    expect(s.bsiScore).toBeLessThanOrEqual(100);
+  });
+
+  it("mixed scoreMean / scoreLead (reverse): no score delta", () => {
+    const t = baseOk({
+      moveSummary: {
+        best: { move: "D16", scoreMean: 2, winrate: 0.6, visits: 150 },
+        played: { move: "Q16", scoreLead: 1, winrate: 0.55, visits: 150 },
+      },
+    });
+    const r = computeBsiV1FromTurnAnalyses([t]);
+    const s = r.signals[0]!;
+    expect(s.scoreMetricUsed).toBe("none");
+    expect(s.scoreBestMinusPlayed).toBeUndefined();
+    expect(s.scoreDelta).toBeUndefined();
+    expect(s.components.scoreMetricMixed).toBe(true);
+    expect(s.winrateBestMinusPlayed).toBeDefined();
   });
 });

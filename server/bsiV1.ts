@@ -24,10 +24,9 @@ const Z_EXP_SCALE = 7;
 const VISIT_CONF_BASE = 0.4;
 const VISIT_CONF_VISIT_WEIGHT = 0.6;
 
-function pickScoreDetail(row: TurnAnalysisMoveSummaryV1 | null | undefined): {
-  value: number | null;
-  metric: BsiV1ScoreMetricUsed;
-} {
+type ScoreDetail = { value: number | null; metric: BsiV1ScoreMetricUsed };
+
+function pickScoreDetail(row: TurnAnalysisMoveSummaryV1 | null | undefined): ScoreDetail {
   if (!row) {
     return { value: null, metric: "none" };
   }
@@ -40,6 +39,37 @@ function pickScoreDetail(row: TurnAnalysisMoveSummaryV1 | null | undefined): {
   return { value: null, metric: "none" };
 }
 
+/**
+ * scoreLead vs scoreMean 혼합 비교 금지. 둘 다 동일 축일 때만 `scoreBestMinusPlayed`.
+ */
+function resolveUniformScoreDelta(bestD: ScoreDetail, playedD: ScoreDetail): {
+  unifiedMetric: BsiV1ScoreMetricUsed;
+  scoreMetricMixed: boolean;
+  scoreBestMinusPlayed: number | undefined;
+} {
+  const bm = bestD.metric;
+  const pm = playedD.metric;
+  const mixed = bm !== "none" && pm !== "none" && bm !== pm;
+  if (mixed) {
+    return { unifiedMetric: "none", scoreMetricMixed: true, scoreBestMinusPlayed: undefined };
+  }
+  if (bm === "scoreLead" && pm === "scoreLead" && bestD.value != null && playedD.value != null) {
+    return {
+      unifiedMetric: "scoreLead",
+      scoreMetricMixed: false,
+      scoreBestMinusPlayed: Math.max(0, bestD.value - playedD.value),
+    };
+  }
+  if (bm === "scoreMean" && pm === "scoreMean" && bestD.value != null && playedD.value != null) {
+    return {
+      unifiedMetric: "scoreMean",
+      scoreMetricMixed: false,
+      scoreBestMinusPlayed: Math.max(0, bestD.value - playedD.value),
+    };
+  }
+  return { unifiedMetric: "none", scoreMetricMixed: false, scoreBestMinusPlayed: undefined };
+}
+
 function pickWinrate(row: TurnAnalysisMoveSummaryV1 | null | undefined): number | null {
   if (!row) {
     return null;
@@ -48,19 +78,6 @@ function pickWinrate(row: TurnAnalysisMoveSummaryV1 | null | undefined): number 
     return row.winrate;
   }
   return null;
-}
-
-function resolveScoreMetricUsed(
-  bestMetric: BsiV1ScoreMetricUsed,
-  playedMetric: BsiV1ScoreMetricUsed
-): BsiV1ScoreMetricUsed {
-  if (bestMetric === "none" || playedMetric === "none") {
-    return "none";
-  }
-  if (bestMetric === "scoreLead" || playedMetric === "scoreLead") {
-    return "scoreLead";
-  }
-  return "scoreMean";
 }
 
 export function severityFromBsiScore(score: number): BsiV1Severity {
@@ -224,16 +241,19 @@ export function computeBsiV1FromTurnAnalyses(
 
     const bestD = pickScoreDetail(ms.best);
     const playedD = pickScoreDetail(ms.played);
-    const bestScore = bestD.value;
-    const playedScore = playedD.value;
+    const sr = resolveUniformScoreDelta(bestD, playedD);
+    const scoreMetricUsed = sr.unifiedMetric;
+    const scoreBestMinusPlayed = sr.scoreBestMinusPlayed;
     const bestWr = pickWinrate(ms.best);
     const playedWr = pickWinrate(ms.played);
-    const scoreMetricUsed = resolveScoreMetricUsed(bestD.metric, playedD.metric);
 
-    let scoreBestMinusPlayed: number | undefined;
-    if (bestScore != null && playedScore != null) {
-      scoreBestMinusPlayed = Math.max(0, bestScore - playedScore);
-    }
+    const scoreMetricMeta = {
+      bestScoreMetric: bestD.metric,
+      playedScoreMetric: playedD.metric,
+      scoreMetricMixed: sr.scoreMetricMixed,
+      bestScore: bestD.value,
+      playedScore: playedD.value,
+    };
 
     let winrateBestMinusPlayed: number | undefined;
     if (bestWr != null && playedWr != null) {
@@ -252,8 +272,7 @@ export function computeBsiV1FromTurnAnalyses(
         winratePerspective: "unknown",
         interpretationStatus: "provisional",
         components: partialComponents(t, opts, {
-          bestScore,
-          playedScore,
+          ...scoreMetricMeta,
           bestWinrate: bestWr,
           playedWinrate: playedWr,
           bestVisits: ms.best?.visits ?? null,
@@ -282,11 +301,10 @@ export function computeBsiV1FromTurnAnalyses(
       candidateReason: t.reason,
       priority: t.priority,
       scoreMetricUsed,
+      ...scoreMetricMeta,
       engineMaxVisits: opts?.engineMaxVisits ?? null,
       multiTurnMaxVisits: opts?.multiTurnMaxVisits ?? null,
       playedMoveRank,
-      bestScore,
-      playedScore,
       bestWinrate: bestWr,
       playedWinrate: playedWr,
       bestVisits: ms.best?.visits ?? null,
