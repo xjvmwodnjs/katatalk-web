@@ -1,8 +1,11 @@
 import type {
   BsiV1Confidence,
+  BsiV1Perspective,
   BsiV1Result,
+  BsiV1ScoreMetricUsed,
   BsiV1Severity,
   BsiV1Signal,
+  BsiV1SignalComponents,
 } from "@shared/bsiV1";
 import { BSI_V1_COMPUTED_FROM, BSI_V1_VERSION } from "@shared/bsiV1";
 import type {
@@ -11,17 +14,30 @@ import type {
   TurnAnalysisMoveSummaryV1,
 } from "@shared/multiTurnKatagoAnalysisV1";
 
-function pickScoreMetric(row: TurnAnalysisMoveSummaryV1 | null | undefined): number | null {
+/** multi-turn BSI 계산 시 엔진 상한(원시 stdout 없이 메타만) */
+export type BsiV1ComputeOpts = {
+  engineMaxVisits?: number | null;
+  multiTurnMaxVisits?: number | null;
+};
+
+const Z_EXP_SCALE = 7;
+const VISIT_CONF_BASE = 0.4;
+const VISIT_CONF_VISIT_WEIGHT = 0.6;
+
+function pickScoreDetail(row: TurnAnalysisMoveSummaryV1 | null | undefined): {
+  value: number | null;
+  metric: BsiV1ScoreMetricUsed;
+} {
   if (!row) {
-    return null;
+    return { value: null, metric: "none" };
   }
   if (typeof row.scoreLead === "number" && Number.isFinite(row.scoreLead)) {
-    return row.scoreLead;
+    return { value: row.scoreLead, metric: "scoreLead" };
   }
   if (typeof row.scoreMean === "number" && Number.isFinite(row.scoreMean)) {
-    return row.scoreMean;
+    return { value: row.scoreMean, metric: "scoreMean" };
   }
-  return null;
+  return { value: null, metric: "none" };
 }
 
 function pickWinrate(row: TurnAnalysisMoveSummaryV1 | null | undefined): number | null {
@@ -32,6 +48,19 @@ function pickWinrate(row: TurnAnalysisMoveSummaryV1 | null | undefined): number 
     return row.winrate;
   }
   return null;
+}
+
+function resolveScoreMetricUsed(
+  bestMetric: BsiV1ScoreMetricUsed,
+  playedMetric: BsiV1ScoreMetricUsed
+): BsiV1ScoreMetricUsed {
+  if (bestMetric === "none" || playedMetric === "none") {
+    return "none";
+  }
+  if (bestMetric === "scoreLead" || playedMetric === "scoreLead") {
+    return "scoreLead";
+  }
+  return "scoreMean";
 }
 
 export function severityFromBsiScore(score: number): BsiV1Severity {
@@ -79,11 +108,73 @@ function minVisitsForPair(
   return 0;
 }
 
+function basePerspectives(): {
+  scorePerspective: BsiV1Perspective;
+  winratePerspective: BsiV1Perspective;
+} {
+  return {
+    scorePerspective: "katago_output",
+    winratePerspective: "katago_output",
+  };
+}
+
+function partialComponents(
+  t: TurnAnalysisEntrySuccessV1,
+  opts: BsiV1ComputeOpts | undefined,
+  extra: Partial<BsiV1SignalComponents> = {}
+): BsiV1SignalComponents {
+  return {
+    moveInfosCount: t.katago.moveInfosCount,
+    candidateReason: t.reason,
+    priority: t.priority,
+    scoreMetricUsed: "none",
+    engineMaxVisits: opts?.engineMaxVisits ?? null,
+    multiTurnMaxVisits: opts?.multiTurnMaxVisits ?? null,
+    playedMoveRank: t.comparisonReady.playedMoveRank,
+    ...extra,
+  };
+}
+
+/**
+ * Z = score + winrate + rank 블렌드 후
+ * `bsiRaw = (0.4 + 0.6*visitC) * (1 - exp(-Z/7))` (0~1), `bsiScore = round(clamp(100*bsiRaw,0,100))`.
+ */
+function blendBsi(opts: {
+  scoreBestMinusPlayed: number | undefined;
+  winrateBestMinusPlayed: number | undefined;
+  rank: number;
+  visitC: number;
+}): {
+  zComposite: number;
+  scoreBlend: number;
+  winrateBlend: number;
+  rankBlend: number;
+  bsiRaw: number;
+  bsiScore: number;
+} {
+  const sLoss = opts.scoreBestMinusPlayed ?? 0;
+  const wLoss = opts.winrateBestMinusPlayed ?? 0;
+  const rank = opts.rank;
+  const scoreBlend = Math.min(Math.max(0, sLoss) * 1.2, 14);
+  const winrateBlend =
+    opts.winrateBestMinusPlayed != null ? Math.min(Math.max(0, wLoss) * 45, 14) : 0;
+  const rankBlend = rank > 1 ? Math.min((rank - 1) * 1.1, 12) : 0;
+  const zComposite = scoreBlend + winrateBlend + rankBlend;
+  const confMix = VISIT_CONF_BASE + VISIT_CONF_VISIT_WEIGHT * Math.min(1, Math.max(0, opts.visitC));
+  const inner = 1 - Math.exp(-zComposite / Z_EXP_SCALE);
+  const bsiRaw = confMix * inner;
+  const bsiScore = Math.round(Math.min(100, Math.max(0, 100 * bsiRaw)));
+  return { zComposite, scoreBlend, winrateBlend, rankBlend, bsiRaw, bsiScore };
+}
+
 /**
  * `turnAnalyses` OK 항목만 사용. 추가 KataGo 호출 없음.
  * `moveSummary` 가 없으면(구 데이터) `insufficient_data`.
  */
-export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysisEntryV1[]): BsiV1Result {
+export function computeBsiV1FromTurnAnalyses(
+  turnAnalyses: readonly TurnAnalysisEntryV1[],
+  opts?: BsiV1ComputeOpts
+): BsiV1Result {
   const ok = turnAnalyses.filter((t): t is TurnAnalysisEntrySuccessV1 => t.status === "ok");
   const signals: BsiV1Signal[] = [];
   let scoredCount = 0;
@@ -92,6 +183,7 @@ export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysis
   for (const t of ok) {
     const bestMove = t.comparisonReady.bestMove;
     const playedMoveRank = t.comparisonReady.playedMoveRank;
+    const pers = basePerspectives();
 
     if (!t.comparisonReady.playedMoveFoundInCandidates) {
       signals.push({
@@ -100,6 +192,11 @@ export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysis
         playedMove: t.playedMove,
         bestMove,
         playedMoveRank,
+        scoreMetricUsed: "none",
+        scorePerspective: "unknown",
+        winratePerspective: "unknown",
+        interpretationStatus: "provisional",
+        components: partialComponents(t, opts),
         status: "played_move_not_in_candidates",
       });
       insufficientCount += 1;
@@ -114,34 +211,55 @@ export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysis
         playedMove: t.playedMove,
         bestMove,
         playedMoveRank,
+        scoreMetricUsed: "none",
+        scorePerspective: "unknown",
+        winratePerspective: "unknown",
+        interpretationStatus: "provisional",
+        components: partialComponents(t, opts),
         status: "insufficient_data",
       });
       insufficientCount += 1;
       continue;
     }
 
-    const bestScore = pickScoreMetric(ms.best);
-    const playedScore = pickScoreMetric(ms.played);
+    const bestD = pickScoreDetail(ms.best);
+    const playedD = pickScoreDetail(ms.played);
+    const bestScore = bestD.value;
+    const playedScore = playedD.value;
     const bestWr = pickWinrate(ms.best);
     const playedWr = pickWinrate(ms.played);
+    const scoreMetricUsed = resolveScoreMetricUsed(bestD.metric, playedD.metric);
 
-    let scoreDelta: number | undefined;
+    let scoreBestMinusPlayed: number | undefined;
     if (bestScore != null && playedScore != null) {
-      scoreDelta = Math.max(0, bestScore - playedScore);
+      scoreBestMinusPlayed = Math.max(0, bestScore - playedScore);
     }
 
-    let winrateDelta: number | undefined;
+    let winrateBestMinusPlayed: number | undefined;
     if (bestWr != null && playedWr != null) {
-      winrateDelta = Math.max(0, bestWr - playedWr);
+      winrateBestMinusPlayed = Math.max(0, bestWr - playedWr);
     }
 
-    if (scoreDelta == null && winrateDelta == null) {
+    if (scoreBestMinusPlayed == null && winrateBestMinusPlayed == null) {
       signals.push({
         turnIndex: t.turnIndex,
         player: t.player,
         playedMove: t.playedMove,
         bestMove,
         playedMoveRank,
+        scoreMetricUsed: "none",
+        scorePerspective: "unknown",
+        winratePerspective: "unknown",
+        interpretationStatus: "provisional",
+        components: partialComponents(t, opts, {
+          bestScore,
+          playedScore,
+          bestWinrate: bestWr,
+          playedWinrate: playedWr,
+          bestVisits: ms.best?.visits ?? null,
+          playedVisits: ms.played?.visits ?? null,
+          minVisits: minVisitsForPair(ms.best, ms.played),
+        }),
         status: "insufficient_data",
       });
       insufficientCount += 1;
@@ -149,15 +267,37 @@ export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysis
     }
 
     const rank = playedMoveRank ?? 99;
-    const rankPart = rank > 1 ? Math.min(35, (rank - 1) * 10) : 0;
-    const scorePart = scoreDelta != null ? Math.min(45, scoreDelta * 6) : 0;
-    const wrPart = winrateDelta != null ? Math.min(40, winrateDelta * 90) : 0;
-    const raw = rankPart * 0.45 + scorePart * 0.55 + wrPart * 0.5;
-    const bsiScore = Math.round(Math.min(100, Math.max(0, raw)));
-
     const minV = minVisitsForPair(ms.best, ms.played);
     const { confidence, visitConfidence } = confidenceFromMinVisits(minV);
-    const severity = severityFromBsiScore(bsiScore);
+    const blend = blendBsi({
+      scoreBestMinusPlayed,
+      winrateBestMinusPlayed,
+      rank,
+      visitC: visitConfidence,
+    });
+    const severity = severityFromBsiScore(blend.bsiScore);
+
+    const components: BsiV1SignalComponents = {
+      moveInfosCount: t.katago.moveInfosCount,
+      candidateReason: t.reason,
+      priority: t.priority,
+      scoreMetricUsed,
+      engineMaxVisits: opts?.engineMaxVisits ?? null,
+      multiTurnMaxVisits: opts?.multiTurnMaxVisits ?? null,
+      playedMoveRank,
+      bestScore,
+      playedScore,
+      bestWinrate: bestWr,
+      playedWinrate: playedWr,
+      bestVisits: ms.best?.visits ?? null,
+      playedVisits: ms.played?.visits ?? null,
+      minVisits: minV,
+      zComposite: blend.zComposite,
+      scoreBlend: blend.scoreBlend,
+      winrateBlend: blend.winrateBlend,
+      rankBlend: blend.rankBlend,
+      visitConfidenceNumeric: visitConfidence,
+    };
 
     signals.push({
       turnIndex: t.turnIndex,
@@ -165,12 +305,20 @@ export function computeBsiV1FromTurnAnalyses(turnAnalyses: readonly TurnAnalysis
       playedMove: t.playedMove,
       bestMove,
       playedMoveRank,
-      ...(scoreDelta !== undefined ? { scoreDelta } : {}),
-      ...(winrateDelta !== undefined ? { winrateDelta } : {}),
+      scoreMetricUsed,
+      ...pers,
+      interpretationStatus: "provisional",
+      ...(scoreBestMinusPlayed !== undefined ? { scoreBestMinusPlayed, scoreDelta: scoreBestMinusPlayed } : {}),
+      ...(winrateBestMinusPlayed !== undefined
+        ? { winrateBestMinusPlayed, winrateDelta: winrateBestMinusPlayed }
+        : {}),
       visitConfidence,
-      bsiScore,
+      bsiRaw: blend.bsiRaw,
+      bsiScore: blend.bsiScore,
       severity,
+      bsiBand: severity,
       confidence,
+      components,
       status: "scored",
     });
     scoredCount += 1;

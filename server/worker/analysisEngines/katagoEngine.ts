@@ -1,7 +1,7 @@
 import { buildAnalysisPlanV1FromParsed } from "../../analysisPlan";
 import { computeBsiV1FromTurnAnalyses } from "../../bsiV1";
 import { sha256HexUtf8, utf8ByteLength } from "../../sgfPayload";
-import { readKatagoMaxVisits } from "./config";
+import { readKatagoMaxVisits, readKatagoMaxVisitsFrom, readKatagoMultiTurnMaxVisitsFrom } from "./config";
 import { runMultiTurnKatagoRawV1 } from "./katagoMultiTurnRun";
 import {
   buildKatagoSmokeNormalized,
@@ -108,7 +108,12 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     spawnFn: input.__testSpawnFn,
   });
 
-  const bsiV1 = computeBsiV1FromTurnAnalyses(turnAnalyses);
+  const baseMaxVisits = readKatagoMaxVisitsFrom(process.env);
+  const multiTurnMaxVisits = readKatagoMultiTurnMaxVisitsFrom(process.env, baseMaxVisits);
+  const bsiV1 = computeBsiV1FromTurnAnalyses(turnAnalyses, {
+    engineMaxVisits: maxVisits,
+    multiTurnMaxVisits,
+  });
 
   const result: NormalizedAnalysisResult = {
     ok: true,

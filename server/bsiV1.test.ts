@@ -62,7 +62,7 @@ describe("confidenceFromMinVisits", () => {
 });
 
 describe("computeBsiV1FromTurnAnalyses", () => {
-  it("computes scoreDelta / winrateDelta / rank for scored signal", () => {
+  it("scored: scoreBestMinusPlayed / winrateBestMinusPlayed + deprecated aliases match", () => {
     const r = computeBsiV1FromTurnAnalyses([baseOk()]);
     expect(r.version).toBe("bsi-v1");
     expect(r.computedFrom).toBe("multi-turn-katago-analysis-v1");
@@ -73,16 +73,48 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     expect(s.status).toBe("scored");
     expect(s.bestMove).toBe("D16");
     expect(s.playedMoveRank).toBe(3);
+    expect(s.scoreBestMinusPlayed).toBeCloseTo(3.2, 5);
+    expect(s.winrateBestMinusPlayed).toBeCloseTo(0.08, 5);
     expect(s.scoreDelta).toBeCloseTo(3.2, 5);
     expect(s.winrateDelta).toBeCloseTo(0.08, 5);
     expect(s.bsiScore).toBeGreaterThanOrEqual(0);
     expect(s.bsiScore).toBeLessThanOrEqual(100);
+    expect(s.bsiRaw).toBeDefined();
+    expect(s.bsiRaw).toBeLessThanOrEqual(1);
     expect(s.severity).toBeDefined();
+    expect(s.bsiBand).toBe(s.severity);
     expect(s.confidence).toBeDefined();
     expect(s.visitConfidence).toBeLessThanOrEqual(1);
+    expect(s.scoreMetricUsed).toBe("scoreLead");
+    expect(s.scorePerspective).toBe("katago_output");
+    expect(s.winratePerspective).toBe("katago_output");
+    expect(s.interpretationStatus).toBe("provisional");
+    expect(s.components.moveInfosCount).toBe(3);
+    expect(s.components.zComposite).toBeDefined();
   });
 
-  it("played_move_not_in_candidates when not in moveInfos", () => {
+  it("strong loss reaches bsiScore >= 80 (critical band reachable)", () => {
+    const t = baseOk({
+      playedMoveRank: 18,
+      moveSummary: {
+        best: { move: "D16", scoreLead: 12, winrate: 0.92, visits: 400 },
+        played: { move: "Q16", scoreLead: -4, winrate: 0.15, visits: 400 },
+      },
+    });
+    const r = computeBsiV1FromTurnAnalyses([t]);
+    const s = r.signals[0]!;
+    expect(s.bsiScore).toBeGreaterThanOrEqual(80);
+    expect(s.severity).toBe("critical");
+    expect(s.bsiBand).toBe("critical");
+  });
+
+  it("passes engine / multi max visits into components", () => {
+    const r = computeBsiV1FromTurnAnalyses([baseOk()], { engineMaxVisits: 200, multiTurnMaxVisits: 120 });
+    expect(r.signals[0]!.components.engineMaxVisits).toBe(200);
+    expect(r.signals[0]!.components.multiTurnMaxVisits).toBe(120);
+  });
+
+  it("played_move_not_in_candidates does not score but keeps components", () => {
     const t = baseOk({
       comparisonReady: {
         playedMoveFoundInCandidates: false,
@@ -93,11 +125,15 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     const r = computeBsiV1FromTurnAnalyses([t]);
     expect(r.scoredCount).toBe(0);
     expect(r.insufficientCount).toBe(1);
-    expect(r.signals[0]!.status).toBe("played_move_not_in_candidates");
-    expect(r.signals[0]!.bsiScore).toBeUndefined();
+    const s = r.signals[0]!;
+    expect(s.status).toBe("played_move_not_in_candidates");
+    expect(s.bsiScore).toBeUndefined();
+    expect(s.components.moveInfosCount).toBe(3);
+    expect(s.scoreMetricUsed).toBe("none");
+    expect(s.scorePerspective).toBe("unknown");
   });
 
-  it("uses scoreMean when scoreLead missing", () => {
+  it("scoreMetricUsed scoreMean when only scoreMean on both rows", () => {
     const t = baseOk({
       moveSummary: {
         best: { move: "D16", scoreMean: 1.5, winrate: 0.55, visits: 100 },
@@ -106,7 +142,8 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     });
     const r = computeBsiV1FromTurnAnalyses([t]);
     expect(r.signals[0]!.status).toBe("scored");
-    expect(r.signals[0]!.scoreDelta).toBeCloseTo(1, 5);
+    expect(r.signals[0]!.scoreMetricUsed).toBe("scoreMean");
+    expect(r.signals[0]!.scoreBestMinusPlayed).toBeCloseTo(1, 5);
   });
 
   it("score-only path when winrate missing", () => {
@@ -118,8 +155,9 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     });
     const r = computeBsiV1FromTurnAnalyses([t]);
     expect(r.signals[0]!.status).toBe("scored");
+    expect(r.signals[0]!.winrateBestMinusPlayed).toBeUndefined();
     expect(r.signals[0]!.winrateDelta).toBeUndefined();
-    expect(r.signals[0]!.scoreDelta).toBe(1);
+    expect(r.signals[0]!.scoreBestMinusPlayed).toBe(1);
   });
 
   it("insufficient_data when no score and no winrate pair", () => {
@@ -132,6 +170,7 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     const r = computeBsiV1FromTurnAnalyses([t]);
     expect(r.signals[0]!.status).toBe("insufficient_data");
     expect(r.signals[0]!.bsiScore).toBeUndefined();
+    expect(r.signals[0]!.scoreMetricUsed).toBe("none");
   });
 
   it("insufficient_data when moveSummary missing (legacy row)", () => {
@@ -171,5 +210,6 @@ describe("computeBsiV1FromTurnAnalyses", () => {
     const r = computeBsiV1FromTurnAnalyses([baseOk()]);
     const json = JSON.stringify(r);
     expect(json).not.toMatch(/패착|악수|mistake/i);
+    expect(json).not.toMatch(/top_mistakes/);
   });
 });

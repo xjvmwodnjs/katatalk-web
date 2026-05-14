@@ -31,7 +31,7 @@
 - [x] **analysis plan v1** — SGF 전체 수 파싱·`turnIndex`/`player`/`gtpMove`·간격+최종국면 후보(`shared/analysisPlanV1.ts`, `server/analysisPlan.ts`). KataGo는 1회; `result.analysisPlan`에 동봉.
 - [x] **multi-turn KataGo raw v1** — `analysisPlan` 후보별 착수 직전 국면 추가 분석(`turnAnalyses`, `multiTurnAnalysis`). 배치 시 stdout `id` 중복·누락 검증, 순차 폴백은 env 로만. 운영 전 **로컬 KataGo로 stdin JSONL 배치 smoke** 필수(README).
 - [ ] **KataGo worker 고도화** — stdout 스트리밍·상한, raw Storage/artifact 정책, GPU 호스트 분리.
-- [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1` (`shared/bsiV1.ts`, `server/bsiV1.ts`). 패착·`top_mistakes`·자연어 없음. ADI·Concept Tagger·LLM·Q&A 미구현.
+- [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1`·`components`·perspective 메타(`provisional`). KataGo score/winrate 축은 샘플 검증 후 확정. `top_mistakes`/해설 미사용.
 - [ ] **KataGo / LLM** — ADI·해설 파이프라인(V2.5 문서 기준).
 
 ## 운영 배포 체크리스트
