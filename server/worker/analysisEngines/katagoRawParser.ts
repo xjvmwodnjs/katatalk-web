@@ -28,6 +28,38 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
+export function rootHasScoreLeadOrMean(root: Record<string, unknown>): boolean {
+  if (typeof root.scoreLead === "number") {
+    return true;
+  }
+  return typeof root.scoreMean === "number";
+}
+
+/**
+ * Worker v1 단일 분석 JSON 이 최소 요건을 만족하는지 검사 (multi-turn 각 응답에도 동일 적용).
+ */
+export function validateKatagoWorkerV1Document(doc: KatagoSmokeDocument): void {
+  const fmt = doc.katago.rawFormat;
+  if (fmt === "unknown") {
+    throw new Error("KATAGO_OUTPUT_INVALID: stdout 이 비어 있거나 JSON/JSONL 로 파싱할 수 없습니다.");
+  }
+  const root = doc.katago.rootInfo;
+  if (!isPlainObject(root) || Object.keys(root).length === 0) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: rootInfo 가 없거나 비어 있습니다.");
+  }
+  if (doc.katago.moveInfosCount <= 0) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: moveInfos 가 없습니다.");
+  }
+  if (!doc.normalized.hasWinrate) {
+    throw new Error("KATAGO_OUTPUT_INCOMPLETE: winrate 정보가 없습니다(rootInfo 또는 moveInfos).");
+  }
+  if (!doc.normalized.hasScoreLead && !rootHasScoreLeadOrMean(root)) {
+    throw new Error(
+      "KATAGO_OUTPUT_INCOMPLETE: scoreLead 또는 scoreMean 이 없어 요약 승률·집 차를 확정할 수 없습니다."
+    );
+  }
+}
+
 /** 줄 단위 또는 단일 JSON 객체에서 파싱 가능한 객체 목록 추출 */
 export function extractJsonObjectsFromKatagoStdout(raw: string): unknown[] {
   const t = raw.trim();

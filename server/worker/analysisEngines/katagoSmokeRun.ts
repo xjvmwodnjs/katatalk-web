@@ -197,28 +197,16 @@ export function summarizeKatagoStderrForDb(stderr: string, maxLen = 420): string
   return oneLine.length < t.length ? `${oneLine}…` : oneLine;
 }
 
-/**
- * Worker 전용: KataGo `analysis` 1회 실행. raw stdout 은 호출자가 DB에 넣지 않는다.
- * timeout 시 SIGTERM → grace 후 SIGKILL.
- */
-export async function runKatagoWorkerAnalysisV1(opts: {
-  sgfContent: string;
+export async function runKatagoWorkerAnalysisQueryLines(opts: {
+  /** 각 줄은 JSON + `\n` (여러 줄이면 한 프로세스 stdin 에 연속 기록) */
+  stdinPayload: string;
   jobId: string;
   env?: NodeJS.ProcessEnv;
   spawnFn?: SpawnFn;
+  timeoutMs: number;
 }): Promise<{ stdout: string; stderr: string; code: number | null; commandPreview: string }> {
   const env = opts.env != null ? { ...process.env, ...opts.env } : process.env;
   const paths = assertKatagoSmokePathsFromEnv(env);
-  const maxVisits = readKatagoMaxVisitsFrom(env);
-  const timeoutMs = readKatagoTimeoutMsFrom(env);
-  const parsed = parseMinimalSgfForSmoke(opts.sgfContent);
-  const queryLine = buildKatagoAnalysisQueryLine({
-    boardSize: parsed.boardSize,
-    komi: parsed.komi,
-    moves: parsed.moves,
-    maxVisits,
-    id: `katatalk-worker-${opts.jobId}-${timestampForFilename()}`,
-  });
   const argv = buildKatagoAnalysisArgv(paths);
   const commandPreview = `${formatKatagoSmokeCommandPreview(paths.binary, argv)} <stdin-json>`;
 
@@ -246,7 +234,7 @@ export async function runKatagoWorkerAnalysisV1(opts: {
     if (!stdin) {
       throw new Error("KATAGO_STDIN_UNAVAILABLE: KataGo stdin 을 열 수 없습니다.");
     }
-    stdin.write(queryLine, "utf8");
+    stdin.write(opts.stdinPayload, "utf8");
     stdin.end();
   } catch (e) {
     cancelKillFallback();
@@ -274,7 +262,7 @@ export async function runKatagoWorkerAnalysisV1(opts: {
   };
 
   try {
-    const raced = await raceOutputWithTimeout(outputPromise, timeoutMs, onTimeout);
+    const raced = await raceOutputWithTimeout(outputPromise, opts.timeoutMs, onTimeout);
     return { stdout: raced.stdout, stderr: raced.stderr, code: raced.code, commandPreview };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -283,6 +271,36 @@ export async function runKatagoWorkerAnalysisV1(opts: {
     }
     throw e instanceof Error ? e : new Error(msg);
   }
+}
+
+/**
+ * Worker 전용: KataGo `analysis` 1회 실행. raw stdout 은 호출자가 DB에 넣지 않는다.
+ * timeout 시 SIGTERM → grace 후 SIGKILL.
+ */
+export async function runKatagoWorkerAnalysisV1(opts: {
+  sgfContent: string;
+  jobId: string;
+  env?: NodeJS.ProcessEnv;
+  spawnFn?: SpawnFn;
+}): Promise<{ stdout: string; stderr: string; code: number | null; commandPreview: string }> {
+  const env = opts.env != null ? { ...process.env, ...opts.env } : process.env;
+  const maxVisits = readKatagoMaxVisitsFrom(env);
+  const timeoutMs = readKatagoTimeoutMsFrom(env);
+  const parsed = parseMinimalSgfForSmoke(opts.sgfContent);
+  const queryLine = buildKatagoAnalysisQueryLine({
+    boardSize: parsed.boardSize,
+    komi: parsed.komi,
+    moves: parsed.moves,
+    maxVisits,
+    id: `katatalk-worker-${opts.jobId}-${timestampForFilename()}`,
+  });
+  return runKatagoWorkerAnalysisQueryLines({
+    stdinPayload: queryLine,
+    jobId: opts.jobId,
+    env: opts.env,
+    spawnFn: opts.spawnFn,
+    timeoutMs,
+  });
 }
 
 /** CLI 진입 — 성공 시 경로만 stdout 에 한 줄씩(원문 없음). */

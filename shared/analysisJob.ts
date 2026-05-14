@@ -92,3 +92,11 @@ export type {
   AnalysisPlanCandidateTurnV1,
   BuildAnalysisPlanV1Options,
 } from "./analysisPlanV1";
+
+/** `analysis_jobs.result.turnAnalyses` / `multiTurnAnalysis` — `shared/multiTurnKatagoAnalysisV1.ts` */
+export type {
+  TurnAnalysisEntryV1,
+  TurnAnalysisEntrySuccessV1,
+  TurnAnalysisEntryFailedV1,
+  MultiTurnKatagoAnalysisMetaV1,
+} from "./multiTurnKatagoAnalysisV1";

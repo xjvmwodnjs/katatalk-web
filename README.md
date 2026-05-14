@@ -8,7 +8,11 @@ React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **�
 
 ### analysis plan v1 (후보 턴만)
 
-BSI/ADI·다중 KataGo 호출 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수순을 나중에 분석할지** 후보 목록만 만든다. 스키마·빌더는 `shared/analysisPlanV1.ts`, `server/analysisPlan.ts` 이고, KataGo worker v1 결과 JSON에는 `analysisPlan` 필드로 포함된다(여전히 **KataGo 1회**만 실행).
+BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수순을 나중에 분석할지** 후보 목록만 만든다. 스키마·빌더는 `shared/analysisPlanV1.ts`, `server/analysisPlan.ts` 이고, worker 결과 JSON에는 `analysisPlan` 필드로 포함된다(SGF 파싱만으로 생성, **추가 KataGo 없음**).
+
+### multi-turn KataGo raw v1
+
+`analysisPlan.candidateTurns` 중 상위 `KATAGO_MULTI_TURN_MAX` 개(기본 6, `final_position` 우선)에 대해 **해당 수를 두기 직전 국면**을 추가로 분석한다. 기본은 **한 KataGo 프로세스에 stdin JSON 여러 줄**을 넣고 stdout JSONL 을 `id` 로 매칭한다. `KATAGO_MULTI_TURN_BATCH=0` 이면 수순마다 프로세스를 따로 띄우므로 **비효율적**이며, 추후 배치·스트리밍 개선 예정이다. `result.turnAnalyses`·`multiTurnAnalysis` 에 요약만 저장하고(raw stdout DB 저장 없음) BSI/ADI·LLM 은 없다.
 
 ## 로컬 실행
 

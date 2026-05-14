@@ -3,7 +3,7 @@ import { updateAnalysisJobRow } from "../creditService";
 import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
 
 /**
- * KataGo 분석용 DB 파이프라인 — worker 에서 `analyzeSgfKatago` 로 1회 실행 후 `result` 저장.
+ * KataGo 분석용 DB 파이프라인 — worker 에서 `analyzeSgfKatago` 로 최종 국면 1회 + multi-turn 배치(환경 설정 시) 실행 후 `result` 저장.
  */
 export async function runKatagoAnalysisDbPipeline(args: {
   jobId: string;

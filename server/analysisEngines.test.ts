@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { PassThrough, Writable } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   analyzeSgfKatago,
   analyzeSgfKatagoStub,
@@ -122,12 +122,21 @@ describe("analyzeSgfKatago (worker v1)", () => {
   const saved = { ...process.env };
   let stdinCaptured = "";
 
+  beforeEach(() => {
+    process.env.KATAGO_MULTI_TURN_MAX = "0";
+  });
+
   afterEach(() => {
     process.env.KATAGO_BINARY_PATH = saved.KATAGO_BINARY_PATH;
     process.env.KATAGO_CONFIG_PATH = saved.KATAGO_CONFIG_PATH;
     process.env.KATAGO_MODEL_PATH = saved.KATAGO_MODEL_PATH;
     process.env.KATAGO_MAX_VISITS = saved.KATAGO_MAX_VISITS;
     process.env.KATAGO_ANALYSIS_TIMEOUT_MS = saved.KATAGO_ANALYSIS_TIMEOUT_MS;
+    if (saved.KATAGO_MULTI_TURN_MAX === undefined) {
+      delete process.env.KATAGO_MULTI_TURN_MAX;
+    } else {
+      process.env.KATAGO_MULTI_TURN_MAX = saved.KATAGO_MULTI_TURN_MAX;
+    }
     stdinCaptured = "";
   });
 
@@ -152,6 +161,7 @@ describe("analyzeSgfKatago (worker v1)", () => {
     process.env.KATAGO_MODEL_PATH = "/x/model";
     process.env.KATAGO_MAX_VISITS = "40";
     process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "8000";
+    process.env.KATAGO_MULTI_TURN_MAX = "0";
 
     const stdout = JSON.stringify({
       rootInfo: { winrate: 0.52, scoreLead: 0.4 },
