@@ -88,8 +88,7 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
   };
 
   if (routing.pipeline === "engine_mismatch") {
-    const refund =
-      routing.mismatchCode === "ENGINE_MISMATCH_WORKER_MOCK" && row.is_mock !== true;
+    const refund = row.credit_cost > 0;
     await failClaimedJobEngineMismatch({
       row,
       lease,

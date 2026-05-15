@@ -102,12 +102,40 @@ export function logAnalysisEngineSnapshot(args: {
   console.log("[analysis-engine]", payload);
 }
 
-/** DB error_message — 코드 접두 유지, SGF 원문·과도한 stderr 제거 */
-export function sanitizeAnalysisJobErrorMessage(raw: string, maxLen = 400): string {
-  let msg = raw.replace(/\r\n/g, "\n").trim();
-  if (msg.includes("(;")) {
-    msg = msg.replace(/\(;[\s\S]{0,200}/g, "(;…)");
+const SGF_TREE_REDACTED = "(;…)";
+const SGF_PROP_REDACTED = "[SGF_PROP_REDACTED]";
+
+/** error_message 본문에서 SGF-like payload 제거 (길이 무관) */
+function redactSgfLikePayloadInErrorBody(body: string): string {
+  let t = body;
+  for (let pass = 0; pass < 8; pass++) {
+    const prev = t;
+    t = t.replace(/\(;[\s\S]*?\)/g, SGF_TREE_REDACTED);
+    if (t === prev) {
+      break;
+    }
   }
+  if (t.includes("(;")) {
+    t = t.replace(/\(;[\s\S]*/g, SGF_TREE_REDACTED);
+  }
+  t = t.replace(/;[BW]\[[^\]]*\]/gi, "");
+  t = t.replace(/\b[A-Z]{1,2}\[[^\]]*\]/g, SGF_PROP_REDACTED);
+  t = t.replace(/(?:\(;…\)\s*)+/g, `${SGF_TREE_REDACTED} `);
+  t = t.replace(/(?:\[SGF_PROP_REDACTED\]\s*)+/g, `${SGF_PROP_REDACTED} `);
+  return t.replace(/\s{2,}/g, " ").trim();
+}
+
+/** DB error_message — 코드 접두 유지, SGF 원문·property fragment·긴 tail 제거 */
+export function sanitizeAnalysisJobErrorMessage(raw: string, maxLen = 400): string {
+  const normalized = raw.replace(/\r\n/g, "\n").trim();
+  const prefixMatch = /^([A-Z][A-Z0-9_]+):\s*([\s\S]*)$/.exec(normalized);
+  const prefix = prefixMatch ? `${prefixMatch[1]}: ` : "";
+  const body = prefixMatch ? prefixMatch[2]! : normalized;
+  let cleaned = redactSgfLikePayloadInErrorBody(body);
+  if (!cleaned && prefix) {
+    cleaned = "(details redacted)";
+  }
+  let msg = `${prefix}${cleaned}`.trim();
   if (msg.length > maxLen) {
     return `${msg.slice(0, maxLen)}…`;
   }

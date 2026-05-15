@@ -130,9 +130,9 @@ describe("processClaimedAnalysisJob engine mismatch", () => {
     process.env.ANALYSIS_ENGINE = "mock";
     const { runMockAnalysisDbPipeline } = await import("./mockAnalysisDbPipeline");
     const { runKatagoAnalysisDbPipeline } = await import("./worker/katagoAnalysisDbPipeline");
-    const { updateAnalysisJobRow } = await import("./creditService");
+    const { updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
 
-    await processClaimedAnalysisJob(makeRow({ is_mock: false }));
+    await processClaimedAnalysisJob(makeRow({ is_mock: false, credit_cost: 1 }));
 
     expect(runMockAnalysisDbPipeline).not.toHaveBeenCalled();
     expect(runKatagoAnalysisDbPipeline).not.toHaveBeenCalled();
@@ -143,6 +143,35 @@ describe("processClaimedAnalysisJob engine mismatch", () => {
     };
     expect(patch.status).toBe("failed");
     expect(patch.error_message).toContain("ENGINE_MISMATCH_WORKER_MOCK");
+    expect(refundCreditIfJobFailedByProfileId).toHaveBeenCalled();
+  });
+
+  it("is_mock=true + worker katago refunds paid job without running pipelines", async () => {
+    process.env.ANALYSIS_ENGINE = "katago";
+    const { runMockAnalysisDbPipeline } = await import("./mockAnalysisDbPipeline");
+    const { runKatagoAnalysisDbPipeline } = await import("./worker/katagoAnalysisDbPipeline");
+    const { updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
+
+    await processClaimedAnalysisJob(makeRow({ is_mock: true, credit_cost: 1 }));
+
+    expect(runKatagoAnalysisDbPipeline).not.toHaveBeenCalled();
+    expect(runMockAnalysisDbPipeline).not.toHaveBeenCalled();
+    const patch = vi.mocked(updateAnalysisJobRow).mock.calls[0]?.[1] as {
+      status?: string;
+      error_message?: string;
+    };
+    expect(patch.status).toBe("failed");
+    expect(patch.error_message).toContain("ENGINE_MISMATCH_JOB_MOCK");
+    expect(refundCreditIfJobFailedByProfileId).toHaveBeenCalled();
+  });
+
+  it("engine mismatch with credit_cost=0 does not refund", async () => {
+    process.env.ANALYSIS_ENGINE = "katago";
+    const { refundCreditIfJobFailedByProfileId } = await import("./creditService");
+
+    await processClaimedAnalysisJob(makeRow({ is_mock: true, credit_cost: 0 }));
+
+    expect(refundCreditIfJobFailedByProfileId).not.toHaveBeenCalled();
   });
 });
 
@@ -152,5 +181,34 @@ describe("sanitizeAnalysisJobErrorMessage", () => {
     const out = sanitizeAnalysisJobErrorMessage(`fail ${sgf} tail`);
     expect(out).not.toContain("B[pd]");
     expect(out).toContain("(;…)");
+  });
+
+  it("redacts 500+ char SGF while keeping error code prefix", () => {
+    const moves = Array.from({ length: 120 }, (_, i) =>
+      i % 2 === 0 ? `;B[${String.fromCharCode(97 + (i % 19))}${String.fromCharCode(97 + (i % 19))}]` : ";W[]"
+    ).join("");
+    const longSgf = `(;SZ[19]${moves})`;
+    expect(longSgf.length).toBeGreaterThan(500);
+    const out = sanitizeAnalysisJobErrorMessage(`SGF_PARSE_FAILED: parse error ${longSgf} end`);
+    expect(out.startsWith("SGF_PARSE_FAILED:")).toBe(true);
+    expect(out).not.toMatch(/[BW]\[/);
+    expect(out).not.toContain("SZ[");
+    expect(out).not.toContain(longSgf.slice(0, 40));
+  });
+
+  it("redacts multiple (; ...) fragments and newline SGF", () => {
+    const out = sanitizeAnalysisJobErrorMessage(
+      "KATAGO_QUERY_BUILD_FAILED: a (;SZ[9];B[aa])\n and (;SZ[13];W[bb]) tail"
+    );
+    expect(out.startsWith("KATAGO_QUERY_BUILD_FAILED:")).toBe(true);
+    expect(out).not.toMatch(/SZ\[/);
+    expect(out).not.toMatch(/B\[/);
+    expect(out).not.toMatch(/W\[/);
+    expect(out).toContain("(;…)");
+  });
+
+  it("leaves short non-SGF errors readable", () => {
+    const out = sanitizeAnalysisJobErrorMessage("KATAGO_EXIT_NONZERO: exit 1");
+    expect(out).toBe("KATAGO_EXIT_NONZERO: exit 1");
   });
 });
