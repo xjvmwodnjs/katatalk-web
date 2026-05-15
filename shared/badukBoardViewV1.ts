@@ -1,0 +1,111 @@
+/**
+ * Baduk Board Renderer v1 — 순수 헬퍼(React 없음).
+ * ghost 좌표는 GTP 문자열만 변환하며 SGF 재파싱 없음.
+ */
+
+import type { AnalysisResultKeyMoveCandidateV1, AnalysisResultVariationPreviewV1 } from "./analysisResultViewModel";
+import { gtpCoordToBoardXY } from "./sgfPlaybackV1";
+
+export type BadukBoardGhostMarkerV1 = {
+  x: number;
+  y: number;
+  gtp: string;
+  /** candidate | pv */
+  kind: "candidate" | "pv";
+};
+
+/** 보드 크기별 화점(0-based x,y). 19×19만 9개, 그 외는 간단 패턴. */
+export function boardStarPointsV1(boardSize: number): [number, number][] {
+  if (boardSize === 19) {
+    return [
+      [3, 3],
+      [9, 3],
+      [15, 3],
+      [3, 9],
+      [9, 9],
+      [15, 9],
+      [3, 15],
+      [9, 15],
+      [15, 15],
+    ];
+  }
+  if (boardSize === 13) {
+    return [
+      [3, 3],
+      [9, 3],
+      [3, 9],
+      [9, 9],
+      [6, 6],
+    ];
+  }
+  if (boardSize === 9) {
+    return [
+      [2, 2],
+      [6, 2],
+      [2, 6],
+      [6, 6],
+      [4, 4],
+    ];
+  }
+  if (boardSize >= 7) {
+    const c = Math.floor(boardSize / 2);
+    return [[c, c]];
+  }
+  return [];
+}
+
+function addGhost(
+  out: BadukBoardGhostMarkerV1[],
+  seen: Set<string>,
+  gtp: string | null | undefined,
+  kind: BadukBoardGhostMarkerV1["kind"],
+  boardSize: number,
+  occupied: Set<string>
+): void {
+  if (!gtp || /^pass$/i.test(gtp.trim())) {
+    return;
+  }
+  const xy = gtpCoordToBoardXY(gtp, boardSize);
+  if (!xy) {
+    return;
+  }
+  const key = `${xy.x},${xy.y}`;
+  if (seen.has(key) || occupied.has(key)) {
+    return;
+  }
+  seen.add(key);
+  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind });
+}
+
+/** 선택 수순의 후보수·PV 첫 수를 ghost 로 수집(실돌 위치는 제외). */
+export function collectBadukBoardGhostMarkersV1(args: {
+  boardSize: number;
+  occupiedKeys: Iterable<string>;
+  selectedTurnIndex: number | null;
+  candidates: AnalysisResultKeyMoveCandidateV1[];
+  variationPreview: AnalysisResultVariationPreviewV1[];
+}): BadukBoardGhostMarkerV1[] {
+  const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview } = args;
+  if (selectedTurnIndex == null) {
+    return [];
+  }
+  const occupied = new Set(occupiedKeys);
+  const out: BadukBoardGhostMarkerV1[] = [];
+  const seen = new Set<string>();
+
+  const cand = candidates.find((c) => c.turnIndex === selectedTurnIndex);
+  if (cand?.bestMove) {
+    addGhost(out, seen, cand.bestMove, "candidate", boardSize, occupied);
+  }
+
+  const pvRow = variationPreview.find((p) => p.turnIndex === selectedTurnIndex);
+  if (pvRow?.bestMove) {
+    addGhost(out, seen, pvRow.bestMove, "candidate", boardSize, occupied);
+  }
+  const firstPv = pvRow?.pv?.[0];
+  if (firstPv) {
+    addGhost(out, seen, firstPv, "pv", boardSize, occupied);
+  }
+
+  return out;
+}

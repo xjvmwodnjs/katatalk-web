@@ -4,6 +4,8 @@ import type { Language } from "@/lib/mockData";
 import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import AnalysisCandidateList from "@/components/AnalysisCandidateList";
 import AnalysisVariationPreview from "@/components/AnalysisVariationPreview";
+import BadukBoardView from "@/components/BadukBoardView";
+import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
 import {
   getAnalysisResultUiStrings,
   normalizeAnalysisResultLang,
@@ -36,6 +38,20 @@ export default function AnalysisResultView({ data, lang }: Props) {
     () => buildAnalysisResultViewModel(data, { selectedTurnIndex }),
     [data, selectedTurnIndex]
   );
+
+  const boardGhosts = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+      return [];
+    }
+    const occupied = vm.sgfPlayback.stones.map((st) => `${st.x},${st.y}`);
+    return collectBadukBoardGhostMarkersV1({
+      boardSize: vm.sgfPlayback.boardSize,
+      occupiedKeys: occupied,
+      selectedTurnIndex,
+      candidates: vm.keyMoveCandidates,
+      variationPreview: vm.variationPreview,
+    });
+  }, [vm, selectedTurnIndex]);
 
   if (vm.kind === "mock-legacy") {
     return (
@@ -126,7 +142,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
           selectedTurnIndex={selectedTurnIndex}
           lang={lang}
         />
-        <section className="rounded-2xl border border-dashed border-white/15 bg-black/15 p-6 flex flex-col justify-center min-h-[200px]">
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 flex flex-col min-h-[200px]">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{t.boardTitle}</h3>
             <span
@@ -150,39 +166,17 @@ export default function AnalysisResultView({ data, lang }: Props) {
             </div>
           ) : (
             <>
-              <p className="text-xs text-slate-600 mb-3" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+              <p className="text-xs text-slate-500 mb-2" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
                 {t.boardSnapshotHint}
               </p>
-              <dl className="text-sm text-slate-400 space-y-2 font-mono">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-slate-500 shrink-0" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {t.boardDebugOrder}
-                  </dt>
-                  <dd className="text-amber-100">{vm.sgfPlayback.selectedTurnIndex}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-slate-500 shrink-0" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {t.boardDebugLast}
-                  </dt>
-                  <dd className="text-amber-100">
-                    {vm.sgfPlayback.lastMove
-                      ? `${vm.sgfPlayback.lastMove.gtp} · (${vm.sgfPlayback.lastMove.x},${vm.sgfPlayback.lastMove.y})`
-                      : t.boardNoLast}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-slate-500 shrink-0" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {t.boardDebugStones}
-                  </dt>
-                  <dd className="text-amber-100">{vm.sgfPlayback.stones.length}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-slate-500 shrink-0" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {t.boardDebugSz}
-                  </dt>
-                  <dd className="text-amber-100">{vm.sgfPlayback.boardSize}</dd>
-                </div>
-              </dl>
+              <p className="text-[11px] text-slate-600 mb-3">{t.boardViewOnlyNote}</p>
+              <BadukBoardView
+                boardSize={vm.sgfPlayback.boardSize}
+                stones={vm.sgfPlayback.stones}
+                lastMove={vm.sgfPlayback.lastMove}
+                ghosts={boardGhosts}
+                lang={uiLang}
+              />
               {vm.sgfPlayback.warnings.length > 0 ? (
                 <ul className="mt-3 text-[11px] text-amber-200/80 space-y-1 list-disc pl-4">
                   {vm.sgfPlayback.warnings.map((w, i) => (

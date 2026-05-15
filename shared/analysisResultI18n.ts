@@ -397,6 +397,12 @@ type UiBlock = {
   boardDebugStones: string;
   boardDebugSz: string;
   boardNoLast: string;
+  boardAriaSnapshot: string;
+  boardViewOnlyNote: string;
+  boardGhostLegend: string;
+  boardGhostLegendFallback: string;
+  boardGhostPvLegend: string;
+  boardGhostPvLegendFallback: string;
   winrateTitle: string;
   winrateYAxis: string;
   winrateEmpty: string;
@@ -445,9 +451,15 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     mockBanner: "데모용 예시 결과입니다. 실제 KataGo 분석 결과가 아닙니다.",
     unknownBanner: "지원하지 않는 결과 형식입니다.",
     boardTitle: "바둑판",
-    boardBadge: "준비 중 · 다음 단계 제공 예정",
-    boardPhGrid: "바둑판 재생은 다음 단계에서 제공됩니다.",
-    boardSnapshotHint: "SGF 메인라인 스냅샷(텍스트만, 격자 없음)",
+    boardBadge: "보기 전용 · v1",
+    boardPhGrid: "SGF 원문이 없어 바둑판을 표시할 수 없습니다.",
+    boardSnapshotHint: "선택한 수순까지의 메인라인 국면입니다(착수 불가).",
+    boardAriaSnapshot: "바둑판 국면 스냅샷",
+    boardViewOnlyNote: "보기 전용 — 착수·변화도 탐색은 지원하지 않습니다.",
+    boardGhostLegend: "반투명 마커: 참고 후보수",
+    boardGhostLegendFallback: "반투명 마커: 참고 좌표",
+    boardGhostPvLegend: "KataGo 참고도(PV) 첫 수",
+    boardGhostPvLegendFallback: "참고도 첫 수",
     boardDebugOrder: "현재 수순(메인라인)",
     boardDebugLast: "마지막 착수(GTP)",
     boardDebugStones: "돌 개수",
@@ -498,9 +510,15 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     mockBanner: "Demo sample result — not a live KataGo analysis output.",
     unknownBanner: "Unsupported result format.",
     boardTitle: "Board",
-    boardBadge: "Coming soon — next release",
-    boardPhGrid: "Board replay will arrive in a later release.",
-    boardSnapshotHint: "SGF mainline snapshot (text only, no grid)",
+    boardBadge: "View only · v1",
+    boardPhGrid: "No SGF text — board cannot be shown.",
+    boardSnapshotHint: "Mainline position up to the selected move (no placing stones).",
+    boardAriaSnapshot: "Go board position snapshot",
+    boardViewOnlyNote: "View only — no moves or variation browsing.",
+    boardGhostLegend: "Faded markers: reference candidate moves",
+    boardGhostLegendFallback: "Faded markers: reference coordinates",
+    boardGhostPvLegend: "KataGo reference line (PV) first move",
+    boardGhostPvLegendFallback: "Reference line first move",
     boardDebugOrder: "Current move index (mainline)",
     boardDebugLast: "Last stone (GTP)",
     boardDebugStones: "Stone count",
@@ -551,9 +569,15 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     mockBanner: "デモ用のサンプルで、本番の KataGo 解析ではありません。",
     unknownBanner: "未対応の結果形式です。",
     boardTitle: "碁盤",
-    boardBadge: "準備中 · 次段階で提供予定",
-    boardPhGrid: "盤面再生は次の段階で提供予定です。",
-    boardSnapshotHint: "SGF メインラインスナップショット（テキストのみ・格子なし）",
+    boardBadge: "閲覧のみ · v1",
+    boardPhGrid: "SGF 本文がないため盤面を表示できません。",
+    boardSnapshotHint: "選択手数までのメインライン局面です（着手不可）。",
+    boardAriaSnapshot: "碁盤局面スナップショット",
+    boardViewOnlyNote: "閲覧のみ — 着手・変化図の探索は未対応です。",
+    boardGhostLegend: "半透明マーカー: 参考候補手",
+    boardGhostLegendFallback: "半透明マーカー: 参考座標",
+    boardGhostPvLegend: "KataGo 参考図(PV)の初手",
+    boardGhostPvLegendFallback: "参考図の初手",
     boardDebugOrder: "現在の手数（メインライン）",
     boardDebugLast: "最終着手（GTP）",
     boardDebugStones: "石の数",
@@ -604,9 +628,15 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     mockBanner: "演示用示例，不是真实 KataGo 分析结果。",
     unknownBanner: "不支持的结果格式。",
     boardTitle: "棋盘",
-    boardBadge: "准备中 · 下阶段提供",
-    boardPhGrid: "棋盘回放将在后续版本提供。",
-    boardSnapshotHint: "SGF 主线快照（仅文本，无网格）",
+    boardBadge: "仅查看 · v1",
+    boardPhGrid: "无 SGF 正文，无法显示棋盘。",
+    boardSnapshotHint: "至所选手数的主线局面（不可落子）。",
+    boardAriaSnapshot: "棋盘局面快照",
+    boardViewOnlyNote: "仅查看 — 不支持落子或变化图浏览。",
+    boardGhostLegend: "半透明标记：参考候选手",
+    boardGhostLegendFallback: "半透明标记：参考坐标",
+    boardGhostPvLegend: "KataGo 参考图(PV)第一手",
+    boardGhostPvLegendFallback: "参考图第一手",
     boardDebugOrder: "当前手数（主线）",
     boardDebugLast: "最后一手（GTP）",
     boardDebugStones: "棋子数",

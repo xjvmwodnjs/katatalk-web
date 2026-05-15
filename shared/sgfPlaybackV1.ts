@@ -118,6 +118,55 @@ function isTtPassConvention(pointLower: string, boardSize: number): boolean {
   return pointLower === "tt" && boardSize <= 19;
 }
 
+/** GTP 열 문자(A–T, I 생략) → 0-based 열 인덱스. 실패 시 null */
+export function gtpColumnToIndex(colLetter: string, boardSize: number): number | null {
+  const ch = colLetter.trim().toUpperCase();
+  if (ch.length !== 1 || ch < "A" || ch > "T" || ch === "I") {
+    return null;
+  }
+  let colIdx = ch.charCodeAt(0) - "A".charCodeAt(0);
+  if (colIdx >= 8) {
+    colIdx -= 1;
+  }
+  if (colIdx < 0 || colIdx >= boardSize) {
+    return null;
+  }
+  return colIdx;
+}
+
+/**
+ * GTP 좌표 → 보드 엔진과 동일한 0-based (x, y). `pass`·파싱 실패 시 null.
+ * 행 번호는 GTP 관례(하단=1, 상단=boardSize)이며 y 는 SGF row-from-top 과 같다.
+ */
+export function gtpCoordToBoardXY(gtp: string, boardSize: number): { x: number; y: number } | null {
+  const raw = gtp.trim();
+  if (!raw || /^pass$/i.test(raw)) {
+    return null;
+  }
+  const m = /^([A-Za-z]+)(\d+)$/.exec(raw);
+  if (!m) {
+    return null;
+  }
+  const colIdx = gtpColumnToIndex(m[1]!, boardSize);
+  if (colIdx == null) {
+    return null;
+  }
+  const rowNum = Number.parseInt(m[2]!, 10);
+  if (!Number.isFinite(rowNum) || rowNum < 1 || rowNum > boardSize) {
+    return null;
+  }
+  const y = boardSize - rowNum;
+  if (y < 0 || y >= boardSize) {
+    return null;
+  }
+  return { x: colIdx, y };
+}
+
+/** GTP 행 번호(1=하단) 표시용 */
+export function boardYToGtpRow(y: number, boardSize: number): number {
+  return boardSize - y;
+}
+
 /** 착점 → GTP 좌표 또는 pass (실패 시 null) */
 export function sgfPointToGtp(point: string, boardSize: number): string | null {
   const raw = point.trim().toLowerCase();
