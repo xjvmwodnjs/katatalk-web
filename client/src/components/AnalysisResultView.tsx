@@ -5,7 +5,9 @@ import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import AnalysisCandidateList from "@/components/AnalysisCandidateList";
 import AnalysisVariationPreview from "@/components/AnalysisVariationPreview";
 import BadukBoardView from "@/components/BadukBoardView";
+import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
+import { shouldShowBoardTurnNavigationV1 } from "@shared/boardNavigationV1";
 import {
   getAnalysisResultUiStrings,
   normalizeAnalysisResultLang,
@@ -39,6 +41,21 @@ export default function AnalysisResultView({ data, lang }: Props) {
     [data, selectedTurnIndex]
   );
 
+  const showBoardNav =
+    vm.kind === "katago-worker-v1" &&
+    shouldShowBoardTurnNavigationV1({
+      vmKind: vm.kind,
+      sgfPlaceholder: vm.sgfPlayback.placeholder,
+    });
+  const boardNavTotalMoves =
+    vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder
+      ? vm.sgfPlayback.totalMoves
+      : 0;
+  const boardNavTurnIndex =
+    vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder
+      ? vm.sgfPlayback.selectedTurnIndex
+      : 0;
+
   const boardGhosts = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
       return [];
@@ -47,11 +64,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
     return collectBadukBoardGhostMarkersV1({
       boardSize: vm.sgfPlayback.boardSize,
       occupiedKeys: occupied,
-      selectedTurnIndex,
+      selectedTurnIndex: vm.sgfPlayback.selectedTurnIndex,
       candidates: vm.keyMoveCandidates,
       variationPreview: vm.variationPreview,
     });
-  }, [vm, selectedTurnIndex]);
+  }, [vm]);
 
   if (vm.kind === "mock-legacy") {
     return (
@@ -170,6 +187,14 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 {t.boardSnapshotHint}
               </p>
               <p className="text-[11px] text-slate-600 mb-3">{t.boardViewOnlyNote}</p>
+              {showBoardNav ? (
+                <BoardTurnNavigation
+                  selectedTurnIndex={boardNavTurnIndex}
+                  totalMoves={boardNavTotalMoves}
+                  onSelectTurnIndex={setSelectedTurnIndex}
+                  lang={uiLang}
+                />
+              ) : null}
               <BadukBoardView
                 boardSize={vm.sgfPlayback.boardSize}
                 stones={vm.sgfPlayback.stones}

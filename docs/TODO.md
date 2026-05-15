@@ -41,6 +41,7 @@
 - [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인·pass/중복/좌표·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder.
 - [x] **SGF token parser + capture engine v1** — property bracket 이스케이프·주석 속 `;B[]` 오인 방지·변화도 skip 경고·liberty 기반 상대 포획(연결군). ko/자살 미완 경고.
 - [x] **Baduk board renderer v1** — `BadukBoardView` SVG 격자·흑백돌·lastMove 링·ghost(참고 후보/PV). 보기 전용. 9/13/19 SZ.
+- [x] **Board navigation v1** — `BoardTurnNavigation` + `shared/boardNavigationV1.ts`: 처음/이전/다음/끝·슬라이더·`{current}/{total}`. 승률·후보·참고도·보드 동일 `selectedTurnIndex`. mock/placeholder 미표시.
 - [ ] **바둑판 UX** — 착수 인터략션·변화도 탐색·흑백 승률 토글·애니메이션 등은 미구현.
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).
