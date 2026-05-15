@@ -16,6 +16,7 @@ import {
   type SgfPlaybackViewModelV1,
 } from "./sgfPlaybackV1";
 import { normalizeWinratePerspectiveV1, type WinratePerspectivePointV1 } from "./winratePerspectiveV1";
+import { isWinrateTimelineV1, type WinrateTimelinePointV1, type WinrateTimelineV1 } from "./winrateTimelineV1";
 
 export type AnalysisResultVmWarningCodeV1 =
   | "beta_numeric_reference"
@@ -145,14 +146,14 @@ function findAdi(adi: AdiV1Result | undefined, turnIndex: number): AdiV1Signal |
 
 export type AnalysisResultWinratePointV1 = {
   turnIndex: number;
-  player: "B" | "W";
+  player: "B" | "W" | null;
   /** KataGo 원시 0~1 (없으면 null) — mirrors `perspective.rawWinrate` */
   rawWinrate: number | null;
   /** 0~100 표시용 — mirrors `perspective.normalized.displayWinrate` */
   displayWinrate: number | null;
   displayPerspective: "katago_output";
-  currentPlayer: "B" | "W";
-  playerToMove: "B" | "W";
+  currentPlayer: "B" | "W" | null;
+  playerToMove: "B" | "W" | null;
   confidence: "provisional" | "verified";
   /** Normalized perspective (black/white null until verified) */
   perspective: WinratePerspectivePointV1;
@@ -196,6 +197,8 @@ export type KatagoWorkerV1AnalysisViewModel = {
   };
   graph: {
     winrateSeries: AnalysisResultWinratePointV1[];
+    /** true when chart uses `winrateTimelineV1` (full mainline) */
+    winrateSeriesFromTimeline: boolean;
   };
   keyMoveCandidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
@@ -218,7 +221,7 @@ export type MockLegacyAnalysisViewModel = {
     hasDeepSearchResults: false;
     deepSearchEnabled: false;
   };
-  graph: { winrateSeries: [] };
+  graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
   keyMoveCandidates: [];
   variationPreview: [];
   warnings: AnalysisResultVmWarningV1[];
@@ -239,7 +242,7 @@ export type UnknownAnalysisViewModel = {
     hasDeepSearchResults: false;
     deepSearchEnabled: false;
   };
-  graph: { winrateSeries: [] };
+  graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
   keyMoveCandidates: [];
   variationPreview: [];
   warnings: AnalysisResultVmWarningV1[];
@@ -252,6 +255,57 @@ export type BuildAnalysisResultViewModelOpts = {
 };
 
 export type AnalysisResultViewModel = KatagoWorkerV1AnalysisViewModel | MockLegacyAnalysisViewModel | UnknownAnalysisViewModel;
+
+function timelinePointToWinrateSeriesPoint(pt: WinrateTimelinePointV1): AnalysisResultWinratePointV1 | null {
+  if (pt.status !== "ok" || pt.displayWinrate == null) {
+    return null;
+  }
+  const perspective = normalizeWinratePerspectiveV1({
+    rawWinrate: pt.rawWinrate,
+    turnIndex: pt.turnIndex,
+    player: pt.player,
+    currentPlayer: pt.currentPlayer,
+    playerToMove: pt.currentPlayer,
+  });
+  return {
+    turnIndex: pt.turnIndex,
+    player: pt.player,
+    rawWinrate: perspective.rawWinrate,
+    displayWinrate: perspective.normalized.displayWinrate,
+    displayPerspective: "katago_output",
+    currentPlayer: pt.currentPlayer,
+    playerToMove: pt.currentPlayer,
+    confidence: "provisional",
+    perspective,
+  };
+}
+
+function buildWinrateSeriesFromTimeline(timeline: WinrateTimelineV1): AnalysisResultWinratePointV1[] {
+  const out: AnalysisResultWinratePointV1[] = [];
+  for (const pt of timeline.points) {
+    const row = timelinePointToWinrateSeriesPoint(pt);
+    if (row) {
+      out.push(row);
+    }
+  }
+  out.sort((a, b) => a.turnIndex - b.turnIndex);
+  return out;
+}
+
+export function buildWinrateSeriesPreferTimeline(
+  result: Record<string, unknown>,
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined,
+  bsi: BsiV1Result | undefined
+): { series: AnalysisResultWinratePointV1[]; fromTimeline: boolean } {
+  const timelineRaw = result.winrateTimelineV1;
+  if (isWinrateTimelineV1(timelineRaw) && timelineRaw.enabled && timelineRaw.completedCount > 0) {
+    const series = buildWinrateSeriesFromTimeline(timelineRaw);
+    if (series.length > 0) {
+      return { series, fromTimeline: true };
+    }
+  }
+  return { series: buildWinrateSeries(turnAnalyses, bsi), fromTimeline: false };
+}
 
 function buildWinrateSeries(
   turnAnalyses: TurnAnalysisEntryV1[] | undefined,
@@ -581,6 +635,12 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
             totalMovesHint: totalMoves > 0 ? totalMoves : null,
           };
 
+    const { series: winrateSeries, fromTimeline: winrateSeriesFromTimeline } = buildWinrateSeriesPreferTimeline(
+      result,
+      turnAnalyses,
+      bsi
+    );
+
     const vm: KatagoWorkerV1AnalysisViewModel = {
       kind: "katago-worker-v1",
       summary: {
@@ -596,7 +656,8 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         deepSearchEnabled: deep?.enabled === true,
       },
       graph: {
-        winrateSeries: buildWinrateSeries(turnAnalyses, bsi),
+        winrateSeries,
+        winrateSeriesFromTimeline,
       },
       keyMoveCandidates,
       variationPreview,
@@ -624,7 +685,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         hasDeepSearchResults: false,
         deepSearchEnabled: false,
       },
-      graph: { winrateSeries: [] },
+      graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
       keyMoveCandidates: [],
       variationPreview: [],
       warnings: [{ code: "mock_demo_disclaimer" }, { code: "beta_numeric_reference" }],
@@ -652,7 +713,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       hasDeepSearchResults: false,
       deepSearchEnabled: false,
     },
-    graph: { winrateSeries: [] },
+    graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
     keyMoveCandidates: [],
     variationPreview: [],
     warnings: [{ code: "unknown_result_format" }, { code: "beta_numeric_reference" }],
