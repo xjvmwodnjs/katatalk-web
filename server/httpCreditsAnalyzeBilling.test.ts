@@ -113,27 +113,31 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(body.userId).toBe("user_a");
   });
 
-  it("GET /api/analyze/:jobId returns 403 for another user's job", async () => {
+  it("GET /api/analyze/:jobId returns 403 for another user's job (no sgf_content leak)", async () => {
     const jobId = "job-ownership-http-test";
+    const otherUserSgf = "(;OTHER_USER_SGF_SECRET_MARKER[pd])";
     vitestSeedAnalysisJob({
       id: jobId,
       user_id: "user_a",
-      status: "queued",
+      status: "completed",
       file_name: "x.sgf",
       language: "ko",
       credit_cost: 1,
       credit_log_id: "00000000-0000-0000-0000-00000000cc01",
       is_mock: true,
-      progress: 0,
-      result: null,
+      progress: 100,
+      result: { ok: true, summary: "private" },
+      sgf_content: otherUserSgf,
       error_message: null,
-      completed_at: null,
+      completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userB);
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${encodeURIComponent(jobId)}`, {
       headers: { Authorization: "Bearer fake" },
     });
     expect(res.status).toBe(403);
+    const raw = await res.text();
+    expect(raw).not.toContain("OTHER_USER_SGF_SECRET_MARKER");
   });
 
   it("POST /api/billing/create-checkout returns 401 when unauthenticated", async () => {

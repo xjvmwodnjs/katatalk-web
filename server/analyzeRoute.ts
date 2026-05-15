@@ -12,6 +12,7 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import multer from "multer";
 import type { AnalysisJobCreateResponse, AnalysisJobGetResponse } from "@shared/analysisJob";
 import {
+  mergeDbSgfContentIntoCompletedJobData,
   normalizeAnalysisJobStatus,
   parseStoredAnalysisJobResult,
 } from "@shared/analysisJob";
@@ -74,12 +75,13 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
   }
 
   if (status === "completed" && parsedResult != null) {
-    const r = parsedResult as Record<string, unknown> | null;
+    const dataForClient = mergeDbSgfContentIntoCompletedJobData(parsedResult, row.sgf_content);
+    const r = dataForClient as Record<string, unknown> | null;
     const fromKatagoWorker =
       r != null && typeof r.source === "string" && r.source === "katago-worker-v1";
     return {
       ...base,
-      data: parsedResult,
+      data: dataForClient,
       meta: fromKatagoWorker
         ? {
             mock: false,

@@ -110,6 +110,39 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(res.status).toBe(403);
   });
 
+  it("GET completed merges DB sgf_content into data for owner", async () => {
+    const resultPayload = { summary: "from-db", boardSize: 19 };
+    vitestSeedAnalysisJob({
+      id: "job-db-sgf-merge",
+      user_id: "user_a",
+      status: "completed",
+      file_name: "game.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa20",
+      is_mock: true,
+      progress: 100,
+      result: resultPayload,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: new Date().toISOString(),
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const logSpy = vi.spyOn(console, "log");
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-db-sgf-merge`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; data?: Record<string, unknown> };
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual({ ...resultPayload, sgf_content: minimalSgf });
+    const leaked = logSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === "string" && a.includes(minimalSgf))
+    );
+    expect(leaked).toBe(false);
+    logSpy.mockRestore();
+  });
+
   it("GET completed returns analysis_jobs.result from DB (no in-memory store)", async () => {
     const resultPayload = { summary: "from-db", boardSize: 19 };
     vitestSeedAnalysisJob({
@@ -135,6 +168,64 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.success).toBe(true);
     expect(body.data).toEqual(resultPayload);
     expect(res.headers.get("X-KataTalk-Mock")).toBe("true");
+  });
+
+  it("GET running does not expose sgf_content in response even when DB row has it", async () => {
+    const secretSgf = "(;RUNNING_NO_LEAK_SGF_MARKER[aa])";
+    vitestSeedAnalysisJob({
+      id: "job-run-sgf",
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa21",
+      is_mock: true,
+      progress: 40,
+      result: null,
+      sgf_content: secretSgf,
+      error_message: null,
+      completed_at: null,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-run-sgf`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    expect(raw).not.toContain("RUNNING_NO_LEAK_SGF_MARKER");
+    const body = JSON.parse(raw) as { status: string; data?: unknown };
+    expect(body.status).toBe("running");
+    expect(body.data).toBeUndefined();
+  });
+
+  it("GET failed does not return data with sgf_content even when DB row has it", async () => {
+    const secretSgf = "(;FAILED_NO_LEAK_SGF_MARKER[bb])";
+    vitestSeedAnalysisJob({
+      id: "job-fail-sgf",
+      user_id: "user_a",
+      status: "failed",
+      file_name: "bad.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa22",
+      is_mock: true,
+      progress: null,
+      result: { ok: false },
+      sgf_content: secretSgf,
+      error_message: "pipeline exploded",
+      completed_at: new Date().toISOString(),
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-fail-sgf`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    expect(raw).not.toContain("FAILED_NO_LEAK_SGF_MARKER");
+    const body = JSON.parse(raw) as { data?: unknown; error?: { message: string } };
+    expect(body.data).toBeUndefined();
+    expect(body.error?.message).toBe("pipeline exploded");
   });
 
   it("GET completed normalizes DB status casing and parses stringified result", async () => {
@@ -163,6 +254,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       is_mock: false,
       progress: 100,
       result: JSON.stringify(katagoPayload),
+      sgf_content: minimalSgf,
       error_message: null,
       completed_at: new Date().toISOString(),
     });
@@ -174,8 +266,34 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     const body = (await res.json()) as { success: boolean; status: string; data?: unknown };
     expect(body.success).toBe(true);
     expect(body.status).toBe("completed");
-    expect(body.data).toEqual(katagoPayload);
+    expect(body.data).toEqual({ ...katagoPayload, sgf_content: minimalSgf });
     expect(res.headers.get("X-KataTalk-Mock")).toBeNull();
+  });
+
+  it("GET queued does not expose sgf_content when DB row has it", async () => {
+    const secret = "(;QUEUED_SGF_NOT_IN_RESPONSE[cc])";
+    vitestSeedAnalysisJob({
+      id: "job-q-sgf",
+      user_id: "user_a",
+      status: "queued",
+      file_name: "q2.sgf",
+      language: "en",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa23",
+      is_mock: true,
+      progress: 0,
+      result: null,
+      sgf_content: secret,
+      error_message: null,
+      completed_at: null,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-q-sgf`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    expect(raw).not.toContain("QUEUED_SGF_NOT_IN_RESPONSE");
   });
 
   it("GET queued returns status from DB row", async () => {

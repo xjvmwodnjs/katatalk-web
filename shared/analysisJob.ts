@@ -25,6 +25,7 @@ export type AnalysisJobCreateResponse = {
 /**
  * GET /api/analyze/:jobId payload (mock engine fills `data` when completed).
  * `data` is the analysis report JSON; typed loosely here so client can narrow.
+ * 완료·본인 조회 시 DB `analysis_jobs.sgf_content` 가 비어 있지 않으면 `data.sgf_content` 로 병합될 수 있다.
  */
 export type AnalysisJobGetResponse = {
   success: true;
@@ -79,6 +80,25 @@ export function parseStoredAnalysisJobResult(result: unknown): unknown | null {
     }
   }
   return result;
+}
+
+/**
+ * 완료 job GET 응답용: DB `sgf_content` 가 있으면 파싱된 `result` 객체에 `sgf_content` 필드를 얕게 병합한다.
+ * plain object 가 아니면(배열·원시 등) `parsedResult` 그대로. DB 값이 null/빈 문자열이면 병합하지 않는다.
+ */
+export function mergeDbSgfContentIntoCompletedJobData(
+  parsedResult: unknown,
+  sgfContentFromDb: string | null | undefined
+): unknown {
+  const sgf =
+    typeof sgfContentFromDb === "string" && sgfContentFromDb.trim() ? sgfContentFromDb : null;
+  if (sgf == null) {
+    return parsedResult;
+  }
+  if (parsedResult == null || typeof parsedResult !== "object" || Array.isArray(parsedResult)) {
+    return parsedResult;
+  }
+  return { ...(parsedResult as Record<string, unknown>), sgf_content: sgf };
 }
 
 export function isKatagoWorkerV1ResultPayload(data: unknown): boolean {

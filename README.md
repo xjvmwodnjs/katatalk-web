@@ -55,7 +55,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`(코드 배열: UI 에서 `analysisResultI18n` 으로 번역) 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. **LLM·top_mistakes 생성은 ViewModel 에 포함하지 않는다.**
 
-**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). `analysis_jobs.result` JSON 에 **`sgf_content` 또는 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI 렌더는 미포함.**
+**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). 클라이언트는 완료 **`GET /api/analyze/:jobId` 의 `data.sgf_content`**(DB에서 병합) 또는 **`result` JSON 안의 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI 렌더는 미포함.**
 
 **결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `AnalysisVariationPreview` 가 ViewModel 을 바인딩한다(간이 SVG 승률 그래프·참고도 PV·바둑판 영역은 텍스트 스냅샷 또는 placeholder). 실제 바둑판 렌더·흑백 승률 토글은 미포함. **문구 i18n** 은 `shared/analysisResultI18n.ts` 에서 `ko`/`en`/`ja`/`zh` 를 제공하고, Home 등에서 쓰는 기존 `lang`(`Language`)을 그대로 넘긴다.
 
@@ -399,6 +399,7 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 ## 분석 job (`analysis_jobs`)
 
 - **작업 상태·결과·오류의 근원은 Supabase `analysis_jobs`** 입니다. **`GET /api/analyze/:jobId` 는 DB 행만** 조회합니다 (프로덕션에서 완료 결과를 인메모리에만 두지 않음).
+- **완료(`completed`)이고 `row.user_id` 가 요청자와 일치할 때만** 응답 `data`(파싱된 `result` JSON)에 DB **`sgf_content`** 를 **`sgf_content` 키로 병합**합니다(`plain object` 가 아니면 병합 생략). **403·queued/running/failed** 경로에서는 원문을 내려주지 않으며, **GET 핸들러는 SGF 원문을 로그에 남기지 않습니다.**
 - **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.
   - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job(worker_id, stale_seconds)`** 으로 queued·stale running 을 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
