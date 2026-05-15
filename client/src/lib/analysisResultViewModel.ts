@@ -23,4 +23,5 @@ export type {
   SgfPlaybackLastMoveV1,
   SgfPlaybackWarningV1,
   SgfPlaybackWarningCodeV1,
+  ExtractMainlineBwMovesResultV1,
 } from "@shared/sgfPlaybackV1";

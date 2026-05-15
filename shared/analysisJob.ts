@@ -110,11 +110,13 @@ export type {
   SgfPlaybackLastMoveV1,
   SgfPlaybackWarningV1,
   SgfPlaybackWarningCodeV1,
+  ExtractMainlineBwMovesResultV1,
 } from "./sgfPlaybackV1";
 
 export {
   buildSgfPlaybackStateV1,
   extractMainlineBwMoves,
+  readSgfBracketValue,
   sgfLetterToCoordIndex,
   indexToGtpColumn,
   sgfPointToGtp,
