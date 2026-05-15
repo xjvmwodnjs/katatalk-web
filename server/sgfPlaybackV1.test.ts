@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSgfPlaybackStateV1,
   extractMainlineBwMoves,
+  gtpCoordToBoardXY,
   indexToGtpColumn,
   readSgfBracketValue,
   sgfLetterToCoordIndex,
@@ -34,6 +35,15 @@ describe("sgfPlaybackV1", () => {
     expect(indexToGtpColumn(7)).toBe("H");
     expect(indexToGtpColumn(8)).toBe("J");
     expect(sgfPointToGtp("ih", 19)).toBe("J12");
+  });
+
+  it("gtpCoordToBoardXY inverts sgfPointToGtp for mainline points", () => {
+    expect(gtpCoordToBoardXY("Q16", 19)).toEqual({ x: 15, y: 3 });
+    const gtp = sgfPointToGtp("pd", 19);
+    expect(gtp).toBeTruthy();
+    if (gtp) {
+      expect(gtpCoordToBoardXY(gtp, 19)).toEqual({ x: 15, y: 3 });
+    }
   });
 
   it("respects selectedTurnIndex for stone count", () => {
