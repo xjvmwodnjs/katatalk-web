@@ -7,7 +7,12 @@ import AnalysisVariationPreview from "@/components/AnalysisVariationPreview";
 import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
-import { shouldShowBoardTurnNavigationV1 } from "@shared/boardNavigationV1";
+import {
+  isBoardKeyboardNavKeyV1,
+  nextTurnIndexFromBoardKeyboardV1,
+  shouldIgnoreBoardKeyboardNavFocusV1,
+  shouldShowBoardTurnNavigationV1,
+} from "@shared/boardNavigationV1";
 import {
   getAnalysisResultUiStrings,
   normalizeAnalysisResultLang,
@@ -69,6 +74,28 @@ export default function AnalysisResultView({ data, lang }: Props) {
       variationPreview: vm.variationPreview,
     });
   }, [vm]);
+
+  useEffect(() => {
+    if (!showBoardNav) {
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isBoardKeyboardNavKeyV1(e.key)) {
+        return;
+      }
+      if (e.altKey || e.ctrlKey || e.metaKey) {
+        return;
+      }
+      if (shouldIgnoreBoardKeyboardNavFocusV1(document.activeElement)) {
+        return;
+      }
+      const next = nextTurnIndexFromBoardKeyboardV1(e.key, boardNavTurnIndex, boardNavTotalMoves);
+      e.preventDefault();
+      setSelectedTurnIndex(next);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showBoardNav, boardNavTurnIndex, boardNavTotalMoves]);
 
   if (vm.kind === "mock-legacy") {
     return (

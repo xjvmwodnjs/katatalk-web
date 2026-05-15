@@ -118,6 +118,7 @@ export default function BoardTurnNavigation({
           aria-label={t.navSliderAria}
         />
       </div>
+      <p className="text-[10px] leading-snug text-slate-500 sm:text-[11px]">{t.navKeyboardHint}</p>
     </div>
   );
 }

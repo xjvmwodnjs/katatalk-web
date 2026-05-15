@@ -6,6 +6,10 @@ import {
   boardNavLastTurnIndexV1,
   boardNavStepTurnIndexV1,
   clampSelectedTurnIndexV1,
+  isBoardKeyboardNavigationEnabledV1,
+  isBoardKeyboardNavKeyV1,
+  nextTurnIndexFromBoardKeyboardV1,
+  shouldIgnoreBoardKeyboardNavFocusV1,
   shouldShowBoardTurnNavigationV1,
 } from "@shared/boardNavigationV1";
 import { getAnalysisResultUiStrings, uiTextContainsForbiddenLabel } from "@shared/analysisResultI18n";
@@ -71,9 +75,55 @@ describe("boardNavigationV1", () => {
       const t = getAnalysisResultUiStrings(lang);
       expect(t.navFirst.length).toBeGreaterThan(0);
       expect(t.navTurnCounter).toContain("{current}");
+      expect(t.navKeyboardHint.length).toBeGreaterThan(0);
       expect(uiTextContainsForbiddenLabel(t.navFirst, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navNext, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.navKeyboardHint, lang)).toBe(false);
     }
+  });
+
+  it("keyboard arrows and Home/End map to clamped turn indices", () => {
+    const total = 5;
+    expect(nextTurnIndexFromBoardKeyboardV1("ArrowLeft", 3, total)).toBe(2);
+    expect(nextTurnIndexFromBoardKeyboardV1("ArrowRight", 3, total)).toBe(4);
+    expect(nextTurnIndexFromBoardKeyboardV1("Home", 3, total)).toBe(0);
+    expect(nextTurnIndexFromBoardKeyboardV1("End", 3, total)).toBe(5);
+    expect(nextTurnIndexFromBoardKeyboardV1("ArrowLeft", 0, total)).toBe(0);
+    expect(nextTurnIndexFromBoardKeyboardV1("ArrowRight", 5, total)).toBe(5);
+  });
+
+  it("isBoardKeyboardNavKeyV1 recognizes navigation keys only", () => {
+    expect(isBoardKeyboardNavKeyV1("ArrowLeft")).toBe(true);
+    expect(isBoardKeyboardNavKeyV1("End")).toBe(true);
+    expect(isBoardKeyboardNavKeyV1("Enter")).toBe(false);
+  });
+
+  it("shouldIgnoreBoardKeyboardNavFocusV1 blocks form controls and sliders", () => {
+    const mk = (tag: string, role?: string, closestSlider = false) =>
+      ({
+        tagName: tag.toUpperCase(),
+        isContentEditable: false,
+        getAttribute: (name: string) => (name === "role" ? (role ?? null) : null),
+        closest: (sel: string) =>
+          closestSlider && (sel.includes("slider") || sel.includes("data-slot")) ? {} : null,
+      }) as unknown as HTMLElement;
+
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("input"))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("textarea"))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("select"))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("button"))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("span", "slider"))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("div", undefined, true))).toBe(true);
+    expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("div"))).toBe(false);
+  });
+
+  it("keyboard navigation disabled when placeholder (same gate as toolbar)", () => {
+    expect(
+      isBoardKeyboardNavigationEnabledV1({ vmKind: "katago-worker-v1", sgfPlaceholder: true })
+    ).toBe(false);
+    expect(
+      isBoardKeyboardNavigationEnabledV1({ vmKind: "katago-worker-v1", sgfPlaceholder: false })
+    ).toBe(true);
   });
 });
