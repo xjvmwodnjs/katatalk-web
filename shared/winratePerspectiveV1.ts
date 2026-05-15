@@ -50,14 +50,38 @@ export type NormalizeWinratePerspectiveV1Input = {
 
 /**
  * Future `verified` promotion requirements — **not implemented** in v1.
- * Implement only after KataGo sample validation and product sign-off.
+ * Full checklist: `docs/winrate-axis-verification.md`
  */
 export const WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 = [
-  "KataGo raw winrate axis confirmed on production samples (engine version, rules, komi).",
-  "blackWinrate / whiteWinrate conversion rules documented and covered by tests.",
-  "UI copy reviewed: no forbidden judgment labels; B/W toggle behavior specified.",
-  "Explicit code path sets status to verified; v1 normalizer never auto-promotes.",
+  "Real KataGo samples cover checklist types S1–S5 (black/white favored, balanced, side-to-move B/W); shapeOnly synthetic fixtures do not count.",
+  "At least 3 independent games with consistent winrate axis interpretation across real samples.",
+  "rootInfo.winrate and moveInfos[].winrate (and moveSummary.played.winrate used by chart) share the same axis within documented tolerance.",
+  "Relationship among currentPlayer (KataGo rootInfo), player (SGF move color), movesBeforeCount (= turnIndex - 1), and turnIndex documented with counterexamples ruled out.",
+  "KataGo engine version, rules, and komi recorded; re-verify after engine upgrades.",
+  "blackWinrate / whiteWinrate conversion formula chosen from documented candidates (see WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1); covered by fixture tests.",
+  "UI copy (ko/en/ja/zh) reviewed: no forbidden judgment labels; B/W toggle behavior specified.",
+  "Explicit code path sets status to verified; normalizer never auto-promotes.",
 ] as const;
+
+/**
+ * Conversion formula **candidates** only — do not apply in code until samples pass
+ * `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1`. See `docs/winrate-axis-verification.md` §7.
+ */
+export const WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1 = [
+  "F1: axis=black → blackWinrate=w, whiteWinrate=1-w",
+  "F2: axis=white → whiteWinrate=w, blackWinrate=1-w",
+  "F3: axis=sideToMove → assign w to playerToMove, 1-w to opponent",
+  "F4: axis=moveColor(player at turnIndex) → per-point mapping from player",
+  "F5: keep displayWinrate as raw axis; toggle changes label only",
+] as const;
+
+/**
+ * Evidence field semantics (until axis verified):
+ * - turnIndex: 1-based mainline move under review.
+ * - player: color that played that move (from SGF).
+ * - currentPlayer: KataGo rootInfo side-to-move when available; else pipeline fallback.
+ * - playerToMove: intended side to move at query position; not used for B/W conversion in v1.
+ */
 
 /** True only for finite JavaScript numbers (excludes NaN, ±Infinity). */
 export function isValidRawWinrateNumber(raw: unknown): raw is number {

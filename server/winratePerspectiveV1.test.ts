@@ -5,8 +5,10 @@ import {
   isValidRawWinrateNumber,
   normalizeWinratePerspectiveV1,
   rawWinrate01ToDisplayPercent,
+  WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1,
   WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1,
 } from "@shared/winratePerspectiveV1";
+import { WINRATE_AXIS_SYNTHETIC_SAMPLES_V1 } from "./fixtures/winrateAxisSamplesV1";
 import {
   getAnalysisResultUiStrings,
   translateWinrateDisplayLabelKey,
@@ -100,8 +102,36 @@ describe("winratePerspectiveV1", () => {
   });
 
   it("WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 is documented and non-empty", () => {
-    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.length).toBeGreaterThan(0);
+    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.length).toBeGreaterThan(3);
     expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(/verified/i);
+    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(/rootInfo/i);
+  });
+
+  it("WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1 lists formula options only", () => {
+    expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.length).toBeGreaterThanOrEqual(3);
+    expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.join(" ")).toMatch(/blackWinrate/i);
+  });
+
+  it("shape-only synthetic fixtures (no KataGo axis claim) normalize with null B/W", () => {
+    for (const sample of WINRATE_AXIS_SYNTHETIC_SAMPLES_V1) {
+      expect(sample.shapeOnly).toBe(true);
+      expect(sample.checklistSlot).toMatch(/^S[1-5]$/);
+      const rootCp = sample.katago.rootInfo.currentPlayer ?? null;
+      const p = normalizeWinratePerspectiveV1({
+        rawWinrate: sample.playedWinrate,
+        turnIndex: sample.turnIndex,
+        player: sample.player,
+        currentPlayer: rootCp,
+        playerToMove: rootCp,
+      });
+      expect(p.normalized.status).toBe("katago_output_only");
+      expect(p.normalized.blackWinrate).toBeNull();
+      expect(p.normalized.whiteWinrate).toBeNull();
+      expect(p.normalized.status).not.toBe("verified");
+      expect(p.evidence.turnIndex).toBe(sample.turnIndex);
+      expect(p.evidence.player).toBe(sample.player);
+      expect(sample.query.movesBeforeCount).toBe(sample.turnIndex - 1);
+    }
   });
 
   it("translateWinrateDisplayLabelKey resolves katagoOutputWinrate", () => {
