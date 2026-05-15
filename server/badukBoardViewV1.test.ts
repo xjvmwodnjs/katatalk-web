@@ -70,6 +70,8 @@ describe("badukBoardViewV1 helpers", () => {
       expect(uiTextContainsForbiddenLabel(t.boardGhostPvLegend, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.boardViewOnlyNote, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.boardSnapshotHint, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.navTurnCounter, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
     }
   });
 });

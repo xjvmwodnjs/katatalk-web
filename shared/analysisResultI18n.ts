@@ -399,6 +399,13 @@ type UiBlock = {
   boardNoLast: string;
   boardAriaSnapshot: string;
   boardViewOnlyNote: string;
+  navAriaToolbar: string;
+  navFirst: string;
+  navPrev: string;
+  navNext: string;
+  navEnd: string;
+  navTurnCounter: string;
+  navSliderAria: string;
   boardGhostLegend: string;
   boardGhostLegendFallback: string;
   boardGhostPvLegend: string;
@@ -456,6 +463,13 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     boardSnapshotHint: "선택한 수순까지의 메인라인 국면입니다(착수 불가).",
     boardAriaSnapshot: "바둑판 국면 스냅샷",
     boardViewOnlyNote: "보기 전용 — 착수·변화도 탐색은 지원하지 않습니다.",
+    navAriaToolbar: "수순 탐색",
+    navFirst: "처음",
+    navPrev: "이전",
+    navNext: "다음",
+    navEnd: "끝",
+    navTurnCounter: "{current} / {total}",
+    navSliderAria: "수순 슬라이더",
     boardGhostLegend: "반투명 마커: 참고 후보수",
     boardGhostLegendFallback: "반투명 마커: 참고 좌표",
     boardGhostPvLegend: "KataGo 참고도(PV) 첫 수",
@@ -515,6 +529,13 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     boardSnapshotHint: "Mainline position up to the selected move (no placing stones).",
     boardAriaSnapshot: "Go board position snapshot",
     boardViewOnlyNote: "View only — no moves or variation browsing.",
+    navAriaToolbar: "Move navigation",
+    navFirst: "Start",
+    navPrev: "Previous",
+    navNext: "Next",
+    navEnd: "End",
+    navTurnCounter: "{current} / {total}",
+    navSliderAria: "Move index slider",
     boardGhostLegend: "Faded markers: reference candidate moves",
     boardGhostLegendFallback: "Faded markers: reference coordinates",
     boardGhostPvLegend: "KataGo reference line (PV) first move",
@@ -574,6 +595,13 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     boardSnapshotHint: "選択手数までのメインライン局面です（着手不可）。",
     boardAriaSnapshot: "碁盤局面スナップショット",
     boardViewOnlyNote: "閲覧のみ — 着手・変化図の探索は未対応です。",
+    navAriaToolbar: "手数ナビ",
+    navFirst: "最初",
+    navPrev: "前へ",
+    navNext: "次へ",
+    navEnd: "最後",
+    navTurnCounter: "{current} / {total}",
+    navSliderAria: "手数スライダー",
     boardGhostLegend: "半透明マーカー: 参考候補手",
     boardGhostLegendFallback: "半透明マーカー: 参考座標",
     boardGhostPvLegend: "KataGo 参考図(PV)の初手",
@@ -633,6 +661,13 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     boardSnapshotHint: "至所选手数的主线局面（不可落子）。",
     boardAriaSnapshot: "棋盘局面快照",
     boardViewOnlyNote: "仅查看 — 不支持落子或变化图浏览。",
+    navAriaToolbar: "手数导航",
+    navFirst: "开头",
+    navPrev: "上一手",
+    navNext: "下一手",
+    navEnd: "末尾",
+    navTurnCounter: "{current} / {total}",
+    navSliderAria: "手数滑块",
     boardGhostLegend: "半透明标记：参考候选手",
     boardGhostLegendFallback: "半透明标记：参考坐标",
     boardGhostPvLegend: "KataGo 参考图(PV)第一手",
