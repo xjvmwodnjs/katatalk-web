@@ -147,8 +147,102 @@ export type ExtractMainlineBwMovesResultV1 = {
 };
 
 /**
- * 루트 `(; … )` 안에서 변화도 `( … )` 는 건너뛰고, property value 는 bracket tokenizer 로 읽어
- * `;B[]` / `;W[]` 만 메인라인 수집.
+ * `i`에서 한 개의 `PropIdent[value]` 를 읽는다. 호출부는 `s[i]`가 문자로 시작한다고 가정한다.
+ */
+function consumeOneProperty(
+  s: string,
+  i: number
+):
+  | { ok: true; propId: string; value: string; end: number }
+  | { ok: false; kind: "bad_prop"; end: number }
+  | { ok: false; kind: "unclosed"; bracketAt: number; end: number } {
+  let j = i;
+  while (j < s.length && /\s/.test(s[j]!)) {
+    j += 1;
+  }
+  if (j >= s.length || !/[A-Za-z]/.test(s[j]!)) {
+    return { ok: false, kind: "bad_prop", end: i + 1 };
+  }
+  const idStart = j;
+  while (j < s.length && /[A-Za-z]/.test(s[j]!)) {
+    j += 1;
+  }
+  if (j >= s.length || s[j] !== "[") {
+    return { ok: false, kind: "bad_prop", end: j };
+  }
+  const bracketAt = j;
+  const br = readSgfBracketValue(s, j);
+  if (br == null) {
+    return { ok: false, kind: "unclosed", bracketAt, end: j + 1 };
+  }
+  const propId = s.slice(idStart, j);
+  return { ok: true, propId, value: br.text, end: br.end };
+}
+
+function applyRootProperty(
+  propId: string,
+  value: string,
+  moves: ParsedMainlineMoveV1[],
+  warnings: SgfPlaybackWarningV1[],
+  setupWarned: { v: boolean },
+  recordSz: (raw: string) => void
+): void {
+  const up = propId.toUpperCase();
+  if (up === "AB" || up === "AW" || up === "AE") {
+    if (!setupWarned.v) {
+      setupWarned.v = true;
+      warnings.push({ code: "setup_markers_ignored" });
+    }
+  } else if (up === "SZ") {
+    recordSz(value);
+  } else if (propId.length === 1 && /^[BW]$/i.test(propId)) {
+    const color = propId.toUpperCase() as "B" | "W";
+    moves.push({ color, sgfPoint: value.trim().toLowerCase() });
+  }
+}
+
+/** `start`부터 다음 `;` `(` `)` 전까지 노드 안의 모든 property 처리. 반환값은 다음 구조 문자 위치. */
+function consumeAllPropertiesInNode(
+  s: string,
+  start: number,
+  moves: ParsedMainlineMoveV1[],
+  warnings: SgfPlaybackWarningV1[],
+  setupWarned: { v: boolean },
+  recordSz: (raw: string) => void
+): number {
+  let j = start;
+  while (j < s.length) {
+    while (j < s.length && /\s/.test(s[j]!)) {
+      j += 1;
+    }
+    if (j >= s.length) {
+      break;
+    }
+    const ch = s[j]!;
+    if (ch === ";" || ch === "(" || ch === ")") {
+      break;
+    }
+    if (!/[A-Za-z]/.test(ch)) {
+      j += 1;
+      continue;
+    }
+    const r = consumeOneProperty(s, j);
+    if (!r.ok) {
+      if (r.kind === "unclosed") {
+        warnings.push({ code: "unclosed_property", params: { at: r.bracketAt } });
+      }
+      j = r.end;
+      continue;
+    }
+    applyRootProperty(r.propId, r.value, moves, warnings, setupWarned, recordSz);
+    j = r.end;
+  }
+  return j;
+}
+
+/**
+ * 루트 `(; … )` 안에서 변화도 `( … )` 는 건너뛰고, 각 노드의 **모든** `Prop[value]`(첫 `(;` 직후·`;` 뒤)를 순회해
+ * `B`/`W` 착수·`SZ`·`AB`/`AW`/`AE` 만 처리한다. 값은 `readSgfBracketValue` 로만 읽는다.
  */
 export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResultV1 {
   const warnings: SgfPlaybackWarningV1[] = [];
@@ -163,7 +257,7 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
   let parenDepth = 0;
   const moves: ParsedMainlineMoveV1[] = [];
   let boardSizeHint: number | null = null;
-  let setupWarned = false;
+  const setupWarned = { v: false };
   let variationBranchCount = 0;
 
   const recordSz = (raw: string) => {
@@ -200,53 +294,20 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
       i += 1;
       continue;
     }
-    if (c !== ";") {
+    if (c === ";") {
+      i += 1;
+      i = consumeAllPropertiesInNode(s, i, moves, warnings, setupWarned, recordSz);
+      continue;
+    }
+    if (/\s/.test(c)) {
       i += 1;
       continue;
     }
-
-    let j = i + 1;
-    while (j < s.length && /\s/.test(s[j]!)) {
-      j += 1;
-    }
-    if (j >= s.length) {
-      break;
-    }
-    const idStart = j;
-    while (j < s.length && /[A-Za-z]/.test(s[j]!)) {
-      j += 1;
-    }
-    if (j === idStart) {
-      i += 1;
+    if (/[A-Za-z]/.test(c)) {
+      i = consumeAllPropertiesInNode(s, i, moves, warnings, setupWarned, recordSz);
       continue;
     }
-    const propId = s.slice(idStart, j);
-    if (j >= s.length || s[j] !== "[") {
-      i = j;
-      continue;
-    }
-    const br = readSgfBracketValue(s, j);
-    if (br == null) {
-      warnings.push({ code: "unclosed_property", params: { at: i } });
-      i = j + 1;
-      continue;
-    }
-    const value = br.text;
-    const next = br.end;
-
-    const up = propId.toUpperCase();
-    if (up === "AB" || up === "AW" || up === "AE") {
-      if (!setupWarned) {
-        setupWarned = true;
-        warnings.push({ code: "setup_markers_ignored" });
-      }
-    } else if (up === "SZ") {
-      recordSz(value);
-    } else if (propId.length === 1 && /^[BW]$/i.test(propId)) {
-      const color = propId.toUpperCase() as "B" | "W";
-      moves.push({ color, sgfPoint: value.trim().toLowerCase() });
-    }
-    i = next;
+    i += 1;
   }
 
   if (parenDepth > 0) {

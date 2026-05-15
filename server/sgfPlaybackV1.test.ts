@@ -79,6 +79,35 @@ describe("sgfPlaybackV1", () => {
     expect(moves.map((m) => m.sgfPoint)).toEqual(["aa", "bb"]);
   });
 
+  it("applies SZ after other root properties on same node (boardSizeHint 13)", () => {
+    const sgf = "(;FF[4]GM[1]SZ[13];B[aa])";
+    const { moves, boardSizeHint } = extractMainlineBwMoves(sgf);
+    expect(boardSizeHint).toBe(13);
+    expect(moves).toEqual([{ color: "B", sgfPoint: "aa" }]);
+  });
+
+  it("extracts B/W when they follow C on the same node", () => {
+    const sgf = "(;C[text]B[pd];W[dd])";
+    const { moves } = extractMainlineBwMoves(sgf);
+    expect(moves).toEqual([
+      { color: "B", sgfPoint: "pd" },
+      { color: "W", sgfPoint: "dd" },
+    ]);
+  });
+
+  it("warns setup_markers_ignored when AB is not first property, still parses B", () => {
+    const sgf = "(;FF[4]AB[aa];B[bb])";
+    const { moves, warnings } = extractMainlineBwMoves(sgf);
+    expect(warnings.some((w) => w.code === "setup_markers_ignored")).toBe(true);
+    expect(moves).toEqual([{ color: "B", sgfPoint: "bb" }]);
+  });
+
+  it("extracts W when it follows N on the same node", () => {
+    const sgf = "(;N[name]W[qq])";
+    const { moves } = extractMainlineBwMoves(sgf);
+    expect(moves).toEqual([{ color: "W", sgfPoint: "qq" }]);
+  });
+
   it("reads escaped closing bracket inside property value", () => {
     const s = "(;SZ[19];C[xx\\]yy];B[cc];W[dd])";
     const open = s.indexOf("C[") + 1;
