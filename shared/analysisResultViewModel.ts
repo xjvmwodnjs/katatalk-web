@@ -15,6 +15,7 @@ import {
   type SgfPlaybackPlaceholderV1,
   type SgfPlaybackViewModelV1,
 } from "./sgfPlaybackV1";
+import { normalizeWinratePerspectiveV1, type WinratePerspectivePointV1 } from "./winratePerspectiveV1";
 
 export type AnalysisResultVmWarningCodeV1 =
   | "beta_numeric_reference"
@@ -145,16 +146,16 @@ function findAdi(adi: AdiV1Result | undefined, turnIndex: number): AdiV1Signal |
 export type AnalysisResultWinratePointV1 = {
   turnIndex: number;
   player: "B" | "W";
-  /** KataGo 원시 0~1 (없으면 null) */
+  /** KataGo 원시 0~1 (없으면 null) — mirrors `perspective.rawWinrate` */
   rawWinrate: number | null;
-  /** 0~100 표시용 (raw*100 반올림); 추후 흑/백 토글 UI에서 재해석 예정 — docs/TODO */
+  /** 0~100 표시용 — mirrors `perspective.normalized.displayWinrate` */
   displayWinrate: number | null;
   displayPerspective: "katago_output";
-  /** 추후 시점에서 착수한 색 — 흑/백 승률 단정 변환 없음 */
   currentPlayer: "B" | "W";
-  /** 동일: 해당 수를 둔 player */
   playerToMove: "B" | "W";
   confidence: "provisional" | "verified";
+  /** Normalized perspective (black/white null until verified) */
+  perspective: WinratePerspectivePointV1;
 };
 
 export type AnalysisResultKeyMoveCandidateV1 = {
@@ -264,18 +265,27 @@ function buildWinrateSeries(
   const sorted = [...okRows].sort((a, b) => a.turnIndex - b.turnIndex);
   for (const t of sorted) {
     const wr = t.moveSummary?.played?.winrate;
-    const raw = typeof wr === "number" && Number.isFinite(wr) ? wr : null;
+    const perspective = normalizeWinratePerspectiveV1({
+      rawWinrate: wr,
+      turnIndex: t.turnIndex,
+      player: t.player,
+      currentPlayer: t.player,
+      playerToMove: t.player,
+    });
     const bsiRow = findBsi(bsi, t.turnIndex);
     const conf = bsiRow?.interpretationStatus === "verified" ? "verified" : "provisional";
+    const cp = perspective.evidence.currentPlayer ?? t.player;
+    const ptm = perspective.evidence.playerToMove ?? t.player;
     out.push({
       turnIndex: t.turnIndex,
       player: t.player,
-      rawWinrate: raw,
-      displayWinrate: raw == null ? null : Math.round(raw * 10_000) / 100,
+      rawWinrate: perspective.rawWinrate,
+      displayWinrate: perspective.normalized.displayWinrate,
       displayPerspective: "katago_output",
-      currentPlayer: t.player,
-      playerToMove: t.player,
+      currentPlayer: cp,
+      playerToMove: ptm,
       confidence: conf,
+      perspective,
     });
   }
   return out;

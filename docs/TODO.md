@@ -47,7 +47,8 @@
 - [ ] **바둑판 UX** — 착수 인터략션·변화도 탐색·흑백 승률 토글·애니메이션 등은 미구현.
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).
-- [ ] **흑/백 승률 표시 토글** — ViewModel 에 `rawWinrate` / `displayPerspective` / `playerToMove` 등만 준비됨; 토글 UX 는 다음 단계.
+- [x] **Winrate perspective normalizer v1** — `shared/winratePerspectiveV1.ts`: raw clamp·`katago_output_only`/`unverified`·evidence. `blackWinrate`/`whiteWinrate` null. 차트는 KataGo 관점 유지.
+- [ ] **흑/백 승률 표시 토글** — normalizer 검증 후 `verified` 승격·토글 UX.
 - [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
 
 ## 최신 master 배포 전 smoke (체크리스트)
