@@ -37,12 +37,13 @@
 - [x] **ADI v1 (signal only)** — `result.adiV1`·`deepSearchCandidate`·components(`visitEntropy` 등). **Deep Search 실행·`top_mistakes`/해설/LLM 없음.** `docs/algorithm/KataTalk_Algorithm_V2.5.md` 기준 Value & Search 단계 일부.
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
 - [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·승률 시리즈(katago_output 원시만), 중립 라벨·경고문. 바둑판/차트 UI 미포함.
-- [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG 패널·후보 카드·참고도 PV·보드 placeholder. mock-legacy / unknown 별도 안내. 흑/백 승률 토글은 비활성(준비 중).
+- [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG·후보 카드·참고도 PV·`BadukBoardView` SVG·수순 탐색. `sgf_content` 없으면 placeholder. mock-legacy / unknown 별도 안내. 흑/백 승률 토글은 비활성(준비 중).
 - [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인·pass/중복/좌표·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder.
 - [x] **SGF token parser + capture engine v1** — property bracket 이스케이프·주석 속 `;B[]` 오인 방지·변화도 skip 경고·liberty 기반 상대 포획(연결군). ko/자살 미완 경고.
 - [x] **Baduk board renderer v1** — `BadukBoardView` SVG 격자·흑백돌·lastMove 링·ghost(참고 후보/PV). 보기 전용. 9/13/19 SZ.
 - [x] **Board navigation v1** — `BoardTurnNavigation` + `shared/boardNavigationV1.ts`: 처음/이전/다음/끝·슬라이더·`{current}/{total}`. 승률·후보·참고도·보드 동일 `selectedTurnIndex`. mock/placeholder 미표시.
 - [x] **Board keyboard navigation v1** — ←/→·Home/End로 `selectedTurnIndex` 보기 전용 이동. input/textarea/select/button/slider focus 시 비활성.
+- [x] **Board navigation hardening** — `selectTurnIndex` clamp 통일·`defaultPrevented` 존중·`totalMoves=0` 비활성 UX.
 - [ ] **바둑판 UX** — 착수 인터략션·변화도 탐색·흑백 승률 토글·애니메이션 등은 미구현.
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).

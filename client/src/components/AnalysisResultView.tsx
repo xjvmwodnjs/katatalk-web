@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildAnalysisResultViewModel } from "@/lib/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
@@ -8,8 +8,11 @@ import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
 import {
+  clampSelectedTurnIndexV1,
   isBoardKeyboardNavKeyV1,
+  isBoardTurnNavigationInteractiveV1,
   nextTurnIndexFromBoardKeyboardV1,
+  shouldHandleBoardKeyboardNavEventV1,
   shouldIgnoreBoardKeyboardNavFocusV1,
   shouldShowBoardTurnNavigationV1,
 } from "@shared/boardNavigationV1";
@@ -35,7 +38,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
     const v = buildAnalysisResultViewModel(data);
     if (v.kind === "katago-worker-v1") {
       const first = v.keyMoveCandidates[0]?.turnIndex ?? v.graph.winrateSeries[0]?.turnIndex ?? null;
-      setSelectedTurnIndex(first);
+      if (first != null && !v.sgfPlayback.placeholder) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(first, v.sgfPlayback.totalMoves));
+      } else {
+        setSelectedTurnIndex(first);
+      }
     } else {
       setSelectedTurnIndex(null);
     }
@@ -61,6 +68,22 @@ export default function AnalysisResultView({ data, lang }: Props) {
       ? vm.sgfPlayback.selectedTurnIndex
       : 0;
 
+  const selectTurnIndex = useCallback(
+    (raw: number | null) => {
+      if (raw == null) {
+        setSelectedTurnIndex(null);
+        return;
+      }
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(raw, boardNavTotalMoves));
+        return;
+      }
+      const n = Math.trunc(Number(raw));
+      setSelectedTurnIndex(Number.isFinite(n) ? n : null);
+    },
+    [showBoardNav, boardNavTotalMoves]
+  );
+
   const boardGhosts = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
       return [];
@@ -80,10 +103,13 @@ export default function AnalysisResultView({ data, lang }: Props) {
       return;
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!isBoardKeyboardNavKeyV1(e.key)) {
+      if (e.defaultPrevented) {
         return;
       }
-      if (e.altKey || e.ctrlKey || e.metaKey) {
+      if (!shouldHandleBoardKeyboardNavEventV1(e) || !isBoardKeyboardNavKeyV1(e.key)) {
+        return;
+      }
+      if (!isBoardTurnNavigationInteractiveV1(boardNavTotalMoves)) {
         return;
       }
       if (shouldIgnoreBoardKeyboardNavFocusV1(document.activeElement)) {
@@ -91,11 +117,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
       }
       const next = nextTurnIndexFromBoardKeyboardV1(e.key, boardNavTurnIndex, boardNavTotalMoves);
       e.preventDefault();
-      setSelectedTurnIndex(next);
+      selectTurnIndex(next);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showBoardNav, boardNavTurnIndex, boardNavTotalMoves]);
+  }, [showBoardNav, boardNavTurnIndex, boardNavTotalMoves, selectTurnIndex]);
 
   if (vm.kind === "mock-legacy") {
     return (
@@ -168,7 +194,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
       <AnalysisWinratePanel
         series={vm.graph.winrateSeries}
         selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={setSelectedTurnIndex}
+        onSelectTurnIndex={selectTurnIndex}
         lang={lang}
       />
 
@@ -176,7 +202,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
         raw={data}
         candidates={vm.keyMoveCandidates}
         selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={setSelectedTurnIndex}
+        onSelectTurnIndex={selectTurnIndex}
         lang={lang}
       />
 
@@ -218,7 +244,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 <BoardTurnNavigation
                   selectedTurnIndex={boardNavTurnIndex}
                   totalMoves={boardNavTotalMoves}
-                  onSelectTurnIndex={setSelectedTurnIndex}
+                  onSelectTurnIndex={selectTurnIndex}
                   lang={uiLang}
                 />
               ) : null}

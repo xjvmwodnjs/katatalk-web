@@ -7,6 +7,7 @@ import {
   boardNavLastTurnIndexV1,
   boardNavStepTurnIndexV1,
   clampSelectedTurnIndexV1,
+  isBoardTurnNavigationInteractiveV1,
 } from "@shared/boardNavigationV1";
 import { ChevronsLeft, ChevronsRight, SkipBack, SkipForward } from "lucide-react";
 
@@ -31,9 +32,10 @@ export default function BoardTurnNavigation({
 }: Props) {
   const t = getAnalysisResultUiStrings(lang);
   const total = Math.max(0, Math.trunc(totalMoves) || 0);
+  const interactive = isBoardTurnNavigationInteractiveV1(total);
   const current = clampSelectedTurnIndexV1(selectedTurnIndex, total);
-  const atStart = current <= boardNavFirstTurnIndexV1();
-  const atEnd = current >= boardNavLastTurnIndexV1(total);
+  const atStart = !interactive || current <= boardNavFirstTurnIndexV1();
+  const atEnd = !interactive || current >= boardNavLastTurnIndexV1(total);
 
   const go = (next: number) => onSelectTurnIndex(clampSelectedTurnIndexV1(next, total));
 
@@ -106,19 +108,24 @@ export default function BoardTurnNavigation({
         <Slider
           className="flex-1"
           min={0}
-          max={total}
+          max={Math.max(0, total)}
           step={1}
+          disabled={!interactive}
           value={[current]}
           onValueChange={(v) => {
             const n = v[0];
-            if (n !== undefined) {
+            if (n !== undefined && interactive) {
               go(n);
             }
           }}
           aria-label={t.navSliderAria}
         />
       </div>
-      <p className="text-[10px] leading-snug text-slate-500 sm:text-[11px]">{t.navKeyboardHint}</p>
+      {!interactive ? (
+        <p className="text-[10px] leading-snug text-amber-200/70 sm:text-[11px]">{t.navEmptyMainline}</p>
+      ) : (
+        <p className="text-[10px] leading-snug text-slate-500 sm:text-[11px]">{t.navKeyboardHint}</p>
+      )}
     </div>
   );
 }
