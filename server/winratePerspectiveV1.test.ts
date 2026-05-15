@@ -112,8 +112,10 @@ describe("winratePerspectiveV1", () => {
     expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.join(" ")).toMatch(/blackWinrate/i);
   });
 
-  it("synthetic axis samples normalize without black/white conversion", () => {
+  it("shape-only synthetic fixtures (no KataGo axis claim) normalize with null B/W", () => {
     for (const sample of WINRATE_AXIS_SYNTHETIC_SAMPLES_V1) {
+      expect(sample.shapeOnly).toBe(true);
+      expect(sample.checklistSlot).toMatch(/^S[1-5]$/);
       const rootCp = sample.katago.rootInfo.currentPlayer ?? null;
       const p = normalizeWinratePerspectiveV1({
         rawWinrate: sample.playedWinrate,

@@ -53,9 +53,10 @@ export type NormalizeWinratePerspectiveV1Input = {
  * Full checklist: `docs/winrate-axis-verification.md`
  */
 export const WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 = [
-  "At least 3 independent samples (games or turns) with consistent winrate axis interpretation.",
+  "Real KataGo samples cover checklist types S1–S5 (black/white favored, balanced, side-to-move B/W); shapeOnly synthetic fixtures do not count.",
+  "At least 3 independent games with consistent winrate axis interpretation across real samples.",
   "rootInfo.winrate and moveInfos[].winrate (and moveSummary.played.winrate used by chart) share the same axis within documented tolerance.",
-  "Relationship among currentPlayer (KataGo rootInfo), player (SGF move color), movesBeforeCount, and turnIndex documented with counterexamples ruled out.",
+  "Relationship among currentPlayer (KataGo rootInfo), player (SGF move color), movesBeforeCount (= turnIndex - 1), and turnIndex documented with counterexamples ruled out.",
   "KataGo engine version, rules, and komi recorded; re-verify after engine upgrades.",
   "blackWinrate / whiteWinrate conversion formula chosen from documented candidates (see WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1); covered by fixture tests.",
   "UI copy (ko/en/ja/zh) reviewed: no forbidden judgment labels; B/W toggle behavior specified.",

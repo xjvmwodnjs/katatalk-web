@@ -1,6 +1,6 @@
 # Winrate axis sample verification (KataGo)
 
-> **Scope:** documentation and sample checklist only.  
+> **Scope:** documentation and sample checklist only.
 > **Not in scope:** `blackWinrate` / `whiteWinrate` conversion, `status: verified` in code, B/W toggle UI.
 
 ## 1. Purpose
@@ -39,7 +39,7 @@ Collect **real** KataGo stdout/JSON (or exported `turnAnalyses` slices) per scen
 
 For each sample, save: engine version, rules, komi, board size, `turnIndex`, `player`, full `rootInfo`, top 3 `moveInfos`, and `moveSummary.played` / `moveSummary.best`.
 
-Synthetic references for tests (no axis claim): `server/fixtures/winrateAxisSamplesV1.ts`.
+**Shape-only (not axis truth):** `server/fixtures/winrateAxisSamplesV1.ts` — JSON shape + normalizer guards only. `shapeOnly: true` samples **do not** satisfy verified promotion; use real KataGo exports for S1–S5 below.
 
 ## 4. Questions to answer per sample
 
@@ -51,7 +51,7 @@ For each sample, fill a short table:
 4. **`moveInfos` same axis?** Do `rootInfo.winrate`, `moveInfos[0].winrate`, and `moveSummary.played.winrate` use the **same** convention (allowing small search noise)?
 5. **Played vs root:** Is `played.winrate` closer to root or to best candidate? Document delta.
 
-**Hypothesis to falsify:** “`played.winrate` is always black winrate.”  
+**Hypothesis to falsify:** “`played.winrate` is always black winrate.”
 **Hypothesis to falsify:** “`played.winrate` is always winrate for `player` (move color).”
 
 ## 5. Field semantics (project conventions)
@@ -68,16 +68,17 @@ For each sample, fill a short table:
 
 ## 6. `verified` promotion conditions (concrete)
 
-All must be true before implementing conversion or toggle:
+All must be true before implementing conversion or toggle. **Synthetic `shapeOnly` fixtures never count** toward these gates.
 
-1. **≥ 3 independent games** (or ≥ 3 turns spread across games) with consistent axis interpretation.
-2. **rootInfo vs moveInfos:** Same axis for `rootInfo.winrate` and `moveInfos[].winrate` on every sample (document max allowed drift).
-3. **Played row:** `moveSummary.played.winrate` follows the same axis as `rootInfo` (chart dependency).
-4. **Player linkage:** Documented rule tying winrate to `currentPlayer`, `player`, or black — with counterexamples ruled out.
-5. **Engine metadata:** KataGo version, rules, komi recorded; re-verify on engine upgrade.
-6. **UI copy:** ko/en/ja/zh strings approved; no forbidden judgment labels.
-7. **Tests:** Fixture-backed tests for conversion (future PR); existing tests keep `blackWinrate`/`whiteWinrate` null until then.
-8. **Explicit code path:** Only a dedicated function sets `status: "verified"`; normalizer never auto-promotes.
+1. **Checklist coverage:** Real KataGo samples for **all types S1–S5** (black favored, white favored, early balanced, side-to-move black, side-to-move white).
+2. **Volume:** **≥ 3 independent games** (or ≥ 3 distinct games with multiple turns each) showing **consistent** axis interpretation across samples.
+3. **rootInfo vs moveInfos:** Same axis for `rootInfo.winrate` and `moveInfos[].winrate` on every real sample (document max allowed drift).
+4. **Played row:** `moveSummary.played.winrate` follows the same axis as `rootInfo` (chart dependency).
+5. **Player linkage:** Documented rule tying winrate to `currentPlayer`, `player`, or black — with counterexamples ruled out; `movesBeforeCount = turnIndex - 1` confirmed on real exports.
+6. **Engine metadata:** KataGo version, rules, komi recorded; re-verify on engine upgrade.
+7. **UI copy:** ko/en/ja/zh strings approved; no forbidden judgment labels.
+8. **Tests:** Fixture-backed tests for conversion (future PR); existing tests keep `blackWinrate`/`whiteWinrate` null until then.
+9. **Explicit code path:** Only a dedicated function sets `status: "verified"`; normalizer never auto-promotes.
 
 See also: `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` in `shared/winratePerspectiveV1.ts`.
 
