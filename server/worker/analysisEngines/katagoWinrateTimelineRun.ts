@@ -150,6 +150,9 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
 
   const summary = summarizeWinrateTimelineV1(points);
   const warningCodes: string[] = [];
+  if (totalMoves > maxTurns) {
+    warningCodes.push("TIMELINE_TURNS_CAPPED");
+  }
   if (runErrorCode) {
     warningCodes.push(runErrorCode);
   }

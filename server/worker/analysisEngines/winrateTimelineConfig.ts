@@ -20,10 +20,12 @@ export function readWinrateTimelineEnabledFrom(env: NodeJS.ProcessEnv): boolean 
   return parseBool(env.KATAGO_WINRATE_TIMELINE_ENABLED, false);
 }
 
+/** Default 200; invalid → 200; clamped to [1, 2000]. */
 export function readWinrateTimelineVisitsFrom(env: NodeJS.ProcessEnv): number {
   const raw = env.KATAGO_WINRATE_TIMELINE_VISITS?.trim();
   const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 200;
+  const v = Number.isFinite(n) && n > 0 ? n : 200;
+  return clampInt(v, 1, 2000);
 }
 
 export function readWinrateTimelineMaxTurnsFrom(env: NodeJS.ProcessEnv): number {

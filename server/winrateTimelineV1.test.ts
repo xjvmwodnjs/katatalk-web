@@ -12,7 +12,10 @@ import {
   buildKatagoAnalyzeTurnsQueryLine,
   runKatagoWinrateTimelineV1,
 } from "./worker/analysisEngines/katagoWinrateTimelineRun";
-import { collectFinalResponsesByTurnNumber } from "./worker/analysisEngines/katagoAnalyzeTurnsCollector";
+import {
+  collectFinalResponsesByTurnNumber,
+  isKatagoFinalAnalyzeTurnResponse,
+} from "./worker/analysisEngines/katagoAnalyzeTurnsCollector";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 import type { SpawnFn } from "./worker/analysisEngines/katagoSmokeRun";
 import { analyzeSgfKatago } from "./worker/analysisEngines";
@@ -61,13 +64,65 @@ describe("winrateTimelineConfig", () => {
     expect(readWinrateTimelineVisitsFrom({})).toBe(200);
   });
 
+  it("clamps visits to 1..2000", () => {
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "0" })).toBe(200);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "-5" })).toBe(200);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "3000" })).toBe(2000);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "200" })).toBe(200);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "1" })).toBe(1);
+  });
+
   it("buildAnalyzeTurnNumbers covers 0..N", () => {
     expect(buildAnalyzeTurnNumbers(3, 300, true)).toEqual([0, 1, 2, 3]);
   });
 });
 
+describe("isKatagoFinalAnalyzeTurnResponse", () => {
+  it("accepts only isDuringSearch === false", () => {
+    expect(
+      isKatagoFinalAnalyzeTurnResponse({
+        turnNumber: 1,
+        isDuringSearch: false,
+        rootInfo: { winrate: 0.5 },
+      })
+    ).toBe(true);
+    expect(
+      isKatagoFinalAnalyzeTurnResponse({
+        turnNumber: 1,
+        isDuringSearch: true,
+        rootInfo: { winrate: 0.5 },
+      })
+    ).toBe(false);
+    expect(
+      isKatagoFinalAnalyzeTurnResponse({
+        turnNumber: 1,
+        rootInfo: { winrate: 0.5 },
+      })
+    ).toBe(false);
+  });
+});
+
 describe("katagoAnalyzeTurnsCollector", () => {
-  it("matches by turnNumber and ignores isDuringSearch", () => {
+  it("ignores isDuringSearch true and missing isDuringSearch", () => {
+    const stdout = makeTimelineStdout([
+      { turnNumber: 2, rootInfo: { winrate: 0.9 } },
+      { turnNumber: 2, isDuringSearch: true, rootInfo: { winrate: 0.1 } },
+      { turnNumber: 2, isDuringSearch: false, rootInfo: { winrate: 0.64 } },
+    ]);
+    const map = collectFinalResponsesByTurnNumber(stdout);
+    expect(map.get(2)?.rootInfo).toMatchObject({ winrate: 0.64 });
+    expect(map.has(2)).toBe(true);
+  });
+
+  it("missing turn stays absent for failed point mapping", () => {
+    const stdout = makeTimelineStdout([
+      { turnNumber: 0, isDuringSearch: false, rootInfo: { winrate: 0.5 } },
+    ]);
+    const map = collectFinalResponsesByTurnNumber(stdout);
+    expect(map.has(1)).toBe(false);
+  });
+
+  it("matches by turnNumber and prefers final isDuringSearch false", () => {
     const stdout = makeTimelineStdout([
       { turnNumber: 1, isDuringSearch: true, rootInfo: { winrate: 0.1 } },
       { turnNumber: 1, isDuringSearch: false, rootInfo: { winrate: 0.64, scoreLead: 0.5, visits: 200, currentPlayer: "W" } },

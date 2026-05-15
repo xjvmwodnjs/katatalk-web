@@ -12,15 +12,9 @@ function parseTurnNumber(v: unknown): number | null {
   return n >= 0 ? n : null;
 }
 
-/** KataGo final analysis line: `isDuringSearch === false` only. */
+/** KataGo final analysis line: `isDuringSearch === false` only (field must be present). */
 export function isKatagoFinalAnalyzeTurnResponse(obj: Record<string, unknown>): boolean {
-  if (obj.isDuringSearch === true) {
-    return false;
-  }
-  if (obj.isDuringSearch === false) {
-    return true;
-  }
-  return parseTurnNumber(obj.turnNumber) != null;
+  return obj.isDuringSearch === false;
 }
 
 /**
