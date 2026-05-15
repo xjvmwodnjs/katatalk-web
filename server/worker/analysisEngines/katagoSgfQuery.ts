@@ -1,12 +1,11 @@
 /**
- * 로컬 smoke 전용 최소 SGF 파서 (main line 순서만).
- * variation·AB[]·handicap·setup stones 등은 미지원(TODO).
+ * KataGo query용 SGF 파싱 — `shared/sgfKatagoParseV1` (sgfPlayback mainline) 와 동일 경로.
  *
  * 좌표계: **SGF** 소문자 열·행은 **연속 a–z 에서 i 를 건너뛰지 않음** (`a`=0 … `s`=18 on 19×19).
  * **GTP** 열 문자만 **대문자 I 를 생략**한다 (열 인덱스 → `A`–`H`,`J`–`T`).
  */
 
-const SGF_MOVE_RE = /;([BW])\[([^\]]*)\]/g;
+import { parseSgfForKatagoV1, SgfKatagoParseError } from "@shared/sgfKatagoParseV1";
 
 /** SGF 좌표 한 글자 → 0-based 보드 인덱스 (i 포함, shift 없음). */
 export function sgfLetterToCoordIndex(letter: string, boardSize: number): number {
@@ -59,30 +58,19 @@ export type ParsedMinimalSgf = {
 };
 
 export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
-  const flat = sgf.replace(/\r\n|\r|\n/g, " ");
-  const szMatch = flat.match(/SZ\[(\d+)\]/i);
-  const boardSize = szMatch ? Number.parseInt(szMatch[1]!, 10) : 19;
-  if (!Number.isFinite(boardSize) || boardSize < 2 || boardSize > 25) {
-    throw new Error(`[katago-smoke] SZ 보드 크기가 비정상입니다: ${String(szMatch?.[1])}`);
-  }
-  let komi = 6.5;
-  const kmMatch = flat.match(/KM\[([^\]]+)\]/i);
-  if (kmMatch) {
-    const raw = kmMatch[1]!.trim().replace(",", ".");
-    const parsed = Number.parseFloat(raw);
-    if (Number.isFinite(parsed)) {
-      komi = parsed;
+  try {
+    const parsed = parseSgfForKatagoV1(sgf);
+    return {
+      boardSize: parsed.boardSize,
+      komi: parsed.komi,
+      moves: parsed.moves,
+    };
+  } catch (e) {
+    if (e instanceof SgfKatagoParseError) {
+      throw new Error(e.message);
     }
+    throw e;
   }
-  const moves: ParsedMinimalSgf["moves"] = [];
-  const re = new RegExp(SGF_MOVE_RE);
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(flat)) !== null) {
-    const color = m[1] as "B" | "W";
-    const inner = (m[2] ?? "").toLowerCase();
-    moves.push({ color, sgfPoint: inner });
-  }
-  return { boardSize, komi, moves };
 }
 
 export type KatagoSmokeAnalysisQuery = {

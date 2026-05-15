@@ -19,6 +19,97 @@ describe("runKatagoAnalysisDbPipeline", () => {
     vi.restoreAllMocks();
   });
 
+  it("katago primary failure does not store mock-shaped result", async () => {
+    vi.mocked(analysisEngines.analyzeSgfKatago).mockRejectedValue(
+      new Error("KATAGO_EXIT_NONZERO: exit 1")
+    );
+    const onJobFailed = vi.fn(async () => undefined);
+    const row: AnalysisJobDbRow = {
+      id: "kg-fail-1",
+      user_id: "user_a",
+      status: "running",
+      file_name: "g.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+      is_mock: false,
+      progress: 15,
+      result: null,
+      error_message: null,
+      created_at: "",
+      updated_at: "",
+      completed_at: null,
+      sgf_content: "(;SZ[19];B[pd])",
+      sgf_sha256: "x",
+      sgf_size_bytes: 10,
+    };
+
+    await runKatagoAnalysisDbPipeline({
+      jobId: "kg-fail-1",
+      row,
+      fileName: "g.sgf",
+      language: "ko",
+      onJobFailed,
+    });
+
+    const updateSpy = vi.mocked(creditService.updateAnalysisJobRow);
+    const completedCall = updateSpy.mock.calls.find(
+      args => (args[1] as { status?: string }).status === "completed"
+    );
+    expect(completedCall).toBeUndefined();
+    const failedCall = updateSpy.mock.calls.find(
+      args => (args[1] as { status?: string }).status === "failed"
+    );
+    expect(failedCall?.[1]).toEqual(
+      expect.objectContaining({
+        error_message: expect.stringContaining("KATAGO_EXIT_NONZERO"),
+      })
+    );
+    expect(onJobFailed).toHaveBeenCalled();
+  });
+
+  it("rejects mock-shaped katago result payload", async () => {
+    vi.mocked(analysisEngines.analyzeSgfKatago).mockResolvedValue({
+      ok: true,
+      source: { mock: true, fileName: "g.sgf" },
+    });
+    const row: AnalysisJobDbRow = {
+      id: "kg-mock-shape",
+      user_id: "user_a",
+      status: "running",
+      file_name: "g.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+      is_mock: false,
+      progress: 15,
+      result: null,
+      error_message: null,
+      created_at: "",
+      updated_at: "",
+      completed_at: null,
+      sgf_content: "(;SZ[19];B[pd])",
+      sgf_sha256: "x",
+      sgf_size_bytes: 10,
+    };
+
+    await runKatagoAnalysisDbPipeline({
+      jobId: "kg-mock-shape",
+      row,
+      fileName: "g.sgf",
+      language: "ko",
+    });
+
+    const failedCall = vi.mocked(creditService.updateAnalysisJobRow).mock.calls.find(
+      args => (args[1] as { status?: string }).status === "failed"
+    );
+    expect(failedCall?.[1]).toEqual(
+      expect.objectContaining({
+        error_message: expect.stringContaining("ENGINE_MISMATCH_MOCK_RESULT"),
+      })
+    );
+  });
+
   it("marks completed job is_mock=false in DB update", async () => {
     const row: AnalysisJobDbRow = {
       id: "kg-job-1",

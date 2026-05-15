@@ -94,6 +94,19 @@ KATAGO_WINRATE_TIMELINE_INCLUDE_FINAL=true
 - Worker: `pnpm worker:analysis` (동일 `.env`, `ANALYSIS_WORKER_MODE=external` 필수)
 - Supabase **004+007**(`claim_next_analysis_job`) 적용 후 external worker 검증
 
+### 로컬 KataGo 실분석 체크리스트
+
+1. Web·Worker **둘 다 재시작** (env 변경 반영)
+2. `ANALYSIS_ENGINE=katago`
+3. `ANALYSIS_WORKER_MODE=external`
+4. `KATATALK_ALLOW_MOCK_ANALYSIS=false` (또는 미설정)
+5. Worker에 `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` 설정
+6. **새로 업로드한 job** 과 예전 `queued` mock job 구분 (`is_mock` 다름)
+7. Supabase `analysis_jobs.is_mock` — 실분석은 `false`
+8. 완료 후 `result.source` — `katago-worker-v1`
+9. `GET /api/analyze/:id` → `meta.mock` — `false`
+10. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
+
 ---
 
 ## 3. Railway Web 서비스 env
