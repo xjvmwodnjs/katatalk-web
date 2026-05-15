@@ -22,10 +22,12 @@ import {
   analyzePostIpLimit,
   analyzePostUserLimit,
 } from "./middleware/apiRateLimit";
+import { logAnalysisEngineSnapshot, resolveCompletedJobMetaMock } from "./analysisEngineDeterminism";
 import {
   requireAnalyzeEnqueueAllowed,
   shouldEnqueueAnalysisJobAsMock,
 } from "./middleware/analyzeEnqueueGuard";
+import { getAnalysisEngineName } from "./worker/analysisEngines/config";
 import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
 import { isMockAnalysisAllowed } from "./_core/env";
@@ -76,23 +78,10 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
 
   if (status === "completed" && parsedResult != null) {
     const dataForClient = mergeDbSgfContentIntoCompletedJobData(parsedResult, row.sgf_content);
-    const r = dataForClient as Record<string, unknown> | null;
-    const fromKatagoWorker =
-      r != null && typeof r.source === "string" && r.source === "katago-worker-v1";
     return {
       ...base,
       data: dataForClient,
-      meta: fromKatagoWorker
-        ? {
-            mock: false,
-            message: "KataGo worker v1: BSI/ADI v1 computed from multi-turn; Deep Search not executed.",
-          }
-        : row.is_mock
-          ? {
-              mock: true,
-              message: "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
-            }
-          : undefined,
+      meta: resolveCompletedJobMetaMock(row, parsedResult),
     };
   }
 
@@ -309,11 +298,21 @@ analyzeRouter.post(
 
       const sgfSha256 = sha256HexUtf8(sgfContent);
       const sgfSizeBytes = utf8ByteLength(sgfContent);
+      const enqueueIsMock = shouldEnqueueAnalysisJobAsMock();
       console.log("[analyze] job enqueued", {
         jobId,
         fileName,
         sgfSizeBytes,
         sgfSha256Prefix: sgfSha256.slice(0, 12),
+        isMock: enqueueIsMock,
+        analysisEngine: getAnalysisEngineName(),
+        workerMode: getAnalysisWorkerMode(),
+      });
+      logAnalysisEngineSnapshot({
+        phase: "enqueue",
+        jobId,
+        rowIsMock: enqueueIsMock,
+        selectedPipeline: enqueueIsMock ? "mock" : "katago",
       });
 
       try {
@@ -327,7 +326,7 @@ analyzeRouter.post(
           sgfContent: sgfContent,
           sgfSha256,
           sgfSizeBytes,
-          isMock: shouldEnqueueAnalysisJobAsMock(),
+          isMock: enqueueIsMock,
         });
       } catch (e) {
         console.error("[analyze] insertAnalysisJobQueued", e);

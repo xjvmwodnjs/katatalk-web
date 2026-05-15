@@ -39,7 +39,16 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
   const sgfText = input.sgfContent;
   const sgfSha256 = sha256HexUtf8(sgfText);
   const sgfSizeBytes = utf8ByteLength(sgfText);
-  const parsed = parseMinimalSgfForSmoke(sgfText);
+  let parsed;
+  try {
+    parsed = parseMinimalSgfForSmoke(sgfText);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/^(SGF_|KATAGO_QUERY_BUILD_FAILED):/.test(msg)) {
+      throw e instanceof Error ? e : new Error(msg);
+    }
+    throw new Error(`SGF_PARSE_FAILED: ${msg.slice(0, 120)}`);
+  }
 
   let stdout = "";
   let stderr = "";

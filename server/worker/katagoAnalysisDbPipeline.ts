@@ -6,6 +6,10 @@ import {
   updateAnalysisJobRow,
   updateAnalysisJobRowWithLease,
 } from "../creditService";
+import {
+  isLegacyMockResultPayload,
+  sanitizeAnalysisJobErrorMessage,
+} from "../analysisEngineDeterminism";
 import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
 
 type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
@@ -156,6 +160,17 @@ export async function runKatagoAnalysisDbPipeline(args: {
       return;
     }
 
+    if (row.is_mock === true) {
+      throw new Error("ENGINE_MISMATCH_JOB_MOCK: refusing to store KataGo result for is_mock=true job");
+    }
+    if (isLegacyMockResultPayload(result)) {
+      throw new Error("ENGINE_MISMATCH_MOCK_RESULT: KataGo pipeline produced mock-shaped result");
+    }
+    const rObj = result as Record<string, unknown>;
+    if (rObj.source !== "katago-worker-v1" || rObj.isMock === true) {
+      throw new Error("KATAGO_OUTPUT_INVALID: result must be katago-worker-v1 with isMock=false");
+    }
+
     const cr = await updateJobForPipeline(jobId, lease, {
       status: "completed",
       progress: 100,
@@ -169,7 +184,9 @@ export async function runKatagoAnalysisDbPipeline(args: {
       console.warn("[katagoAnalysisDbPipeline] lease_lost skip completed write", { jobId });
     }
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error";
+    const message = sanitizeAnalysisJobErrorMessage(
+      e instanceof Error ? e.message : "Unknown error"
+    );
     try {
       const fr = await updateJobForPipeline(jobId, lease, {
         status: "failed",
