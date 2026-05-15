@@ -1,6 +1,6 @@
 # KataTalk 환경 변수 가이드
 
-> **값은 placeholder만 기재합니다.** 실제 API 키·시크릿·경로는 Git에 커밋하지 마세요.  
+> **값은 placeholder만 기재합니다.** 실제 API 키·시크릿·경로는 Git에 커밋하지 마세요.
 > 로컬은 `.env.example`을 복사해 `.env`로 저장한 뒤 채웁니다. Web/Worker 분리 운영은 이 문서의 프로파일을 따르세요.
 
 ## 1. 개요
