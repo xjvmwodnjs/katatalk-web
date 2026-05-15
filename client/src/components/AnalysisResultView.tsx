@@ -196,6 +196,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
         selectedTurnIndex={selectedTurnIndex}
         onSelectTurnIndex={selectTurnIndex}
         lang={lang}
+        fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
       />
 
       <AnalysisCandidateList

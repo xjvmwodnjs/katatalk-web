@@ -435,6 +435,7 @@ type UiBlock = {
   winrateEmpty: string;
   winrateToggleNote: string;
   winratePerspectiveNote: string;
+  winrateFullTimelineNote: string;
   winrateClickHint: string;
   chartAriaTurn: string;
   candidatesTitle: string;
@@ -506,6 +507,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateEmpty: "표시할 승률 추이가 없습니다.",
     winrateToggleNote: "흑/백 관점 전환 — 준비 중",
     winratePerspectiveNote: "KataGo 출력 관점이며 흑/백 고정 해석이 아닙니다.",
+    winrateFullTimelineNote: "메인라인 전체 수순 흐름(200 visits 기준 KataGo 출력).",
     winrateClickHint: "점을 눌러 해당 수순을 선택할 수 있습니다.",
     chartAriaTurn: "수",
     candidatesTitle: "핵심 검토 후보",
@@ -574,6 +576,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateEmpty: "No winrate series to display.",
     winrateToggleNote: "Black/white perspective — coming soon",
     winratePerspectiveNote: "Shown as KataGo output; not fixed as black-only or white-only winrate.",
+    winrateFullTimelineNote: "Full mainline flow (KataGo output, 200 visits per turn).",
     winrateClickHint: "Click a point to select that move index.",
     chartAriaTurn: "Move",
     candidatesTitle: "Key review candidates",
@@ -642,6 +645,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateEmpty: "表示できる勝率系列がありません。",
     winrateToggleNote: "黒白視点の切替 — 準備中",
     winratePerspectiveNote: "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
+    winrateFullTimelineNote: "メインライン全手の推移（各手 200 visits・KataGo 出力）。",
     winrateClickHint: "点をクリックして手数を選べます。",
     chartAriaTurn: "手",
     candidatesTitle: "主要な検討候補",
@@ -710,6 +714,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateEmpty: "没有可显示的胜率序列。",
     winrateToggleNote: "黑/白视角 — 准备中",
     winratePerspectiveNote: "为 KataGo 输出视角，不作黑方或白方固定解读。",
+    winrateFullTimelineNote: "主线全盘走势（每手 200 visits，KataGo 输出）。",
     winrateClickHint: "点击节点可选择对应手数。",
     chartAriaTurn: "手",
     candidatesTitle: "重点复核候选",

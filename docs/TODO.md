@@ -50,6 +50,7 @@
 - [x] **Winrate perspective normalizer v1** — `shared/winratePerspectiveV1.ts`: raw clamp·`katago_output_only`/`unverified`·evidence. `blackWinrate`/`whiteWinrate` null. 차트는 KataGo 관점 유지.
 - [x] **Winrate perspective hardening** — raw 는 `typeof number` + finite 만 유효(문자열·boolean·NaN·Infinity → `unverified`). `displayLabelKey` → `translateWinrateDisplayLabelKey`. `verified` 승격 미구현(`WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` 문서화만).
 - [x] **Winrate axis sample verification (docs)** — `docs/winrate-axis-verification.md`·`server/fixtures/winrateAxisSamplesV1.ts`·승격 조건·변환 공식 후보. 코드 변환/토글/verified 생성 없음.
+- [x] **Full-game winrate timeline v1** — Worker `analyzeTurns`·`result.winrateTimelineV1`·ViewModel/UI 우선(기본 `KATAGO_WINRATE_TIMELINE_ENABLED=false`). 흑백 변환/토글 없음.
 - [ ] **흑/백 승률 표시 토글** — 실제 KataGo 샘플로 축 확정·`WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` 충족 후 `verified` 승격·토글 UX.
 - [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
 

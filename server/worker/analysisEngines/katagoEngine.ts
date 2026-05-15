@@ -12,6 +12,7 @@ import {
   validateKatagoWorkerV1Document,
 } from "./katagoRawParser";
 import { parseMinimalSgfForSmoke } from "./katagoSgfQuery";
+import { runKatagoWinrateTimelineV1 } from "./katagoWinrateTimelineRun";
 import { runKatagoWorkerAnalysisV1, summarizeKatagoStderrForDb, KATAGO_WORKER_KILL_GRACE_MS } from "./katagoSmokeRun";
 import type { AnalyzeSgfInput, NormalizedAnalysisResult } from "./types";
 
@@ -136,6 +137,13 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     spawnFn: input.__testSpawnFn,
   });
 
+  const winrateTimelineV1 = await runKatagoWinrateTimelineV1({
+    parsed,
+    jobId: input.jobId,
+    env: process.env,
+    spawnFn: input.__testSpawnFn,
+  });
+
   const result: NormalizedAnalysisResult = {
     ok: true,
     source: "katago-worker-v1",
@@ -203,6 +211,7 @@ export async function analyzeSgfKatago(input: AnalyzeSgfInput): Promise<Normaliz
     adiV1,
     deepSearchPlan,
     deepSearchResults,
+    winrateTimelineV1,
   };
 
   return result;

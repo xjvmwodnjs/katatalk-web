@@ -13,6 +13,8 @@ type Props = {
   selectedTurnIndex: number | null;
   onSelectTurnIndex: (turnIndex: number) => void;
   lang: Language;
+  /** Full mainline timeline chart (vs sparse candidate turns) */
+  fullTimeline?: boolean;
 };
 
 function clampWinratePct(n: number): number {
@@ -22,7 +24,13 @@ function clampWinratePct(n: number): number {
   return Math.min(100, Math.max(0, n));
 }
 
-export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSelectTurnIndex, lang }: Props) {
+export default function AnalysisWinratePanel({
+  series,
+  selectedTurnIndex,
+  onSelectTurnIndex,
+  lang,
+  fullTimeline = false,
+}: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
   const pts = useMemo(
@@ -92,6 +100,9 @@ export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSele
         </button>
       </div>
       <p className="text-xs text-slate-500 mb-1">{t.winratePerspectiveNote}</p>
+      {fullTimeline ? (
+        <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
+      ) : null}
       <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
       <div className="overflow-x-auto">
         <svg viewBox="0 0 560 200" className="w-full max-w-3xl h-48 select-none" role="img" aria-label={winrateYAxisLabel}>
