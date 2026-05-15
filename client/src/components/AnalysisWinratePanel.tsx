@@ -20,7 +20,10 @@ function clampWinratePct(n: number): number {
 export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSelectTurnIndex, lang }: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
-  const pts = useMemo(() => series.filter((p) => p.displayWinrate != null), [series]);
+  const pts = useMemo(
+    () => series.filter((p) => p.perspective.normalized.displayWinrate != null),
+    [series]
+  );
 
   const { polyline, circles } = useMemo(() => {
     const w = 560;
@@ -35,7 +38,9 @@ export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSele
       return { polyline: "", circles: [] as { cx: number; cy: number; ti: number }[] };
     }
     const xs = pts.map((_, i) => padL + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw));
-    const ys = pts.map((p) => padT + (1 - clampWinratePct(p.displayWinrate ?? 0) / 100) * ih);
+    const ys = pts.map(
+      (p) => padT + (1 - clampWinratePct(p.perspective.normalized.displayWinrate ?? 0) / 100) * ih
+    );
     const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i]!.toFixed(1)}`).join(" ");
     const circ = pts.map((p, i) => ({ cx: xs[i]!, cy: ys[i]!, ti: p.turnIndex }));
     return { polyline: d, circles: circ };
