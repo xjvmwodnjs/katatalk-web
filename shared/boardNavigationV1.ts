@@ -37,6 +37,25 @@ export function shouldShowBoardTurnNavigationV1(args: {
   return args.vmKind === "katago-worker-v1" && !args.sgfPlaceholder;
 }
 
+/** Mainline has no moves — toolbar/slider stay visible but non-interactive. */
+export function isBoardTurnNavigationInteractiveV1(totalMoves: number): boolean {
+  return Math.max(0, Math.trunc(Number(totalMoves)) || 0) > 0;
+}
+
+export function normalizeSelectedTurnIndexForNavigationV1(
+  raw: number | null | undefined,
+  totalMoves: number
+): number | null {
+  if (raw == null) {
+    return null;
+  }
+  const n = Math.trunc(Number(raw));
+  if (!Number.isFinite(n)) {
+    return null;
+  }
+  return clampSelectedTurnIndexV1(n, totalMoves);
+}
+
 /** Keyboard nav uses the same gate as toolbar/slider UI. */
 export function isBoardKeyboardNavigationEnabledV1(
   args: Parameters<typeof shouldShowBoardTurnNavigationV1>[0]
@@ -48,6 +67,28 @@ export type BoardKeyboardNavKeyV1 = "ArrowLeft" | "ArrowRight" | "Home" | "End";
 
 export function isBoardKeyboardNavKeyV1(key: string): key is BoardKeyboardNavKeyV1 {
   return key === "ArrowLeft" || key === "ArrowRight" || key === "Home" || key === "End";
+}
+
+export type BoardKeyboardNavEventLikeV1 = {
+  defaultPrevented: boolean;
+  key: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+};
+
+/** Returns false when another handler already consumed the event or modifiers apply. */
+export function shouldHandleBoardKeyboardNavEventV1(e: BoardKeyboardNavEventLikeV1): boolean {
+  if (e.defaultPrevented) {
+    return false;
+  }
+  if (!isBoardKeyboardNavKeyV1(e.key)) {
+    return false;
+  }
+  if (e.altKey || e.ctrlKey || e.metaKey) {
+    return false;
+  }
+  return true;
 }
 
 export function nextTurnIndexFromBoardKeyboardV1(

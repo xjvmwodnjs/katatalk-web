@@ -407,6 +407,7 @@ type UiBlock = {
   navTurnCounter: string;
   navSliderAria: string;
   navKeyboardHint: string;
+  navEmptyMainline: string;
   boardGhostLegend: string;
   boardGhostLegendFallback: string;
   boardGhostPvLegend: string;
@@ -472,6 +473,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navTurnCounter: "{current} / {total}",
     navSliderAria: "수순 슬라이더",
     navKeyboardHint: "←/→ 수순 · Home/End 처음/끝 (보기 전용)",
+    navEmptyMainline: "메인라인 수가 없어 수순 탐색을 사용할 수 없습니다.",
     boardGhostLegend: "반투명 마커: 참고 후보수",
     boardGhostLegendFallback: "반투명 마커: 참고 좌표",
     boardGhostPvLegend: "KataGo 참고도(PV) 첫 수",
@@ -539,6 +541,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navTurnCounter: "{current} / {total}",
     navSliderAria: "Move index slider",
     navKeyboardHint: "←/→ moves · Home/End start/end (view only)",
+    navEmptyMainline: "No mainline moves — turn navigation is unavailable.",
     boardGhostLegend: "Faded markers: reference candidate moves",
     boardGhostLegendFallback: "Faded markers: reference coordinates",
     boardGhostPvLegend: "KataGo reference line (PV) first move",
@@ -606,6 +609,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navTurnCounter: "{current} / {total}",
     navSliderAria: "手数スライダー",
     navKeyboardHint: "←/→ 手数 · Home/End 最初/最後（閲覧のみ）",
+    navEmptyMainline: "メインラインの手がありません — 手数ナビは使用できません。",
     boardGhostLegend: "半透明マーカー: 参考候補手",
     boardGhostLegendFallback: "半透明マーカー: 参考座標",
     boardGhostPvLegend: "KataGo 参考図(PV)の初手",
@@ -673,6 +677,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navTurnCounter: "{current} / {total}",
     navSliderAria: "手数滑块",
     navKeyboardHint: "←/→ 手数 · Home/End 首尾（仅查看）",
+    navEmptyMainline: "主线无手 — 无法使用手数导航。",
     boardGhostLegend: "半透明标记：参考候选手",
     boardGhostLegendFallback: "半透明标记：参考坐标",
     boardGhostPvLegend: "KataGo 参考图(PV)第一手",

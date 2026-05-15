@@ -8,7 +8,10 @@ import {
   clampSelectedTurnIndexV1,
   isBoardKeyboardNavigationEnabledV1,
   isBoardKeyboardNavKeyV1,
+  isBoardTurnNavigationInteractiveV1,
   nextTurnIndexFromBoardKeyboardV1,
+  normalizeSelectedTurnIndexForNavigationV1,
+  shouldHandleBoardKeyboardNavEventV1,
   shouldIgnoreBoardKeyboardNavFocusV1,
   shouldShowBoardTurnNavigationV1,
 } from "@shared/boardNavigationV1";
@@ -76,6 +79,7 @@ describe("boardNavigationV1", () => {
       expect(t.navFirst.length).toBeGreaterThan(0);
       expect(t.navTurnCounter).toContain("{current}");
       expect(t.navKeyboardHint.length).toBeGreaterThan(0);
+      expect(t.navEmptyMainline.length).toBeGreaterThan(0);
       expect(uiTextContainsForbiddenLabel(t.navFirst, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navNext, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
@@ -116,6 +120,47 @@ describe("boardNavigationV1", () => {
     expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("span", "slider"))).toBe(true);
     expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("div", undefined, true))).toBe(true);
     expect(shouldIgnoreBoardKeyboardNavFocusV1(mk("div"))).toBe(false);
+  });
+
+  it("shouldHandleBoardKeyboardNavEventV1 respects defaultPrevented and modifiers", () => {
+    expect(
+      shouldHandleBoardKeyboardNavEventV1({
+        defaultPrevented: true,
+        key: "ArrowLeft",
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldHandleBoardKeyboardNavEventV1({
+        defaultPrevented: false,
+        key: "ArrowRight",
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldHandleBoardKeyboardNavEventV1({
+        defaultPrevented: false,
+        key: "ArrowRight",
+        altKey: true,
+        ctrlKey: false,
+        metaKey: false,
+      })
+    ).toBe(false);
+  });
+
+  it("isBoardTurnNavigationInteractiveV1 is false when totalMoves is 0", () => {
+    expect(isBoardTurnNavigationInteractiveV1(0)).toBe(false);
+    expect(isBoardTurnNavigationInteractiveV1(1)).toBe(true);
+  });
+
+  it("normalizeSelectedTurnIndexForNavigationV1 clamps like sgf playback", () => {
+    expect(normalizeSelectedTurnIndexForNavigationV1(99, 3)).toBe(3);
+    expect(normalizeSelectedTurnIndexForNavigationV1(-2, 3)).toBe(0);
+    expect(normalizeSelectedTurnIndexForNavigationV1(null, 3)).toBeNull();
   });
 
   it("keyboard navigation disabled when placeholder (same gate as toolbar)", () => {
