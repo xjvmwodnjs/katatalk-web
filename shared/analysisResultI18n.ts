@@ -369,6 +369,24 @@ export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang
   return row[lang];
 }
 
+/** Winrate chart axis labels — keyed by `WinrateNormalizedV1.displayLabelKey` */
+const WINRATE_DISPLAY_LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
+  katagoOutputWinrate: {
+    ko: "KataGo 기준 승률 (%)",
+    en: "KataGo output winrate (%)",
+    ja: "KataGo 出力の勝率 (%)",
+    zh: "KataGo 输出胜率 (%)",
+  },
+};
+
+export function translateWinrateDisplayLabelKey(key: string, lang: AnalysisResultLang): string {
+  const row = WINRATE_DISPLAY_LABEL_KEYS[key];
+  if (!row) {
+    return key;
+  }
+  return row[lang];
+}
+
 type UiBlock = {
   summaryStatusComplete: string;
   summaryTitle: string;

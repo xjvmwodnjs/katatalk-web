@@ -1,6 +1,13 @@
 /**
  * Winrate perspective normalizer v1 — KataGo raw output → UI-safe display metadata.
  * Does not assert black/white winrates until sample-verified in a later step.
+ *
+ * ## Raw winrate input policy (v1 hardening)
+ * - **Valid**: `typeof raw === "number"` and `Number.isFinite(raw)` → clamp to 0~1.
+ * - **Invalid → unverified**: `null`, `undefined`, `string`, `boolean`, `NaN`, `±Infinity`, objects.
+ * - **No coercion**: numeric strings (e.g. `"0.64"`) are rejected.
+ * - **displayWinrate**: only when valid raw exists; mapped to 0~100.
+ * - **status**: never emits `verified` in v1; only `katago_output_only` or `unverified`.
  */
 
 export type WinrateRawPerspectiveV1 = "katago_output";
@@ -41,22 +48,34 @@ export type NormalizeWinratePerspectiveV1Input = {
   playerToMove?: "B" | "W" | null;
 };
 
-/** Clamp KataGo raw winrate to 0~1; invalid → null */
+/**
+ * Future `verified` promotion requirements — **not implemented** in v1.
+ * Implement only after KataGo sample validation and product sign-off.
+ */
+export const WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 = [
+  "KataGo raw winrate axis confirmed on production samples (engine version, rules, komi).",
+  "blackWinrate / whiteWinrate conversion rules documented and covered by tests.",
+  "UI copy reviewed: no forbidden judgment labels; B/W toggle behavior specified.",
+  "Explicit code path sets status to verified; v1 normalizer never auto-promotes.",
+] as const;
+
+/** True only for finite JavaScript numbers (excludes NaN, ±Infinity). */
+export function isValidRawWinrateNumber(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isFinite(raw);
+}
+
+/** Clamp KataGo raw winrate to 0~1; invalid types → null */
 export function clampRawWinrate01(raw: unknown): number | null {
-  if (raw == null) {
+  if (!isValidRawWinrateNumber(raw)) {
     return null;
   }
-  const n = Number(raw);
-  if (!Number.isFinite(n)) {
-    return null;
-  }
-  if (n < 0) {
+  if (raw < 0) {
     return 0;
   }
-  if (n > 1) {
+  if (raw > 1) {
     return 1;
   }
-  return n;
+  return raw;
 }
 
 /** 0~100 display percent from 0~1 raw */

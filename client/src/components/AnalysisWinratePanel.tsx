@@ -1,7 +1,12 @@
 import { useMemo } from "react";
 import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
-import { getAnalysisResultUiStrings, normalizeAnalysisResultLang } from "@shared/analysisResultI18n";
+import {
+  getAnalysisResultUiStrings,
+  normalizeAnalysisResultLang,
+  translateWinrateDisplayLabelKey,
+} from "@shared/analysisResultI18n";
+import type { WinrateDisplayLabelKeyV1 } from "@shared/winratePerspectiveV1";
 
 type Props = {
   series: AnalysisResultWinratePointV1[];
@@ -24,6 +29,12 @@ export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSele
     () => series.filter((p) => p.perspective.normalized.displayWinrate != null),
     [series]
   );
+
+  const winrateYAxisLabel = useMemo(() => {
+    const key: WinrateDisplayLabelKeyV1 =
+      pts[0]?.perspective.normalized.displayLabelKey ?? "katagoOutputWinrate";
+    return translateWinrateDisplayLabelKey(key, uiLang);
+  }, [pts, uiLang]);
 
   const { polyline, circles } = useMemo(() => {
     const w = 560;
@@ -83,7 +94,7 @@ export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSele
       <p className="text-xs text-slate-500 mb-1">{t.winratePerspectiveNote}</p>
       <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
       <div className="overflow-x-auto">
-        <svg viewBox="0 0 560 200" className="w-full max-w-3xl h-48 select-none" role="img" aria-label={t.winrateYAxis}>
+        <svg viewBox="0 0 560 200" className="w-full max-w-3xl h-48 select-none" role="img" aria-label={winrateYAxisLabel}>
           <rect x="0" y="0" width="560" height="200" fill="rgba(0,0,0,0.2)" rx="8" />
           {[0, 25, 50, 75, 100].map((pct) => {
             const y = 12 + (1 - pct / 100) * 160;
@@ -97,7 +108,7 @@ export default function AnalysisWinratePanel({ series, selectedTurnIndex, onSele
             );
           })}
           <text x="44" y="196" fill="#94a3b8" fontSize="11" fontFamily="Noto Sans KR, sans-serif">
-            {t.winrateYAxis}
+            {winrateYAxisLabel}
           </text>
           {polyline ? (
             <path d={polyline} fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
