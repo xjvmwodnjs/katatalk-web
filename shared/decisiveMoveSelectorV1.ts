@@ -103,6 +103,9 @@ function addScoreLoss(candidate: Candidate, value: unknown): void {
     return;
   }
   candidate.scoreLoss = maxNullable(candidate.scoreLoss, loss);
+  if (loss <= 0) {
+    return;
+  }
   candidate.score += positiveContribution(loss, 10) * 40;
   candidate.signalCount += 1;
 }
@@ -113,6 +116,9 @@ function addWinrateLoss(candidate: Candidate, value: unknown): void {
     return;
   }
   candidate.winrateLoss = maxNullable(candidate.winrateLoss, loss);
+  if (loss <= 0) {
+    return;
+  }
   candidate.score += positiveContribution(loss, 0.2) * 35;
   candidate.signalCount += 1;
 }
@@ -195,6 +201,18 @@ function isFinalPosition(candidate: Candidate, totalMoves: number | null | undef
   return candidate.finalPosition || (typeof totalMoves === "number" && Number.isInteger(totalMoves) && totalMoves > 0 && candidate.turnIndex === totalMoves);
 }
 
+function hasPositiveScoreLoss(candidate: Candidate): boolean {
+  return typeof candidate.scoreLoss === "number" && Number.isFinite(candidate.scoreLoss) && candidate.scoreLoss > 0;
+}
+
+function hasPositiveWinrateLoss(candidate: Candidate): boolean {
+  return typeof candidate.winrateLoss === "number" && Number.isFinite(candidate.winrateLoss) && candidate.winrateLoss > 0 && candidate.winrateLoss <= 1;
+}
+
+function hasPositiveLossEvidence(candidate: Candidate): boolean {
+  return hasPositiveScoreLoss(candidate) || hasPositiveWinrateLoss(candidate);
+}
+
 export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Input): ProductDecisiveMoveV1 | null {
   const loserColor = input.gameResult?.loserColor;
   if (loserColor !== "B" && loserColor !== "W") {
@@ -213,12 +231,13 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     candidate.sourceEventId ??= event.id;
     addBsi(candidate, event.signals.bsiScore);
     addAdi(candidate, event.signals.adiScore);
-    addWinrateLoss(candidate, event.signals.winrateDelta == null ? null : Math.abs(event.signals.winrateDelta));
-    addScoreLoss(candidate, event.signals.scoreLeadDelta == null ? null : Math.abs(event.signals.scoreLeadDelta));
     if (event.signals.deepSearchCompleted === true || event.signals.deepSearchChangedTop === true) {
       addSource(candidate, "deepSearchResultsV1");
       candidate.score += event.signals.deepSearchChangedTop === true ? 18 : 10;
       candidate.signalCount += 1;
+    }
+    if (event.signals.winrateDelta != null) {
+      candidate.notes.add("learningEvents winrateDelta is not used as product winrateLoss in v1");
     }
     pushUnique(candidate.pv, event.evidence.pv);
     pushUnique(candidate.pv, event.evidence.deepSearchPv);
@@ -282,11 +301,8 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     }
   }
 
-  const points = input.winrateTimeline?.points ?? [];
-  for (let i = 1; i < points.length; i += 1) {
-    const prev = points[i - 1]!;
-    const point = points[i]!;
-    if (point.status !== "ok" || prev.status !== "ok" || typeof point.rawWinrate !== "number" || typeof prev.rawWinrate !== "number") {
+  for (const point of input.winrateTimeline?.points ?? []) {
+    if (point.status !== "ok") {
       continue;
     }
     const candidate = candidateFor(candidates, point.turnIndex);
@@ -295,12 +311,13 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
       playedMove: point.playedMove,
     });
     addSource(candidate, "winrateTimelineV1");
-    addWinrateLoss(candidate, Math.abs(point.rawWinrate - prev.rawWinrate));
+    candidate.notes.add("winrateTimelineV1 is context only until loser-perspective loss is verified");
   }
 
   const eligible = Array.from(candidates.values())
     .filter((candidate) => candidate.player === loserColor)
     .filter((candidate) => !isFinalPosition(candidate, input.totalMoves))
+    .filter(hasPositiveLossEvidence)
     .filter((candidate) => candidate.evidenceSource.size > 0)
     .sort(compareCandidates);
 

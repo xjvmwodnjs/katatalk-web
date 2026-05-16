@@ -149,6 +149,51 @@ function deepSearch(turnIndex: number, player: "B" | "W") {
   } as any;
 }
 
+function timeline(turnIndex: number, player: "B" | "W") {
+  return {
+    version: "winrate-timeline-v1",
+    enabled: true,
+    source: "katago-analyzeTurns",
+    policy: { mode: "full-mainline-after-each-move", visits: 100, maxTurns: 20, analyzeTurnsCount: 2, timeoutMs: 1000, analysisPVLen: 6, includeFinal: true },
+    totalMoves: 20,
+    attemptedCount: 2,
+    completedCount: 2,
+    failedCount: 0,
+    partialFailure: false,
+    allFailed: false,
+    points: [
+      {
+        turnIndex: turnIndex - 1,
+        turnNumber: turnIndex - 1,
+        movesBeforeCount: turnIndex - 1,
+        player: player === "B" ? "W" : "B",
+        playedMove: `P${turnIndex - 1}`,
+        status: "ok",
+        rawWinrate: 0.8,
+        displayWinrate: 80,
+        scoreLead: 5,
+        visits: 100,
+        currentPlayer: "B",
+        perspectiveStatus: "katago_output_only",
+      },
+      {
+        turnIndex,
+        turnNumber: turnIndex,
+        movesBeforeCount: turnIndex,
+        player,
+        playedMove: `P${turnIndex}`,
+        status: "ok",
+        rawWinrate: 0.2,
+        displayWinrate: 20,
+        scoreLead: -5,
+        visits: 100,
+        currentPlayer: "W",
+        perspectiveStatus: "katago_output_only",
+      },
+    ],
+  } as any;
+}
+
 describe("decisive move selector v1", () => {
   it("returns null when loserColor is absent", () => {
     expect(buildProductDecisiveMoveV1({ gameResult: drawResult })).toBeNull();
@@ -179,6 +224,15 @@ describe("decisive move selector v1", () => {
     expect(result?.scoreLoss).toBe(8);
   });
 
+  it("returns null when the only loser move has zero loss", () => {
+    expect(buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      turnAnalyses: [
+        turn(10, "W", { bestScoreLead: 0, playedScoreLead: 0, bestWinrate: 0.5, playedWinrate: 0.5 }),
+      ],
+    })).toBeNull();
+  });
+
   it("selects the loser move with larger winrateLoss", () => {
     const result = buildProductDecisiveMoveV1({
       gameResult: blackWin,
@@ -189,6 +243,45 @@ describe("decisive move selector v1", () => {
     });
     expect(result?.turnIndex).toBe(12);
     expect(result?.winrateLoss).toBeCloseTo(0.25);
+  });
+
+  it("does not select ADI-only loser candidates", () => {
+    expect(buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      adi: adi(10, "W", 0.95),
+    })).toBeNull();
+  });
+
+  it("does not select Deep Search-only loser candidates", () => {
+    expect(buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      deepSearchResults: deepSearch(10, "W"),
+    })).toBeNull();
+  });
+
+  it("does not select timeline-only candidates or convert raw delta to winrateLoss", () => {
+    expect(buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      winrateTimeline: timeline(10, "W"),
+    })).toBeNull();
+
+    const withLoss = buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      turnAnalyses: [turn(10, "W", { bestScoreLead: 3, playedScoreLead: 0, bestWinrate: 0.5, playedWinrate: 0.5 })],
+      winrateTimeline: timeline(10, "W"),
+    });
+    expect(withLoss?.winrateLoss).toBe(0);
+    expect(withLoss?.evidence.source).toContain("winrateTimelineV1");
+  });
+
+  it("does not use learningEvents winrateDelta as product winrateLoss", () => {
+    const result = buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      turnAnalyses: [turn(10, "W", { bestScoreLead: 3, playedScoreLead: 0, bestWinrate: 0.5, playedWinrate: 0.5 })],
+      learningEvents: { version: "learning-events-v1", events: [learningEvent(10, { winrateDelta: 25 })] } as any,
+    });
+    expect(result?.winrateLoss).toBe(0);
+    expect(result?.evidence.notes?.join(" ")).toContain("winrateDelta is not used");
   });
 
   it("adds BSI and ADI evidence to the score", () => {
