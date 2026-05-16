@@ -4,6 +4,7 @@
 
 import {
   extractMainlineBwMoves,
+  readSgfBracketValue,
   sgfPointToGtp,
   type ParsedMainlineMoveV1,
   type SgfPlaybackWarningV1,
@@ -32,13 +33,92 @@ export class SgfKatagoParseError extends Error {
   }
 }
 
+function readOneSgfPropertyValue(
+  s: string,
+  i: number
+): { propId: string; value: string; end: number } | null {
+  let j = i;
+  while (j < s.length && /\s/.test(s[j]!)) {
+    j += 1;
+  }
+  if (j >= s.length || !/[A-Za-z]/.test(s[j]!)) {
+    return null;
+  }
+  const idStart = j;
+  while (j < s.length && /[A-Za-z]/.test(s[j]!)) {
+    j += 1;
+  }
+  if (j >= s.length || s[j] !== "[") {
+    return null;
+  }
+  const br = readSgfBracketValue(s, j);
+  if (br == null) {
+    return null;
+  }
+  return { propId: s.slice(idStart, j), value: br.text, end: br.end };
+}
+
+function findFirstMainlinePropertyValue(sgf: string, propId: string): string | null {
+  const s = sgf.replace(/\r\n|\r|\n/g, " ");
+  const rootIdx = s.indexOf("(;");
+  if (rootIdx < 0) {
+    return null;
+  }
+
+  const target = propId.toUpperCase();
+  let i = rootIdx + 2;
+  let parenDepth = 0;
+
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (parenDepth > 0) {
+      if (ch === "(") {
+        parenDepth += 1;
+      } else if (ch === ")") {
+        parenDepth -= 1;
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === ")") {
+      break;
+    }
+    if (ch === "(") {
+      parenDepth += 1;
+      i += 1;
+      continue;
+    }
+    if (ch === ";") {
+      i += 1;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (!/[A-Za-z]/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    const prop = readOneSgfPropertyValue(s, i);
+    if (prop == null) {
+      i += 1;
+      continue;
+    }
+    if (prop.propId.toUpperCase() === target) {
+      return prop.value;
+    }
+    i = prop.end;
+  }
+  return null;
+}
+
 function readKomiFromSgf(sgf: string): number {
-  const flat = sgf.replace(/\r\n|\r|\n/g, " ");
-  const kmMatch = flat.match(/KM\[([^\]]+)\]/i);
-  if (!kmMatch) {
+  const rawKomi = findFirstMainlinePropertyValue(sgf, "KM");
+  if (rawKomi == null) {
     return 6.5;
   }
-  const raw = kmMatch[1]!.trim().replace(",", ".");
+  const raw = rawKomi.trim().replace(",", ".");
   const parsed = Number.parseFloat(raw);
   return Number.isFinite(parsed) ? parsed : 6.5;
 }

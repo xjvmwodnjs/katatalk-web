@@ -8,6 +8,24 @@ import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 
 describe("sgfKatagoParseV1", () => {
+  it("reads KM property from actual SGF property values", () => {
+    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[6.5]SZ[19];B[pd])").komi).toBe(6.5);
+    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[7.5]SZ[19];B[pd])").komi).toBe(7.5);
+    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[0]SZ[19];B[pd])").komi).toBe(0);
+    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[-0.5]SZ[19];B[pd])").komi).toBe(-0.5);
+  });
+
+  it("ignores KM-looking text inside comments and property values", () => {
+    expect(parseSgfForKatagoV1("(;GM[1]C[KM[999]]KM[7.5];B[pd])").komi).toBe(7.5);
+    expect(parseSgfForKatagoV1("(;GM[1]KM[6.5]C[KM[999]];B[pd])").komi).toBe(6.5);
+    expect(parseSgfForKatagoV1("(;GM[1]C[escaped \\] text KM[999]]KM[6.5];B[pd])").komi).toBe(6.5);
+  });
+
+  it("falls back to default komi when KM is absent or invalid", () => {
+    expect(parseSgfForKatagoV1("(;GM[1]SZ[19];B[pd])").komi).toBe(6.5);
+    expect(parseSgfForKatagoV1("(;GM[1]KM[abc]SZ[19];B[pd])").komi).toBe(6.5);
+  });
+
   it("does not treat ;B[] inside comment as a move", () => {
     const sgf = "(;SZ[19];C[fake;B[pd]here];B[aa];W[bb])";
     const parsed = parseSgfForKatagoV1(sgf);
