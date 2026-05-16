@@ -126,6 +126,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
         : null,
     [vm, selectedCandidateTurnIndex, reviewMode]
   );
+  const selectedLearningEvent = selectedCandidate?.learningEvent ?? null;
   const selectedCandidateVariation = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || selectedCandidateTurnIndex == null || vm.sgfPlayback.placeholder) {
       return null;
@@ -470,7 +471,16 @@ export default function AnalysisResultView({ data, lang }: Props) {
               {t.analysisMemoTitle}
             </h2>
             <div className="space-y-1.5 text-xs text-slate-300 sm:space-y-2 sm:text-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-              <p>{reviewMode === "try-play" ? t.tryPlayNotice : selectedCandidate ? t.analysisMemoCandidate : t.analysisMemoSelectCandidate}</p>
+              <p>
+                {reviewMode === "try-play"
+                  ? t.tryPlayNotice
+                  : selectedLearningEvent
+                    ? t.analysisMemoLearningEvent
+                    : selectedCandidate
+                      ? t.analysisMemoCandidate
+                      : t.analysisMemoSelectCandidate}
+              </p>
+              {selectedLearningEvent?.signals.deepSearchCompleted ? <p>{t.analysisMemoDeepSearchEvidence}</p> : null}
               {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
               <p>{t.analysisMemoPvCaution}</p>
               <p>{t.analysisMemoSignalCaution}</p>
@@ -494,6 +504,26 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 <dd className="text-slate-200">{selectedCandidate.deepSearchCompleted ? t.yesShort : t.noShort}</dd>
                 <dt className="text-slate-500">{t.variationPvState}</dt>
                 <dd className="text-slate-200">{selectedCandidateVariation ? t.yesShort : t.noShort}</dd>
+                {selectedLearningEvent ? (
+                  <>
+                    <dt className="text-slate-500">{t.learningEventConfidence}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">{selectedLearningEvent.confidence}</dd>
+                    <dt className="text-slate-500">{t.learningEventScore}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">{selectedLearningEvent.score.toFixed(1)}</dd>
+                    <dt className="text-slate-500">{t.learningEventWinrateDelta}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">
+                      {selectedLearningEvent.signals.winrateDelta != null ? selectedLearningEvent.signals.winrateDelta.toFixed(1) : "—"}
+                    </dd>
+                    <dt className="text-slate-500">{t.learningEventScoreLeadDelta}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">
+                      {selectedLearningEvent.signals.scoreLeadDelta != null ? selectedLearningEvent.signals.scoreLeadDelta.toFixed(1) : "—"}
+                    </dd>
+                    <dt className="col-span-2 text-slate-500">{t.learningEventSources}</dt>
+                    <dd className="col-span-2 min-w-0 truncate font-mono text-[11px] text-slate-300">
+                      {selectedLearningEvent.evidence.source.join(" · ")}
+                    </dd>
+                  </>
+                ) : null}
                 <dt className="col-span-2 text-slate-500">{t.variationReasons}</dt>
                 <dd className="col-span-2 flex min-w-0 flex-wrap gap-1">
                   {selectedCandidate.reasons.length > 0

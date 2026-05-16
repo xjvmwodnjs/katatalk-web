@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   getAnalysisResultUiStrings,
   mapReasonPhraseForUi,
+  translateCandidateLabelKey,
+  translateLearningEventChipPrefix,
   translateSgfPlaybackWarning,
   translateVmWarning,
   uiTextContainsForbiddenLabel,
 } from "@shared/analysisResultI18n";
+import type { AnalysisLearningEventTypeV1 } from "@shared/analysisLearningEventsV1";
 
 describe("analysisResultI18n", () => {
   it("provides localized UI strings for each supported language", () => {
@@ -50,6 +53,37 @@ describe("analysisResultI18n", () => {
       expect(d).not.toContain("正解");
       expect(d.toLowerCase()).not.toContain("correct answer");
       expect(d.toLowerCase()).not.toContain("best move");
+    }
+  });
+
+  it("has learning-event i18n without forbidden verdict words", () => {
+    const eventTypes: AnalysisLearningEventTypeV1[] = [
+      "review_candidate",
+      "flow_shift_candidate",
+      "response_candidate",
+      "high_adi_candidate",
+      "high_bsi_candidate",
+      "deep_search_candidate",
+      "winrate_shift_candidate",
+      "score_lead_shift_candidate",
+    ];
+    const labelKeys = [
+      "ar_label_flow_shift_candidate",
+      "ar_label_response_candidate",
+      "ar_label_high_adi_candidate",
+      "ar_label_high_bsi_candidate",
+      "ar_label_deep_search_candidate",
+    ];
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const t = getAnalysisResultUiStrings(lang);
+      for (const key of labelKeys) {
+        expect(uiTextContainsForbiddenLabel(translateCandidateLabelKey(key, lang), lang)).toBe(false);
+      }
+      for (const type of eventTypes) {
+        expect(uiTextContainsForbiddenLabel(translateLearningEventChipPrefix(type, lang), lang)).toBe(false);
+      }
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoLearningEvent, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoDeepSearchEvidence, lang)).toBe(false);
     }
   });
 });

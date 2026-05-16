@@ -5,6 +5,7 @@ import {
   getAnalysisResultUiStrings,
   normalizeAnalysisResultLang,
   translateCandidateLabelKey,
+  translateLearningEventChipPrefix,
 } from "@shared/analysisResultI18n";
 import { compactCandidateLimitV3 } from "@shared/analysisReviewUiV2";
 
@@ -46,6 +47,8 @@ export default function AnalysisCandidateList({
             const sel = selectedTurnIndex === c.turnIndex;
             const candidateSelected = selectedCandidateTurnIndex === c.turnIndex;
             const hasVariation = variationTurnIndexes?.has(c.turnIndex) ?? false;
+            const chipPrefix = c.learningEvent ? translateLearningEventChipPrefix(c.learningEvent.eventType, uiLang) : null;
+            const chipMove = c.learningEvent?.candidateMove ?? c.playedMove;
             return (
               <button
                 key={c.turnIndex}
@@ -63,7 +66,9 @@ export default function AnalysisCandidateList({
                 }`}
                 aria-label={`${t.chartAriaTurn} ${c.turnIndex}`}
               >
-                <div className="truncate text-[11px] font-mono text-amber-400/90">#{c.turnIndex} · {c.playedMove}</div>
+                <div className="truncate text-[11px] font-mono text-amber-400/90">
+                  {chipPrefix ? `${chipPrefix} #${c.turnIndex} · ${chipMove ?? "—"}` : `#${c.turnIndex} · ${c.playedMove}`}
+                </div>
                 <div className="mt-1 truncate text-sm font-medium text-amber-50">{translateCandidateLabelKey(c.labelKey, uiLang)}</div>
                 <div className="mt-1 truncate text-[10px] text-slate-400">
                   {hasVariation ? t.candidateChipReferenceAvailable : t.candidateChipMemo}

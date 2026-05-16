@@ -13,6 +13,11 @@ const ALLOWED_LABEL_KEYS = new Set([
   "ar_label_followup_candidate",
   "ar_label_large_delta",
   "ar_label_played_vs_candidate_gap",
+  "ar_label_flow_shift_candidate",
+  "ar_label_response_candidate",
+  "ar_label_high_adi_candidate",
+  "ar_label_high_bsi_candidate",
+  "ar_label_deep_search_candidate",
 ]);
 
 function assertAllowedLabelKeys(vm: { keyMoveCandidates: { labelKey: string }[] }) {
@@ -259,6 +264,8 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.summary.deepSearchEnabled).toBe(false);
     expect(vm.keyMoveCandidates.length).toBeGreaterThanOrEqual(1);
     expect(vm.keyMoveCandidates[0]!.turnIndex).toBe(10);
+    expect(vm.learningEvents.events.length).toBeGreaterThanOrEqual(1);
+    expect(vm.keyMoveCandidates[0]!.learningEvent?.turnIndex).toBe(10);
     expect(vm.keyMoveCandidates[0]!.deepSearchSelected).toBe(true);
     expect(vm.keyMoveCandidates[0]!.deepSearchCompleted).toBe(false);
     expect(vm.graph.winrateSeries.some((p) => p.turnIndex === 10)).toBe(true);
@@ -367,6 +374,7 @@ describe("buildAnalysisResultViewModel", () => {
     const vm = buildAnalysisResultViewModel(mock);
     expect(vm.kind).toBe("mock-legacy");
     expect(vm.keyMoveCandidates).toEqual([]);
+    expect(vm.learningEvents.events).toEqual([]);
     expect(vm.variationPreview).toEqual([]);
     expect(vm.graph.winrateSeries).toEqual([]);
   });
@@ -375,6 +383,7 @@ describe("buildAnalysisResultViewModel", () => {
     const vm = buildAnalysisResultViewModel({ source: "other" });
     expect(vm.kind).toBe("unknown");
     expect(vm.keyMoveCandidates).toEqual([]);
+    expect(vm.learningEvents.events).toEqual([]);
   });
 
   it("minimal katago payload does not throw", () => {
