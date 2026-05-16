@@ -67,7 +67,7 @@ export default function AnalysisCandidateList({
                 <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
                   <span>BSI {c.bsiScore != null ? c.bsiScore.toFixed(0) : "—"}</span>
                   <span>ADI {c.adiScore != null ? c.adiScore.toFixed(2) : "—"}</span>
-                  <span>{hasVariation ? t.variationShowOnBoard : t.variationNoDisplayable}</span>
+                  <span>{hasVariation ? t.candidateChipReferenceAvailable : t.candidateChipMemo}</span>
                 </div>
               </button>
             );

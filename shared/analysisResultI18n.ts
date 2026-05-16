@@ -495,6 +495,8 @@ type UiBlock = {
   dsSelected: string;
   dsCompleted: string;
   candidateSelected: string;
+  candidateChipMemo: string;
+  candidateChipReferenceAvailable: string;
   reviewMainlineButton: string;
   variationTitle: string;
   variationSubDeep: string;
@@ -593,6 +595,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 선택",
     dsCompleted: "Deep Search 완료",
     candidateSelected: "선택됨",
+    candidateChipMemo: "해설 보기",
+    candidateChipReferenceAvailable: "참고도 있음",
     reviewMainlineButton: "메인라인 보기",
     variationTitle: "KataGo 참고도",
     variationSubDeep: "Deep Search 참고도",
@@ -688,6 +692,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search selected",
     dsCompleted: "Deep Search completed",
     candidateSelected: "Selected",
+    candidateChipMemo: "Show memo",
+    candidateChipReferenceAvailable: "Reference available",
     reviewMainlineButton: "Show mainline",
     variationTitle: "KataGo reference line",
     variationSubDeep: "Deep Search reference line",
@@ -783,6 +789,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 選択",
     dsCompleted: "Deep Search 完了",
     candidateSelected: "選択中",
+    candidateChipMemo: "メモ表示",
+    candidateChipReferenceAvailable: "参考図あり",
     reviewMainlineButton: "メインライン表示",
     variationTitle: "KataGo 参照",
     variationSubDeep: "Deep Search 参照",
@@ -878,6 +886,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 已选",
     dsCompleted: "Deep Search 已完成",
     candidateSelected: "已选择",
+    candidateChipMemo: "查看备忘",
+    candidateChipReferenceAvailable: "有参考图",
     reviewMainlineButton: "查看主线",
     variationTitle: "KataGo 参考图",
     variationSubDeep: "Deep Search 参考",

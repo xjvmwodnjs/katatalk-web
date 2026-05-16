@@ -1,7 +1,7 @@
 import type { AnalysisResultVariationPreviewV1 } from "@shared/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import { getAnalysisResultUiStrings, normalizeAnalysisResultLang } from "@shared/analysisResultI18n";
-import { variationIdV2 } from "@shared/analysisReviewUiV2";
+import { hasDisplayableVariationPvV2, variationIdV2 } from "@shared/analysisReviewUiV2";
 
 type Props = {
   previews: AnalysisResultVariationPreviewV1[];
@@ -44,13 +44,21 @@ export default function AnalysisVariationPreview({
             {previews.map((p) => {
               const id = variationIdV2(p);
               const active = id === selectedVariationId;
+              const displayable = hasDisplayableVariationPvV2(p);
               return (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => onSelectVariation(p)}
+                  disabled={!displayable}
+                  onClick={() => {
+                    if (displayable) {
+                      onSelectVariation(p);
+                    }
+                  }}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-mono ${
-                    active ? "border-amber-400/70 bg-amber-400/10 text-amber-100" : "border-white/10 text-slate-300 hover:border-white/25"
+                    active
+                      ? "border-amber-400/70 bg-amber-400/10 text-amber-100"
+                      : "border-white/10 text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
                   }`}
                   aria-label={`${t.variationShowOnBoard} ${p.turnIndex}`}
                 >

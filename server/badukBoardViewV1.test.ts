@@ -136,6 +136,8 @@ describe("badukBoardViewV1 helpers", () => {
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.winrateCollapse, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.winrateExpand, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.candidateChipMemo, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.candidateChipReferenceAvailable, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoCandidate, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoSelectCandidate, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoVariation, lang)).toBe(false);

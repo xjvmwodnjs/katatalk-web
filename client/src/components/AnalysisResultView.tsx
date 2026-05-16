@@ -7,14 +7,18 @@ import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
 import {
-  displayableVariationTurnIndexesV2,
+  backToMainlineStateV3,
+  canEnterTryPlayModeV3,
   canPlaceTryPlayStoneV3,
-  hasDisplayableVariationPvV2,
+  candidateSelectedStateV3,
+  hasRenderableVariationOverlayV2,
   nextTryPlayColorV3,
   nextWinrateCollapsedV2,
   readCompactGameInfoV2,
-  selectedVariationByIdV2,
+  renderableVariationTurnIndexesV2,
+  variationReviewStateV3,
   variationIdV2,
+  type AnalysisReviewModeV3,
 } from "@shared/analysisReviewUiV2";
 import {
   clampSelectedTurnIndexV1,
@@ -40,14 +44,13 @@ type Props = {
   lang: Language;
 };
 
-type ReviewModeV3 = "mainline" | "candidate-selected" | "variation-review" | "try-play";
 type TryPlayStone = { x: number; y: number; color: "B" | "W"; gtp: string; kind: "try"; order: number };
 
 export default function AnalysisResultView({ data, lang }: Props) {
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
   const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
   const [selectedCandidateTurnIndex, setSelectedCandidateTurnIndex] = useState<number | null>(null);
-  const [reviewMode, setReviewMode] = useState<ReviewModeV3>("mainline");
+  const [reviewMode, setReviewMode] = useState<AnalysisReviewModeV3>("mainline");
   const [tryPlayStones, setTryPlayStones] = useState<TryPlayStone[]>([]);
   const [winrateCollapsed, setWinrateCollapsed] = useState(false);
   const uiLang = normalizeAnalysisResultLang(lang);
@@ -90,29 +93,55 @@ export default function AnalysisResultView({ data, lang }: Props) {
     vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder
       ? vm.sgfPlayback.selectedTurnIndex
       : 0;
-  const selectedVariation = useMemo(
-    () => (vm.kind === "katago-worker-v1" ? selectedVariationByIdV2(vm.variationPreview, selectedVariationId) : null),
-    [vm, selectedVariationId]
-  );
+  const canTryPlay = vm.kind === "katago-worker-v1" && canEnterTryPlayModeV3(vm.sgfPlayback.placeholder);
+  const actualStoneKeys = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+      return new Set<string>();
+    }
+    return new Set(vm.sgfPlayback.stones.map((st) => `${st.x},${st.y}`));
+  }, [vm]);
+  const selectedVariation = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedVariationId == null || vm.sgfPlayback.placeholder) {
+      return null;
+    }
+    if (!("boardSize" in vm.sgfPlayback)) {
+      return null;
+    }
+    const row = vm.variationPreview.find((p) => variationIdV2(p) === selectedVariationId) ?? null;
+    return row && hasRenderableVariationOverlayV2(row, vm.sgfPlayback.boardSize, actualStoneKeys) ? row : null;
+  }, [vm, selectedVariationId, actualStoneKeys]);
   const variationTurnIndexes = useMemo(
-    () => (vm.kind === "katago-worker-v1" ? displayableVariationTurnIndexesV2(vm.variationPreview) : new Set<number>()),
-    [vm]
+    () =>
+      vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder && "boardSize" in vm.sgfPlayback
+        ? renderableVariationTurnIndexesV2(vm.variationPreview, vm.sgfPlayback.boardSize, actualStoneKeys)
+        : new Set<number>(),
+    [vm, actualStoneKeys]
   );
   const gameInfo = useMemo(() => readCompactGameInfoV2(data, uiLang), [data, uiLang]);
   const selectedCandidate = useMemo(
     () =>
       vm.kind === "katago-worker-v1" && selectedCandidateTurnIndex != null
+      && (reviewMode === "candidate-selected" || reviewMode === "variation-review")
         ? vm.keyMoveCandidates.find((c) => c.turnIndex === selectedCandidateTurnIndex) ?? null
         : null,
-    [vm, selectedCandidateTurnIndex]
+    [vm, selectedCandidateTurnIndex, reviewMode]
   );
-  const selectedCandidateVariation = useMemo(
-    () =>
-      vm.kind === "katago-worker-v1" && selectedCandidateTurnIndex != null
-        ? vm.variationPreview.find((p) => p.turnIndex === selectedCandidateTurnIndex && hasDisplayableVariationPvV2(p)) ?? null
-        : null,
-    [vm, selectedCandidateTurnIndex]
-  );
+  const selectedCandidateVariation = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedCandidateTurnIndex == null || vm.sgfPlayback.placeholder) {
+      return null;
+    }
+    if (!("boardSize" in vm.sgfPlayback)) {
+      return null;
+    }
+    const boardSize = vm.sgfPlayback.boardSize;
+    return (
+      vm.variationPreview.find(
+        (p) =>
+          p.turnIndex === selectedCandidateTurnIndex &&
+          hasRenderableVariationOverlayV2(p, boardSize, actualStoneKeys)
+      ) ?? null
+    );
+  }, [vm, selectedCandidateTurnIndex, actualStoneKeys]);
 
   const selectTurnIndex = useCallback(
     (raw: number | null) => {
@@ -149,20 +178,27 @@ export default function AnalysisResultView({ data, lang }: Props) {
       } else {
         setSelectedTurnIndex(turnIndex);
       }
-      setSelectedCandidateTurnIndex(turnIndex);
-      setSelectedVariationId(null);
+      const next = candidateSelectedStateV3(
+        { selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStoneCount: tryPlayStones.length },
+        turnIndex
+      );
+      setSelectedCandidateTurnIndex(next.selectedCandidateTurnIndex);
+      setSelectedVariationId(next.selectedVariationId);
       setTryPlayStones([]);
-      setReviewMode("candidate-selected");
+      setReviewMode(next.reviewMode);
     },
-    [showBoardNav, boardNavTotalMoves]
+    [showBoardNav, boardNavTotalMoves, selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]
   );
 
   const selectVariationByTurnIndex = useCallback(
     (turnIndex: number) => {
-      if (vm.kind !== "katago-worker-v1") {
+      if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder || !("boardSize" in vm.sgfPlayback)) {
         return;
       }
-      const row = vm.variationPreview.find((p) => p.turnIndex === turnIndex && hasDisplayableVariationPvV2(p));
+      const boardSize = vm.sgfPlayback.boardSize;
+      const row = vm.variationPreview.find(
+        (p) => p.turnIndex === turnIndex && hasRenderableVariationOverlayV2(p, boardSize, actualStoneKeys)
+      );
       if (!row) {
         return;
       }
@@ -171,25 +207,41 @@ export default function AnalysisResultView({ data, lang }: Props) {
       } else {
         setSelectedTurnIndex(row.turnIndex);
       }
+      const next = variationReviewStateV3(
+        { selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStoneCount: tryPlayStones.length },
+        variationIdV2(row),
+        true
+      );
       setSelectedCandidateTurnIndex(row.turnIndex);
       setTryPlayStones([]);
-      setSelectedVariationId(variationIdV2(row));
-      setReviewMode("variation-review");
+      setSelectedVariationId(next.selectedVariationId);
+      setReviewMode(next.reviewMode);
     },
-    [vm, showBoardNav, boardNavTotalMoves]
+    [vm, actualStoneKeys, showBoardNav, boardNavTotalMoves, selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]
   );
 
   const backToMainline = useCallback(() => {
-    setSelectedVariationId(null);
+    const next = backToMainlineStateV3({
+      selectedVariationId,
+      selectedCandidateTurnIndex,
+      reviewMode,
+      tryPlayStoneCount: tryPlayStones.length,
+    });
+    setSelectedVariationId(next.selectedVariationId);
+    setSelectedCandidateTurnIndex(next.selectedCandidateTurnIndex);
     setTryPlayStones([]);
-    setReviewMode("mainline");
-  }, []);
+    setReviewMode(next.reviewMode);
+  }, [selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]);
 
   const enterTryPlayMode = useCallback(() => {
+    if (vm.kind !== "katago-worker-v1" || !canEnterTryPlayModeV3(vm.sgfPlayback.placeholder)) {
+      return;
+    }
     setSelectedVariationId(null);
+    setSelectedCandidateTurnIndex(null);
     setTryPlayStones([]);
     setReviewMode("try-play");
-  }, []);
+  }, [vm]);
 
   const undoTryPlay = useCallback(() => {
     setTryPlayStones((prev) => prev.slice(0, -1));
@@ -325,7 +377,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
             >
               {t.boardBadge}
             </span>
-            {reviewMode === "variation-review" ? (
+            {reviewMode === "variation-review" && selectedVariation ? (
               <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] text-amber-100">
                 {t.variationSelectedOnBoard}
               </span>
@@ -471,9 +523,10 @@ export default function AnalysisResultView({ data, lang }: Props) {
               <button
                 type="button"
                 onClick={enterTryPlayMode}
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
+                disabled={!canTryPlay}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {t.tryPlayEnter}
+                {canTryPlay ? t.tryPlayEnter : t.tryPlayDisabled}
               </button>
               {reviewMode === "try-play" ? (
                 <>
