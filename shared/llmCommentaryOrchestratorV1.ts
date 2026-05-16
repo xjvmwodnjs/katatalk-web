@@ -5,6 +5,7 @@ import {
   validateLlmCommentaryOutputV1,
 } from "./llmCommentaryGuardV1";
 import {
+  isSupportedCommentaryBoardSizeV1,
   sanitizeReferenceLineForBoardSizeV1,
   verifyLlmCommentaryClaimsV1,
 } from "./llmCommentaryClaimVerifierV1";
@@ -51,12 +52,41 @@ function firstReason(prefix: string, issues: readonly string[]): string {
   return issues.length > 0 ? `${prefix}_${issues[0]}` : prefix;
 }
 
+function safeFallbackTargetType(input: ExplanationPlanV1): ExplanationPlanV1["targetType"] {
+  return input.targetType === "decisive_move" ? "decisive_move" : "review_move";
+}
+
+function buildMinimalSafeFallbackPlan(input: ExplanationPlanV1): ExplanationPlanV1 {
+  return {
+    version: "explanation-planner-v1",
+    targetType: safeFallbackTargetType(input),
+    turnIndex: 0,
+    player: null,
+    titleKey: "ep_title_fallback",
+    summaryKey: "ep_summary_fallback",
+    severity: "low",
+    confidence: "low",
+    evidenceBullets: [],
+    referenceLine: {
+      playedMove: null,
+      recommendedMove: null,
+      pv: [],
+    },
+    caveats: ["fallback"],
+    forbiddenLabelSafe: true,
+  };
+}
+
 export async function runLlmCommentaryOrchestratorV1(
   input: RunLlmCommentaryOrchestratorV1Input
 ): Promise<LlmCommentaryOrchestrationResultV1> {
   const inputGuard = validateAndNormalizeExplanationPlanForLlmV1(input.plan);
   if (!inputGuard.ok) {
-    return fallback(input.plan, firstReason("input_guard", inputGuard.issues));
+    return fallback(buildMinimalSafeFallbackPlan(input.plan), firstReason("input_guard", inputGuard.issues));
+  }
+
+  if (!isSupportedCommentaryBoardSizeV1(input.boardSize)) {
+    return fallback(inputGuard.plan, "invalid_board_size");
   }
 
   const normalizedPlan: ExplanationPlanV1 = {

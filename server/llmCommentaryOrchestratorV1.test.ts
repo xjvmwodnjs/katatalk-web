@@ -84,8 +84,77 @@ describe("llm commentary orchestrator v1", () => {
     expect(result.status).toBe("fallback");
     expect(result.reasonCode).toBe("input_guard_invalid_evidence_invariant");
     expect(result.commentary).toBeNull();
-    expect(result.fallbackPlan).toBe(invalidPlan);
+    expect(result.fallbackPlan).toEqual({
+      version: "explanation-planner-v1",
+      targetType: "review_move",
+      turnIndex: 0,
+      player: null,
+      titleKey: "ep_title_fallback",
+      summaryKey: "ep_summary_fallback",
+      severity: "low",
+      confidence: "low",
+      evidenceBullets: [],
+      referenceLine: {
+        playedMove: null,
+        recommendedMove: null,
+        pv: [],
+      },
+      caveats: ["fallback"],
+      forbiddenLabelSafe: true,
+    });
     expect(result.usedLlm).toBe(false);
+    expect(calls.count).toBe(0);
+  });
+
+  it("does not copy raw SGF from invalid input into fallbackPlan", async () => {
+    const calls = { count: 0 };
+    const result = await runLlmCommentaryOrchestratorV1({
+      plan: { ...basePlan, caveats: ["(;GM[1]FF[4]SZ[19];B[dd];W[qq])"] },
+      boardSize: 19,
+      llm: fakeLlm(safeOutput, calls),
+    });
+    expect(result.status).toBe("fallback");
+    expect(JSON.stringify(result.fallbackPlan)).not.toContain("(;GM[1]");
+    expect(calls.count).toBe(0);
+  });
+
+  it("does not copy env or path-like strings from invalid input into fallbackPlan", async () => {
+    const calls = { count: 0 };
+    const result = await runLlmCommentaryOrchestratorV1({
+      plan: { ...basePlan, caveats: ["SUPABASE_SERVICE_ROLE_KEY=C:/Users/example/secret"] },
+      boardSize: 19,
+      llm: fakeLlm(safeOutput, calls),
+    });
+    const serialized = JSON.stringify(result.fallbackPlan);
+    expect(result.status).toBe("fallback");
+    expect(serialized).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(serialized).not.toContain("C:/Users");
+    expect(calls.count).toBe(0);
+  });
+
+  it("does not copy forbidden labels from invalid input into fallbackPlan", async () => {
+    const calls = { count: 0 };
+    const result = await runLlmCommentaryOrchestratorV1({
+      plan: { ...basePlan, caveats: ["패착 확정"] },
+      boardSize: 19,
+      llm: fakeLlm(safeOutput, calls),
+    });
+    expect(result.status).toBe("fallback");
+    expect(JSON.stringify(result.fallbackPlan)).not.toContain("패착 확정");
+    expect(calls.count).toBe(0);
+  });
+
+  it("does not call llm when boardSize is invalid", async () => {
+    const calls = { count: 0 };
+    const result = await runLlmCommentaryOrchestratorV1({
+      plan: basePlan,
+      boardSize: 17,
+      llm: fakeLlm(safeOutput, calls),
+    });
+    expect(result.status).toBe("fallback");
+    expect(result.reasonCode).toBe("invalid_board_size");
+    expect(result.usedLlm).toBe(false);
+    expect(result.commentary).toBeNull();
     expect(calls.count).toBe(0);
   });
 
