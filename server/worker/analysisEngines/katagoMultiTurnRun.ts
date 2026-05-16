@@ -192,6 +192,7 @@ function prepareTurns(
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       moves: movesBefore,
+      initialStones: parsed.initialStones,
       maxVisits,
       id: queryId,
     });

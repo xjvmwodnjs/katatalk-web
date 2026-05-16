@@ -40,8 +40,24 @@ describe("sgfKatagoParseV1", () => {
     expect(parsed.moves[1]).toEqual({ color: "W", sgfPoint: "" });
   });
 
-  it("rejects AB setup stones with SGF_UNSUPPORTED_SETUP_STONES", () => {
-    const sgf = "(;SZ[19];AB[aa];B[bb])";
+  it("parses initial setup stones before the first move", () => {
+    const parsed = parseSgfForKatagoV1("(;FF[4]GM[1]SZ[19]AB[pd][dd]AW[pp]AE[dd];B[qq])");
+    expect(parsed.initialStones).toEqual([
+      { color: "B", sgfPoint: "pd" },
+      { color: "W", sgfPoint: "pp" },
+    ]);
+    expect(parsed.moves).toEqual([{ color: "B", sgfPoint: "qq" }]);
+    expect(parsed.parseWarnings.some((w) => w.code === "setup_stones_applied")).toBe(true);
+  });
+
+  it("keeps the later setup color when AB and AW conflict", () => {
+    const parsed = parseSgfForKatagoV1("(;FF[4]GM[1]SZ[19]AB[aa]AW[aa];B[bb])");
+    expect(parsed.initialStones).toEqual([{ color: "W", sgfPoint: "aa" }]);
+    expect(parsed.parseWarnings.some((w) => w.code === "setup_stone_conflict")).toBe(true);
+  });
+
+  it("rejects setup stones after the first move with SGF_UNSUPPORTED_SETUP_STONES", () => {
+    const sgf = "(;FF[4]GM[1]SZ[19];B[bb];AW[aa])";
     expect(() => parseSgfForKatagoV1(sgf)).toThrow(SgfKatagoParseError);
     try {
       parseSgfForKatagoV1(sgf);
@@ -66,6 +82,33 @@ describe("sgfKatagoParseV1", () => {
     expect(s9.boardSize).toBe(9);
     const s13 = parseSgfForKatagoV1("(;SZ[13];B[aa])");
     expect(s13.boardSize).toBe(13);
+  });
+
+  it("allows missing FF or GM with warnings and rejects non-Go GM", () => {
+    const noFf = parseSgfForKatagoV1("(;GM[1]SZ[19];B[pd])");
+    expect(noFf.parseWarnings.some((w) => w.code === "missing_ff_assumed_v4")).toBe(true);
+
+    const noGm = parseSgfForKatagoV1("(;FF[4]SZ[19];B[pd])");
+    expect(noGm.parseWarnings.some((w) => w.code === "missing_gm_assumed_go")).toBe(true);
+
+    const neither = parseSgfForKatagoV1("(;SZ[19];B[pd])");
+    expect(neither.parseWarnings.some((w) => w.code === "missing_ff_assumed_v4")).toBe(true);
+    expect(neither.parseWarnings.some((w) => w.code === "missing_gm_assumed_go")).toBe(true);
+
+    try {
+      parseSgfForKatagoV1("(;FF[4]GM[2]SZ[19];B[pd])");
+      throw new Error("expected failure");
+    } catch (e) {
+      expect(e).toBeInstanceOf(SgfKatagoParseError);
+      expect((e as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_GAME_TYPE");
+    }
+  });
+
+  it("does not treat AB/AW/GM/FF-looking escaped comment text as properties", () => {
+    const parsed = parseSgfForKatagoV1("(;FF[4]GM[1]C[AB[aa\\] AW[bb\\] GM[2\\] FF[3\\] escaped \\] text];B[pd])");
+    expect(parsed.initialStones).toEqual([]);
+    expect(parsed.moves).toEqual([{ color: "B", sgfPoint: "pd" }]);
+    expect(parsed.parseWarnings.some((w) => w.code === "unsupported_game_type")).toBe(false);
   });
 
   it("legacy smoke parser matches mainline move count", () => {

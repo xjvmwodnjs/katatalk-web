@@ -10,7 +10,7 @@ export type SgfPlaybackStoneV1 = {
   x: number;
   y: number;
   color: "B" | "W";
-  /** 1-based mainline move index (첫 수 = 1) */
+  /** 0 = SGF setup stone, otherwise 1-based mainline move index (첫 수 = 1) */
   turnIndex: number;
 };
 
@@ -25,6 +25,13 @@ export type SgfPlaybackLastMoveV1 = {
 export type SgfPlaybackWarningCodeV1 =
   | "no_root"
   | "setup_markers_ignored"
+  | "setup_stones_applied"
+  | "setup_stone_conflict"
+  | "setup_after_move_unsupported"
+  | "missing_ff_assumed_v4"
+  | "missing_gm_assumed_go"
+  | "unsupported_game_type"
+  | "handicap_property_present"
   | "unbalanced_parens"
   | "invalid_sz"
   | "sz_not_19"
@@ -65,6 +72,7 @@ export type SgfPlaybackPlaceholderV1 = {
 export type SgfPlaybackViewModelV1 = SgfPlaybackActiveV1 | SgfPlaybackPlaceholderV1;
 
 export type ParsedMainlineMoveV1 = { color: "B" | "W"; sgfPoint: string };
+export type ParsedSetupStoneV1 = { color: "B" | "W"; sgfPoint: string };
 
 /** `[` 직후부터 SGF Text 이스케이프 규칙으로 `]` 까지 읽기 (`\\`, `\]`) */
 export function readSgfBracketValue(s: string, openBracketIdx: number): { text: string; end: number } | null {
@@ -190,6 +198,7 @@ export function sgfPointToGtp(point: string, boardSize: number): string | null {
 
 export type ExtractMainlineBwMovesResultV1 = {
   moves: ParsedMainlineMoveV1[];
+  initialStones: ParsedSetupStoneV1[];
   warnings: SgfPlaybackWarningV1[];
   /** 루트 메인라인에서 첫 유효 SZ (없으면 null → 기본 19) */
   boardSizeHint: number | null;
@@ -202,7 +211,7 @@ function consumeOneProperty(
   s: string,
   i: number
 ):
-  | { ok: true; propId: string; value: string; end: number }
+  | { ok: true; propId: string; values: string[]; end: number }
   | { ok: false; kind: "bad_prop"; end: number }
   | { ok: false; kind: "unclosed"; bracketAt: number; end: number } {
   let j = i;
@@ -216,36 +225,86 @@ function consumeOneProperty(
   while (j < s.length && /[A-Za-z]/.test(s[j]!)) {
     j += 1;
   }
+  const propIdEnd = j;
   if (j >= s.length || s[j] !== "[") {
     return { ok: false, kind: "bad_prop", end: j };
   }
-  const bracketAt = j;
-  const br = readSgfBracketValue(s, j);
-  if (br == null) {
-    return { ok: false, kind: "unclosed", bracketAt, end: j + 1 };
+  const values: string[] = [];
+  while (j < s.length) {
+    while (j < s.length && /\s/.test(s[j]!)) {
+      j += 1;
+    }
+    if (j >= s.length || s[j] !== "[") {
+      break;
+    }
+    const bracketAt = j;
+    const br = readSgfBracketValue(s, j);
+    if (br == null) {
+      return { ok: false, kind: "unclosed", bracketAt, end: j + 1 };
+    }
+    values.push(br.text);
+    j = br.end;
   }
-  const propId = s.slice(idStart, j);
-  return { ok: true, propId, value: br.text, end: br.end };
+  const propId = s.slice(idStart, propIdEnd);
+  return { ok: true, propId, values, end: j };
 }
 
 function applyRootProperty(
   propId: string,
-  value: string,
+  values: string[],
   moves: ParsedMainlineMoveV1[],
+  initialStoneMap: Map<string, "B" | "W">,
   warnings: SgfPlaybackWarningV1[],
-  setupWarned: { v: boolean },
+  setupState: { sawSetup: boolean; afterMoveSetup: boolean; sawConflict: boolean; sawHa: boolean },
+  metadataState: { ffSeen: boolean; gmSeen: boolean; unsupportedGm: string | null },
   recordSz: (raw: string) => void
 ): void {
   const up = propId.toUpperCase();
   if (up === "AB" || up === "AW" || up === "AE") {
-    if (!setupWarned.v) {
-      setupWarned.v = true;
-      warnings.push({ code: "setup_markers_ignored" });
+    if (moves.length > 0) {
+      if (!setupState.afterMoveSetup) {
+        setupState.afterMoveSetup = true;
+        warnings.push({ code: "setup_after_move_unsupported" });
+      }
+      return;
+    }
+    setupState.sawSetup = true;
+    for (const rawValue of values) {
+      const pt = rawValue.trim().toLowerCase();
+      if (!pt) {
+        continue;
+      }
+      if (up === "AE") {
+        initialStoneMap.delete(pt);
+        continue;
+      }
+      const color = up === "AB" ? "B" : "W";
+      const prev = initialStoneMap.get(pt);
+      if (prev != null && prev !== color && !setupState.sawConflict) {
+        setupState.sawConflict = true;
+        warnings.push({ code: "setup_stone_conflict", params: { point: pt } });
+      }
+      initialStoneMap.set(pt, color);
     }
   } else if (up === "SZ") {
-    recordSz(value);
+    recordSz(values[0] ?? "");
+  } else if (up === "FF") {
+    metadataState.ffSeen = true;
+  } else if (up === "GM") {
+    metadataState.gmSeen = true;
+    const raw = (values[0] ?? "").trim();
+    if (raw !== "1" && metadataState.unsupportedGm == null) {
+      metadataState.unsupportedGm = raw || "(empty)";
+      warnings.push({ code: "unsupported_game_type", params: { gm: metadataState.unsupportedGm } });
+    }
+  } else if (up === "HA") {
+    if (!setupState.sawHa) {
+      setupState.sawHa = true;
+      warnings.push({ code: "handicap_property_present" });
+    }
   } else if (propId.length === 1 && /^[BW]$/i.test(propId)) {
     const color = propId.toUpperCase() as "B" | "W";
+    const value = values[0] ?? "";
     moves.push({ color, sgfPoint: value.trim().toLowerCase() });
   }
 }
@@ -255,8 +314,10 @@ function consumeAllPropertiesInNode(
   s: string,
   start: number,
   moves: ParsedMainlineMoveV1[],
+  initialStoneMap: Map<string, "B" | "W">,
   warnings: SgfPlaybackWarningV1[],
-  setupWarned: { v: boolean },
+  setupState: { sawSetup: boolean; afterMoveSetup: boolean; sawConflict: boolean; sawHa: boolean },
+  metadataState: { ffSeen: boolean; gmSeen: boolean; unsupportedGm: string | null },
   recordSz: (raw: string) => void
 ): number {
   let j = start;
@@ -283,7 +344,7 @@ function consumeAllPropertiesInNode(
       j = r.end;
       continue;
     }
-    applyRootProperty(r.propId, r.value, moves, warnings, setupWarned, recordSz);
+    applyRootProperty(r.propId, r.values, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
     j = r.end;
   }
   return j;
@@ -299,14 +360,16 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
   const rootIdx = s.indexOf("(;");
   if (rootIdx < 0) {
     warnings.push({ code: "no_root" });
-    return { moves: [], warnings, boardSizeHint: null };
+    return { moves: [], initialStones: [], warnings, boardSizeHint: null };
   }
 
   let i = rootIdx + 2;
   let parenDepth = 0;
   const moves: ParsedMainlineMoveV1[] = [];
+  const initialStoneMap = new Map<string, "B" | "W">();
   let boardSizeHint: number | null = null;
-  const setupWarned = { v: false };
+  const setupState = { sawSetup: false, afterMoveSetup: false, sawConflict: false, sawHa: false };
+  const metadataState = { ffSeen: false, gmSeen: false, unsupportedGm: null as string | null };
   let variationBranchCount = 0;
 
   const recordSz = (raw: string) => {
@@ -345,7 +408,7 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
     }
     if (c === ";") {
       i += 1;
-      i = consumeAllPropertiesInNode(s, i, moves, warnings, setupWarned, recordSz);
+      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
       continue;
     }
     if (/\s/.test(c)) {
@@ -353,7 +416,7 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
       continue;
     }
     if (/[A-Za-z]/.test(c)) {
-      i = consumeAllPropertiesInNode(s, i, moves, warnings, setupWarned, recordSz);
+      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
       continue;
     }
     i += 1;
@@ -365,8 +428,19 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
   if (variationBranchCount > 0) {
     warnings.push({ code: "variation_branch_skipped", params: { count: variationBranchCount } });
   }
+  if (!metadataState.ffSeen) {
+    warnings.push({ code: "missing_ff_assumed_v4" });
+  }
+  if (!metadataState.gmSeen) {
+    warnings.push({ code: "missing_gm_assumed_go" });
+  }
 
-  return { moves, warnings, boardSizeHint };
+  const initialStones = Array.from(initialStoneMap.entries()).map(([sgfPoint, color]) => ({ color, sgfPoint }));
+  if (initialStones.length > 0) {
+    warnings.push({ code: "setup_stones_applied", params: { count: initialStones.length } });
+  }
+
+  return { moves, initialStones, warnings, boardSizeHint };
 }
 
 function nextPlayerAfterMoves(moveCount: number): "B" | "W" {
@@ -512,7 +586,12 @@ export type BuildSgfPlaybackStateV1Args = {
  * 메인라인 기준 보드 스냅샷(capture 반영). placeholder 는 호출측(`sgf_content` 없음)에서 유지.
  */
 export function buildSgfPlaybackStateV1(args: BuildSgfPlaybackStateV1Args): SgfPlaybackActiveV1 {
-  const { moves: mainline, warnings: parseWarnings, boardSizeHint } = extractMainlineBwMoves(args.sgfText);
+  const {
+    moves: mainline,
+    initialStones,
+    warnings: parseWarnings,
+    boardSizeHint,
+  } = extractMainlineBwMoves(args.sgfText);
   const warnings: SgfPlaybackWarningV1[] = [...parseWarnings];
 
   let boardSize = 19;
@@ -542,6 +621,21 @@ export function buildSgfPlaybackStateV1(args: BuildSgfPlaybackStateV1Args): SgfP
 
   const board = new Map<string, StoneCellV1>();
   let lastNonPass: SgfPlaybackLastMoveV1 | null = null;
+
+  for (const setupStone of initialStones) {
+    const pt = setupStone.sgfPoint.trim().toLowerCase();
+    if (pt.length !== 2) {
+      warnings.push({ code: "coord_len_error", params: { turnIndex: 0, point: setupStone.sgfPoint } });
+      continue;
+    }
+    const x = sgfLetterToCoordIndex(pt[0]!, boardSize);
+    const y = sgfLetterToCoordIndex(pt[1]!, boardSize);
+    if (x == null || y == null) {
+      warnings.push({ code: "coord_out_of_range", params: { turnIndex: 0, point: setupStone.sgfPoint } });
+      continue;
+    }
+    board.set(cellKey(x, y), { color: setupStone.color, turnIndex: 0 });
+  }
 
   for (let mi = 0; mi < sel; mi += 1) {
     const mv = mainline[mi]!;
