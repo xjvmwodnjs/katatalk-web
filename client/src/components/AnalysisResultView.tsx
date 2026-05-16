@@ -8,6 +8,13 @@ import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
 import {
+  displayableVariationTurnIndexesV2,
+  hasDisplayableVariationPvV2,
+  reviewModeForSelectedVariationV2,
+  selectedVariationByIdV2,
+  variationIdV2,
+} from "@shared/analysisReviewUiV2";
+import {
   clampSelectedTurnIndexV1,
   isBoardKeyboardNavKeyV1,
   isBoardTurnNavigationInteractiveV1,
@@ -31,6 +38,7 @@ type Props = {
 
 export default function AnalysisResultView({ data, lang }: Props) {
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
+  const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
 
@@ -46,6 +54,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
     } else {
       setSelectedTurnIndex(null);
     }
+    setSelectedVariationId(null);
   }, [data]);
 
   const vm = useMemo(
@@ -67,22 +76,76 @@ export default function AnalysisResultView({ data, lang }: Props) {
     vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder
       ? vm.sgfPlayback.selectedTurnIndex
       : 0;
+  const selectedVariation = useMemo(
+    () => (vm.kind === "katago-worker-v1" ? selectedVariationByIdV2(vm.variationPreview, selectedVariationId) : null),
+    [vm, selectedVariationId]
+  );
+  const reviewMode = reviewModeForSelectedVariationV2(selectedVariation ? selectedVariationId : null);
+  const variationTurnIndexes = useMemo(
+    () => (vm.kind === "katago-worker-v1" ? displayableVariationTurnIndexesV2(vm.variationPreview) : new Set<number>()),
+    [vm]
+  );
 
   const selectTurnIndex = useCallback(
     (raw: number | null) => {
       if (raw == null) {
         setSelectedTurnIndex(null);
+        setSelectedVariationId(null);
         return;
       }
       if (showBoardNav) {
         setSelectedTurnIndex(clampSelectedTurnIndexV1(raw, boardNavTotalMoves));
+        setSelectedVariationId(null);
         return;
       }
       const n = Math.trunc(Number(raw));
       setSelectedTurnIndex(Number.isFinite(n) ? n : null);
+      setSelectedVariationId(null);
     },
     [showBoardNav, boardNavTotalMoves]
   );
+
+  const selectVariationByTurnIndex = useCallback(
+    (turnIndex: number) => {
+      if (vm.kind !== "katago-worker-v1") {
+        return;
+      }
+      const row = vm.variationPreview.find((p) => p.turnIndex === turnIndex && hasDisplayableVariationPvV2(p));
+      if (!row) {
+        return;
+      }
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(row.turnIndex, boardNavTotalMoves));
+      } else {
+        setSelectedTurnIndex(row.turnIndex);
+      }
+      setSelectedVariationId(variationIdV2(row));
+    },
+    [vm, showBoardNav, boardNavTotalMoves]
+  );
+
+  const selectVariationRow = useCallback(
+    (row: { turnIndex: number; source: "deep-search" | "multi-turn" }) => {
+      if (vm.kind !== "katago-worker-v1") {
+        return;
+      }
+      const found = vm.variationPreview.find((p) => variationIdV2(p) === variationIdV2(row) && hasDisplayableVariationPvV2(p));
+      if (!found) {
+        return;
+      }
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(found.turnIndex, boardNavTotalMoves));
+      } else {
+        setSelectedTurnIndex(found.turnIndex);
+      }
+      setSelectedVariationId(variationIdV2(found));
+    },
+    [vm, showBoardNav, boardNavTotalMoves]
+  );
+
+  const backToMainline = useCallback(() => {
+    setSelectedVariationId(null);
+  }, []);
 
   const boardGhosts = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
@@ -95,8 +158,9 @@ export default function AnalysisResultView({ data, lang }: Props) {
       selectedTurnIndex: vm.sgfPlayback.selectedTurnIndex,
       candidates: vm.keyMoveCandidates,
       variationPreview: vm.variationPreview,
+      selectedVariation,
     });
-  }, [vm]);
+  }, [vm, selectedVariation]);
 
   useEffect(() => {
     if (!showBoardNav) {
@@ -146,44 +210,20 @@ export default function AnalysisResultView({ data, lang }: Props) {
   const yn = (v: boolean) => (v ? t.yesShort : t.noShort);
 
   return (
-    <div className="space-y-6 mb-8">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 md:p-8">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-widest text-amber-400/80 font-mono">
-          <span>v1</span>
-          <span className="rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] normal-case text-amber-200/90">
+    <div className="space-y-4 mb-8">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] text-amber-200/90">
             {t.summaryStatusComplete}
           </span>
+          <span className="text-slate-400">{t.engine}: <span className="font-mono text-amber-100">{s.engine}</span></span>
+          <span className="text-slate-400">{t.totalMoves}: <span className="font-mono text-amber-100">{s.totalMoves}</span></span>
+          <span className="text-slate-500">
+            {t.flagMT}:{yn(s.hasMultiTurn)} · {t.flagBSI}:{yn(s.hasBsi)} · {t.flagADI}:{yn(s.hasAdi)} · {t.flagDSR}:{yn(s.hasDeepSearchResults)}
+          </span>
         </div>
-        <h1
-          className="text-2xl md:text-3xl font-bold text-amber-100 mb-2"
-          style={{ fontFamily: "'Noto Serif KR', serif" }}
-        >
-          {t.summaryTitle}
-        </h1>
-        <p className="text-sm text-amber-50/90 mb-4 border-l-2 border-amber-400/50 pl-3">{t.betaNote}</p>
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5">
-            <dt className="text-slate-500 text-xs">{t.engine}</dt>
-            <dd className="text-amber-100 font-mono">{s.engine}</dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5">
-            <dt className="text-slate-500 text-xs">{t.totalMoves}</dt>
-            <dd className="text-amber-100 font-mono">{s.totalMoves}</dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5 sm:col-span-2 lg:col-span-1">
-            <dt className="text-slate-500 text-xs">{t.flagsSectionTitle}</dt>
-            <dd className="text-amber-100 font-mono text-xs leading-relaxed">
-              {t.flagMT}:{yn(s.hasMultiTurn)} · {t.flagBSI}:{yn(s.hasBsi)} · {t.flagADI}:{yn(s.hasAdi)} · {t.flagDSP}:
-              {yn(s.hasDeepSearchPlan)} · {t.flagDSR}:{yn(s.hasDeepSearchResults)}
-            </dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5 sm:col-span-2 lg:col-span-3">
-            <dt className="text-slate-500 text-xs">{t.deepSearchRowTitle}</dt>
-            <dd className="text-amber-100 text-sm">{s.deepSearchEnabled ? t.dsOn : t.dsOff}</dd>
-          </div>
-        </dl>
         {vm.warnings.length > 0 ? (
-          <ul className="mt-4 text-xs text-slate-400 space-y-1 list-disc pl-5">
+          <ul className="mt-2 text-xs text-slate-400 space-y-1 list-disc pl-5">
             {vm.warnings.map((w, i) => (
               <li key={`${w.code}-${i}`}>{translateVmWarning(w, uiLang)}</li>
             ))}
@@ -191,29 +231,9 @@ export default function AnalysisResultView({ data, lang }: Props) {
         ) : null}
       </section>
 
-      <AnalysisWinratePanel
-        series={vm.graph.winrateSeries}
-        selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={selectTurnIndex}
-        lang={lang}
-        fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
-      />
-
-      <AnalysisCandidateList
-        raw={data}
-        candidates={vm.keyMoveCandidates}
-        selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={selectTurnIndex}
-        lang={lang}
-      />
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AnalysisVariationPreview
-          previews={vm.variationPreview}
-          selectedTurnIndex={selectedTurnIndex}
-          lang={lang}
-        />
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 flex flex-col min-h-[200px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5 flex flex-col min-h-[200px]">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{t.boardTitle}</h3>
             <span
@@ -222,6 +242,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
             >
               {t.boardBadge}
             </span>
+            {reviewMode === "variation" ? (
+              <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] text-amber-100">
+                {t.variationSelectedOnBoard}
+              </span>
+            ) : null}
           </div>
           {vm.sgfPlayback.placeholder ? (
             <div className="space-y-2">
@@ -256,6 +281,15 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 ghosts={boardGhosts}
                 lang={uiLang}
               />
+              {reviewMode === "variation" ? (
+                <button
+                  type="button"
+                  onClick={backToMainline}
+                  className="mx-auto mt-3 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
+                >
+                  {t.reviewBackToMainline}
+                </button>
+              ) : null}
               {vm.sgfPlayback.warnings.length > 0 ? (
                 <ul className="mt-3 text-[11px] text-amber-200/80 space-y-1 list-disc pl-4">
                   {vm.sgfPlayback.warnings.map((w, i) => (
@@ -267,7 +301,56 @@ export default function AnalysisResultView({ data, lang }: Props) {
               ) : null}
             </>
           )}
-        </section>
+          </section>
+
+          <AnalysisWinratePanel
+            series={vm.graph.winrateSeries}
+            selectedTurnIndex={selectedTurnIndex}
+            onSelectTurnIndex={selectTurnIndex}
+            lang={lang}
+            fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <AnalysisCandidateList
+            raw={data}
+            candidates={vm.keyMoveCandidates}
+            selectedTurnIndex={selectedTurnIndex}
+            onSelectTurnIndex={selectTurnIndex}
+            selectedVariationTurnIndex={selectedVariation?.turnIndex ?? null}
+            variationTurnIndexes={variationTurnIndexes}
+            onSelectVariation={selectVariationByTurnIndex}
+            lang={lang}
+          />
+
+          <AnalysisVariationPreview
+            previews={vm.variationPreview}
+            selectedVariationId={selectedVariation ? selectedVariationId : null}
+            onSelectVariation={selectVariationRow}
+            onBackToMainline={backToMainline}
+            lang={lang}
+          />
+
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <h2 className="text-lg font-bold text-amber-100 mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+              {t.analysisMemoTitle}
+            </h2>
+            <div className="space-y-2 text-sm text-slate-300" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+              <p>{selectedVariation ? t.analysisMemoVariation : t.analysisMemoCandidate}</p>
+              <p>{t.analysisMemoPvCaution}</p>
+              <p>{t.analysisMemoSignalCaution}</p>
+              <p className="text-xs text-slate-500">{t.analysisMemoNoLlM}</p>
+            </div>
+            <button
+              type="button"
+              disabled
+              className="mt-4 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-500 opacity-70 cursor-not-allowed"
+            >
+              {t.tryPlayDisabled}
+            </button>
+          </section>
+        </div>
       </div>
     </div>
   );

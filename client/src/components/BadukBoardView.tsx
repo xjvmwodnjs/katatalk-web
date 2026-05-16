@@ -54,7 +54,7 @@ export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, g
     : t.boardGhostPvLegend;
 
   return (
-    <div className="w-full max-w-[min(100%,420px)] mx-auto">
+    <div className="w-full max-w-[min(100%,560px)] mx-auto">
       <div className="relative w-full aspect-square" role="img" aria-label={t.boardAriaSnapshot}>
         <svg viewBox="0 0 100 100" className="w-full h-full rounded-lg block" aria-hidden="true">
           <defs>
@@ -155,7 +155,22 @@ export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, g
             return (
               <g key={`ghost-${g.gtp}-${i}`} aria-hidden="true">
                 <circle cx={cx} cy={cy} r={stoneRadius * 0.92} fill={fill} stroke={stroke} strokeWidth="0.22" />
-                <circle cx={cx} cy={cy} r={stoneRadius * 0.35} fill={stroke} opacity="0.5" />
+                {g.order != null ? (
+                  <text
+                    x={cx}
+                    y={cy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={stoneRadius >= 1.8 ? "1.4" : "1.1"}
+                    fontWeight="800"
+                    fontFamily="'JetBrains Mono', ui-monospace, monospace"
+                    fill="#1f2937"
+                  >
+                    {g.order}
+                  </text>
+                ) : (
+                  <circle cx={cx} cy={cy} r={stoneRadius * 0.35} fill={stroke} opacity="0.5" />
+                )}
               </g>
             );
           })}

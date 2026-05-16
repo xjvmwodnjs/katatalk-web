@@ -1,17 +1,26 @@
 import type { AnalysisResultVariationPreviewV1 } from "@shared/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import { getAnalysisResultUiStrings, normalizeAnalysisResultLang } from "@shared/analysisResultI18n";
+import { variationIdV2 } from "@shared/analysisReviewUiV2";
 
 type Props = {
   previews: AnalysisResultVariationPreviewV1[];
-  selectedTurnIndex: number | null;
+  selectedVariationId: string | null;
+  onSelectVariation: (row: AnalysisResultVariationPreviewV1) => void;
+  onBackToMainline: () => void;
   lang: Language;
 };
 
-export default function AnalysisVariationPreview({ previews, selectedTurnIndex, lang }: Props) {
+export default function AnalysisVariationPreview({
+  previews,
+  selectedVariationId,
+  onSelectVariation,
+  onBackToMainline,
+  lang,
+}: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
-  const row = previews.find((p) => p.turnIndex === selectedTurnIndex) ?? null;
+  const row = previews.find((p) => variationIdV2(p) === selectedVariationId) ?? null;
 
   const sub =
     row?.source === "deep-search"
@@ -27,25 +36,61 @@ export default function AnalysisVariationPreview({ previews, selectedTurnIndex, 
       </h2>
       {sub ? <p className="text-xs text-slate-400 mb-2 font-mono">{sub}</p> : <p className="text-xs text-slate-500 mb-2">—</p>}
       <p className="text-xs text-slate-600 mb-4">{t.variationPvDisclaimer}</p>
-      {!row || row.pv.length === 0 ? (
+      {previews.length === 0 ? (
         <p className="text-sm text-slate-500">{t.variationEmpty}</p>
       ) : (
-        <div className="rounded-lg bg-black/25 border border-white/10 p-4">
-          <div className="text-xs text-slate-500 mb-2 font-mono">
-            {t.variationTurn} #{row.turnIndex} · {t.variationPlayed} {row.playedMove} · {t.variationCandidate}{" "}
-            {row.bestMove ?? "—"}
+        <>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {previews.map((p) => {
+              const id = variationIdV2(p);
+              const active = id === selectedVariationId;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onSelectVariation(p)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-mono ${
+                    active ? "border-amber-400/70 bg-amber-400/10 text-amber-100" : "border-white/10 text-slate-300 hover:border-white/25"
+                  }`}
+                  aria-label={`${t.variationShowOnBoard} ${p.turnIndex}`}
+                >
+                  #{p.turnIndex}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex flex-wrap gap-2">
-            {row.pv.map((m, i) => (
-              <span
-                key={`${row.turnIndex}-${i}-${m}`}
-                className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-sm font-mono text-amber-100"
+          {!row ? (
+            <p className="text-sm text-slate-500">{t.variationSelectHint}</p>
+          ) : (
+            <div className="rounded-lg bg-black/25 border border-white/10 p-4">
+              <div className="text-xs text-slate-500 mb-2 font-mono">
+                {t.variationTurn} #{row.turnIndex} · {t.variationPlayed} {row.playedMove} · {t.variationCandidate}{" "}
+                {row.bestMove ?? "—"}
+              </div>
+              {row.pv.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {row.pv.map((m, i) => (
+                    <span
+                      key={`${row.turnIndex}-${i}-${m}`}
+                      className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-sm font-mono text-amber-100"
+                    >
+                      {i + 1}. {m}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">{t.variationEmpty}</p>
+              )}
+              <button
+                type="button"
+                onClick={onBackToMainline}
+                className="mt-4 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
               >
-                {m}
-              </span>
-            ))}
-          </div>
-        </div>
+                {t.reviewBackToMainline}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </section>
   );

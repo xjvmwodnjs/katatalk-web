@@ -13,6 +13,9 @@ type Props = {
   candidates: AnalysisResultKeyMoveCandidateV1[];
   selectedTurnIndex: number | null;
   onSelectTurnIndex: (turnIndex: number) => void;
+  selectedVariationTurnIndex?: number | null;
+  variationTurnIndexes?: Set<number>;
+  onSelectVariation?: (turnIndex: number) => void;
   lang: Language;
 };
 
@@ -21,6 +24,9 @@ export default function AnalysisCandidateList({
   candidates,
   selectedTurnIndex,
   onSelectTurnIndex,
+  selectedVariationTurnIndex = null,
+  variationTurnIndexes,
+  onSelectVariation,
   lang,
 }: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
@@ -35,24 +41,31 @@ export default function AnalysisCandidateList({
       {visible.length === 0 ? (
         <p className="text-sm text-slate-500">{t.candidatesEmpty}</p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {visible.map((c) => {
             const sel = selectedTurnIndex === c.turnIndex;
+            const variationSelected = selectedVariationTurnIndex === c.turnIndex;
+            const hasVariation = variationTurnIndexes?.has(c.turnIndex) ?? false;
             return (
-              <button
+              <article
                 key={c.turnIndex}
-                type="button"
-                onClick={() => onSelectTurnIndex(c.turnIndex)}
                 className={`text-left rounded-xl border p-4 transition-colors ${
-                  sel ? "border-amber-400/60 bg-amber-950/30" : "border-white/10 bg-black/20 hover:border-white/20"
+                  sel ? "border-amber-400/60 bg-amber-950/30" : "border-white/10 bg-black/20"
                 }`}
               >
-                <div className="text-xs font-mono text-amber-400/90 mb-1">
-                  #{c.turnIndex} · {c.player}
-                  {sel ? (
-                    <span className="ml-2 text-[10px] text-amber-300/90 normal-case">· {t.candidateSelected}</span>
-                  ) : null}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectTurnIndex(c.turnIndex)}
+                  className="block w-full text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                  aria-label={`${t.chartAriaTurn} ${c.turnIndex}`}
+                >
+                  <div className="text-xs font-mono text-amber-400/90 mb-1">
+                    #{c.turnIndex} · {c.player}
+                    {sel ? (
+                      <span className="ml-2 text-[10px] text-amber-300/90 normal-case">· {t.candidateSelected}</span>
+                    ) : null}
+                  </div>
+                </button>
                 <div className="text-sm text-amber-50 mb-2 font-medium">{translateCandidateLabelKey(c.labelKey, uiLang)}</div>
                 <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-slate-300">
                   <dt className="text-slate-500">{t.playedMove}</dt>
@@ -84,7 +97,29 @@ export default function AnalysisCandidateList({
                     );
                   })}
                 </div>
-              </button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onSelectTurnIndex(c.turnIndex)}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
+                  >
+                    {t.reviewMainlineButton}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasVariation || !onSelectVariation}
+                    onClick={() => onSelectVariation?.(c.turnIndex)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs ${
+                      variationSelected
+                        ? "border-amber-400/70 bg-amber-400/10 text-amber-100"
+                        : "border-white/10 text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+                    }`}
+                    aria-label={`${t.variationShowOnBoard} ${c.turnIndex}`}
+                  >
+                    {!hasVariation ? t.variationNoDisplayable : variationSelected ? t.variationSelectedOnBoard : t.variationShowOnBoard}
+                  </button>
+                </div>
+              </article>
             );
           })}
         </div>

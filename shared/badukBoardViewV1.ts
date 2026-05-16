@@ -12,6 +12,8 @@ export type BadukBoardGhostMarkerV1 = {
   gtp: string;
   /** candidate | pv */
   kind: "candidate" | "pv";
+  /** Optional display order for selected PV overlays. */
+  order?: number;
 };
 
 /** 보드 크기별 화점(0-based x,y). 19×19만 9개, 그 외는 간단 패턴. */
@@ -60,7 +62,8 @@ function addGhost(
   gtp: string | null | undefined,
   kind: BadukBoardGhostMarkerV1["kind"],
   boardSize: number,
-  occupied: Set<string>
+  occupied: Set<string>,
+  order?: number
 ): void {
   if (!gtp || /^pass$/i.test(gtp.trim())) {
     return;
@@ -74,7 +77,7 @@ function addGhost(
     return;
   }
   seen.add(key);
-  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind });
+  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind, ...(order != null ? { order } : {}) });
 }
 
 /** 선택 수순의 후보수·PV 첫 수를 ghost 로 수집(실돌 위치는 제외). */
@@ -84,14 +87,22 @@ export function collectBadukBoardGhostMarkersV1(args: {
   selectedTurnIndex: number | null;
   candidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
+  selectedVariation?: AnalysisResultVariationPreviewV1 | null;
 }): BadukBoardGhostMarkerV1[] {
-  const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview } = args;
+  const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview, selectedVariation } = args;
   if (selectedTurnIndex == null) {
     return [];
   }
   const occupied = new Set(occupiedKeys);
   const out: BadukBoardGhostMarkerV1[] = [];
   const seen = new Set<string>();
+
+  if (selectedVariation && selectedVariation.pv.length > 0) {
+    selectedVariation.pv.forEach((gtp, i) => {
+      addGhost(out, seen, gtp, "pv", boardSize, occupied, i + 1);
+    });
+    return out;
+  }
 
   const cand = candidates.find((c) => c.turnIndex === selectedTurnIndex);
   if (cand?.bestMove) {

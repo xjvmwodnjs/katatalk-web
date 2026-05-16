@@ -63,6 +63,66 @@ describe("badukBoardViewV1 helpers", () => {
     expect(ghosts.every((g) => !occupied.includes(`${g.x},${g.y}`))).toBe(true);
   });
 
+  it("selected variation overlays numbered PV markers and skips occupied points", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const selectedVariation = {
+      turnIndex: 3,
+      playedMove: "pp",
+      bestMove: "C6",
+      pv: ["Q16", "C6", "pass", "D5"],
+      source: "multi-turn" as const,
+    };
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [],
+      variationPreview: [selectedVariation],
+      selectedVariation,
+    });
+    expect(ghosts.map((g) => g.gtp)).toEqual(["C6", "D5"]);
+    expect(ghosts.map((g) => g.order)).toEqual([2, 4]);
+    expect(ghosts.every((g) => g.kind === "pv")).toBe(true);
+  });
+
+  it("empty selected variation falls back to mainline candidate ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [],
+      selectedVariation: { turnIndex: 3, playedMove: "pp", bestMove: null, pv: [], source: "multi-turn" },
+    });
+    expect(ghosts.map((g) => g.gtp)).toEqual(["C6"]);
+    expect(ghosts.some((g) => g.order != null)).toBe(false);
+  });
+
+  it("selected reference legend no longer says first move", () => {
+    const forbiddenFirstMoveWords = ["첫 수", "first move", "初手", "第一手"];
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const t = getAnalysisResultUiStrings(lang);
+      const label = `${t.boardGhostPvLegend} ${t.boardGhostPvLegendFallback}`;
+      expect(forbiddenFirstMoveWords.some((w) => label.includes(w))).toBe(false);
+    }
+  });
+
   it("board UI strings avoid forbidden decisive labels", () => {
     for (const lang of ["ko", "en", "ja", "zh"] as const) {
       const t = getAnalysisResultUiStrings(lang);
@@ -72,6 +132,11 @@ describe("badukBoardViewV1 helpers", () => {
       expect(uiTextContainsForbiddenLabel(t.boardSnapshotHint, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navTurnCounter, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoCandidate, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoVariation, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoPvCaution, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoSignalCaution, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationNoDisplayable, lang)).toBe(false);
     }
   });
 });

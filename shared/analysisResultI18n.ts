@@ -489,14 +489,27 @@ type UiBlock = {
   dsSelected: string;
   dsCompleted: string;
   candidateSelected: string;
+  reviewMainlineButton: string;
   variationTitle: string;
   variationSubDeep: string;
   variationSubMulti: string;
   variationEmpty: string;
+  variationSelectHint: string;
   variationTurn: string;
   variationPlayed: string;
   variationCandidate: string;
   variationPvDisclaimer: string;
+  variationShowOnBoard: string;
+  variationSelectedOnBoard: string;
+  variationNoDisplayable: string;
+  reviewBackToMainline: string;
+  analysisMemoTitle: string;
+  analysisMemoCandidate: string;
+  analysisMemoVariation: string;
+  analysisMemoPvCaution: string;
+  analysisMemoSignalCaution: string;
+  analysisMemoNoLlM: string;
+  tryPlayDisabled: string;
 };
 
 const UI: Record<AnalysisResultLang, UiBlock> = {
@@ -537,8 +550,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "메인라인 수가 없어 수순 탐색을 사용할 수 없습니다.",
     boardGhostLegend: "반투명 마커: 참고 후보수",
     boardGhostLegendFallback: "반투명 마커: 참고 좌표",
-    boardGhostPvLegend: "KataGo 참고도(PV) 첫 수",
-    boardGhostPvLegendFallback: "참고도 첫 수",
+    boardGhostPvLegend: "선택한 참고도 수순",
+    boardGhostPvLegendFallback: "선택한 참고도 수순",
     boardDebugOrder: "현재 수순(메인라인)",
     boardDebugLast: "마지막 착수(GTP)",
     boardDebugStones: "돌 개수",
@@ -561,14 +574,27 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 선택",
     dsCompleted: "Deep Search 완료",
     candidateSelected: "선택됨",
+    reviewMainlineButton: "메인라인 보기",
     variationTitle: "KataGo 참고도",
     variationSubDeep: "Deep Search 참고도",
     variationSubMulti: "Multi-turn 참고도",
     variationEmpty: "표시할 참고도 없음",
+    variationSelectHint: "참고도 버튼을 누르면 바둑판 위에 표시됩니다.",
     variationTurn: "수순",
     variationPlayed: "실전수",
     variationCandidate: "후보수",
     variationPvDisclaimer: "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
+    variationShowOnBoard: "참고도 보기",
+    variationSelectedOnBoard: "참고도 표시 중",
+    variationNoDisplayable: "표시할 참고도 없음",
+    reviewBackToMainline: "전체 수순으로 돌아가기",
+    analysisMemoTitle: "AI 분석 메모",
+    analysisMemoCandidate: "이 수순은 KataGo 기준으로 검토할 만한 후보입니다.",
+    analysisMemoVariation: "선택한 참고도는 바둑판 위의 반투명 번호로 표시됩니다.",
+    analysisMemoPvCaution: "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
+    analysisMemoSignalCaution: "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
+    analysisMemoNoLlM: "LLM 자연어 해설은 아직 실행하지 않습니다.",
+    tryPlayDisabled: "놓아보기 준비 중",
   },
   en: {
     summaryStatusComplete: "Analysis complete",
@@ -606,8 +632,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "No mainline moves — turn navigation is unavailable.",
     boardGhostLegend: "Faded markers: reference candidate moves",
     boardGhostLegendFallback: "Faded markers: reference coordinates",
-    boardGhostPvLegend: "KataGo reference line (PV) first move",
-    boardGhostPvLegendFallback: "Reference line first move",
+    boardGhostPvLegend: "Selected reference line",
+    boardGhostPvLegendFallback: "Selected reference line",
     boardDebugOrder: "Current move index (mainline)",
     boardDebugLast: "Last stone (GTP)",
     boardDebugStones: "Stone count",
@@ -630,14 +656,27 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search selected",
     dsCompleted: "Deep Search completed",
     candidateSelected: "Selected",
+    reviewMainlineButton: "Show mainline",
     variationTitle: "KataGo reference line",
     variationSubDeep: "Deep Search reference line",
     variationSubMulti: "Multi-turn reference line",
     variationEmpty: "No reference line to show",
+    variationSelectHint: "Select a reference button to show it on the board.",
     variationTurn: "Move",
     variationPlayed: "Played",
     variationCandidate: "Candidate",
     variationPvDisclaimer: "Reference PV only — not a single authoritative continuation.",
+    variationShowOnBoard: "Show reference",
+    variationSelectedOnBoard: "Reference shown",
+    variationNoDisplayable: "No reference to show",
+    reviewBackToMainline: "Back to mainline",
+    analysisMemoTitle: "AI analysis memo",
+    analysisMemoCandidate: "This move index is worth reviewing under KataGo output.",
+    analysisMemoVariation: "The selected reference line is shown as faded numbered markers on the board.",
+    analysisMemoPvCaution: "The reference line is one possible continuation, not a single answer.",
+    analysisMemoSignalCaution: "BSI/ADI are internal reference signals, not final judgments.",
+    analysisMemoNoLlM: "LLM commentary is not running yet.",
+    tryPlayDisabled: "Try-play coming soon",
   },
   ja: {
     summaryStatusComplete: "解析完了",
@@ -675,8 +714,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "メインラインの手がありません — 手数ナビは使用できません。",
     boardGhostLegend: "半透明マーカー: 参考候補手",
     boardGhostLegendFallback: "半透明マーカー: 参考座標",
-    boardGhostPvLegend: "KataGo 参考図(PV)の初手",
-    boardGhostPvLegendFallback: "参考図の初手",
+    boardGhostPvLegend: "選択した参考手順",
+    boardGhostPvLegendFallback: "選択した参考手順",
     boardDebugOrder: "現在の手数（メインライン）",
     boardDebugLast: "最終着手（GTP）",
     boardDebugStones: "石の数",
@@ -699,14 +738,27 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 選択",
     dsCompleted: "Deep Search 完了",
     candidateSelected: "選択中",
+    reviewMainlineButton: "メインライン表示",
     variationTitle: "KataGo 参照",
     variationSubDeep: "Deep Search 参照",
     variationSubMulti: "Multi-turn 参照",
     variationEmpty: "表示する参考がありません",
+    variationSelectHint: "参考ボタンを押すと碁盤上に表示します。",
     variationTurn: "手数",
     variationPlayed: "実戦手",
     variationCandidate: "候補手",
     variationPvDisclaimer: "参考用の変化（PV）であり、単一の断定手順としては扱いません。",
+    variationShowOnBoard: "参考を表示",
+    variationSelectedOnBoard: "参考を表示中",
+    variationNoDisplayable: "表示する参考なし",
+    reviewBackToMainline: "メインラインに戻る",
+    analysisMemoTitle: "AI 分析メモ",
+    analysisMemoCandidate: "この手数は KataGo 出力上、検討対象として扱えます。",
+    analysisMemoVariation: "選択した参考図は碁盤上の半透明番号で表示されます。",
+    analysisMemoPvCaution: "参考図は一つの可能性であり、単一の進行とは見なしません。",
+    analysisMemoSignalCaution: "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
+    analysisMemoNoLlM: "LLM の自然言語解説はまだ実行しません。",
+    tryPlayDisabled: "試し打ちは準備中",
   },
   zh: {
     summaryStatusComplete: "分析完成",
@@ -744,8 +796,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "主线无手 — 无法使用手数导航。",
     boardGhostLegend: "半透明标记：参考候选手",
     boardGhostLegendFallback: "半透明标记：参考坐标",
-    boardGhostPvLegend: "KataGo 参考图(PV)第一手",
-    boardGhostPvLegendFallback: "参考图第一手",
+    boardGhostPvLegend: "所选参考序列",
+    boardGhostPvLegendFallback: "所选参考序列",
     boardDebugOrder: "当前手数（主线）",
     boardDebugLast: "最后一手（GTP）",
     boardDebugStones: "棋子数",
@@ -768,14 +820,27 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 已选",
     dsCompleted: "Deep Search 已完成",
     candidateSelected: "已选择",
+    reviewMainlineButton: "查看主线",
     variationTitle: "KataGo 参考图",
     variationSubDeep: "Deep Search 参考",
     variationSubMulti: "Multi-turn 参考",
     variationEmpty: "无参考变化可显示",
+    variationSelectHint: "点击参考按钮后会显示在棋盘上。",
     variationTurn: "手数",
     variationPlayed: "实战手",
     variationCandidate: "候选手",
     variationPvDisclaimer: "仅为参考变化（PV），不作为唯一权威应手序列。",
+    variationShowOnBoard: "显示参考",
+    variationSelectedOnBoard: "正在显示参考",
+    variationNoDisplayable: "无参考可显示",
+    reviewBackToMainline: "返回全局主线",
+    analysisMemoTitle: "AI 分析备忘",
+    analysisMemoCandidate: "此手数可作为 KataGo 输出下的复核候选。",
+    analysisMemoVariation: "所选参考图会以半透明编号标记显示在棋盘上。",
+    analysisMemoPvCaution: "参考图只是一种可能，不应视为唯一进程。",
+    analysisMemoSignalCaution: "BSI/ADI 是内部参考信号，并非最终判断。",
+    analysisMemoNoLlM: "尚未运行 LLM 自然语言解说。",
+    tryPlayDisabled: "试下功能准备中",
   },
 };
 
