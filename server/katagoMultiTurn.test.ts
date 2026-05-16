@@ -4,7 +4,14 @@ import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as analysisEngines from "./worker/analysisEngines";
 import { analyzeSgfKatago } from "./worker/analysisEngines";
-import { readKatagoMultiTurnMaxFrom } from "./worker/analysisEngines/config";
+import {
+  readKatagoMaxVisitsFrom,
+  readKatagoMultiTurnBatchTimeoutMsFrom,
+  readKatagoMultiTurnMaxFrom,
+  readKatagoMultiTurnMaxVisitsFrom,
+  readKatagoMultiTurnQueryTimeoutMsFrom,
+  readKatagoTimeoutMsFrom,
+} from "./worker/analysisEngines/config";
 import { runMultiTurnKatagoRawV1 } from "./worker/analysisEngines/katagoMultiTurnRun";
 import { buildAnalysisPlanV1FromParsed, selectCandidatesForMultiTurnAnalysis, sliceMovesBeforeTurnIndex } from "./analysisPlan";
 import * as creditService from "./creditService";
@@ -42,6 +49,37 @@ describe("readKatagoMultiTurnMaxFrom", () => {
     expect(readKatagoMultiTurnMaxFrom(process.env)).toBe(4);
     process.env.KATAGO_MULTI_TURN_MAX = "0";
     expect(readKatagoMultiTurnMaxFrom(process.env)).toBe(0);
+  });
+
+  it("strictly parses and clamps primary/multi-turn env values", () => {
+    expect(readKatagoMaxVisitsFrom({})).toBe(200);
+    expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "200" })).toBe(200);
+    expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "200abc" })).toBe(200);
+    expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "0" })).toBe(200);
+    expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "-1" })).toBe(200);
+    expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "999999" })).toBe(5000);
+
+    expect(readKatagoTimeoutMsFrom({})).toBe(120_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000" })).toBe(120_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000ms" })).toBe(120_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "0" })).toBe(120_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "100" })).toBe(30_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "9999999" })).toBe(900_000);
+
+    expect(readKatagoMultiTurnMaxFrom({ KATAGO_MULTI_TURN_MAX: "1000" })).toBe(100);
+    expect(readKatagoMultiTurnMaxFrom({ KATAGO_MULTI_TURN_MAX: "6x" })).toBe(6);
+
+    expect(readKatagoMultiTurnMaxVisitsFrom({ KATAGO_MULTI_TURN_MAX_VISITS: "7000" }, 200)).toBe(5000);
+    expect(readKatagoMultiTurnMaxVisitsFrom({ KATAGO_MULTI_TURN_MAX_VISITS: "200abc" }, 300)).toBe(300);
+    expect(readKatagoMultiTurnMaxVisitsFrom({}, 7000)).toBe(5000);
+
+    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "100" })).toBe(30_000);
+    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "9999999" })).toBe(900_000);
+    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "30000abc" })).toBe(120_000);
+
+    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "100" }, 2)).toBe(30_000);
+    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "9999999" }, 2)).toBe(900_000);
+    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "30000abc" }, 2)).toBe(240_000);
   });
 });
 
