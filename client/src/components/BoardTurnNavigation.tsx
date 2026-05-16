@@ -41,17 +41,17 @@ export default function BoardTurnNavigation({
 
   return (
     <div
-      className="mb-3 space-y-2 rounded-xl border border-white/10 bg-black/25 px-3 py-3 sm:px-4"
+      className="mb-2 min-w-0 space-y-2 rounded-xl border border-white/10 bg-black/25 px-2 py-2.5 sm:mb-3 sm:px-4 sm:py-3"
       role="toolbar"
       aria-label={t.navAriaToolbar}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-1.5">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 min-w-9 px-2 text-xs sm:min-w-10 sm:text-sm"
+            className="h-7 min-w-8 px-1.5 text-xs sm:h-8 sm:min-w-10 sm:px-2 sm:text-sm"
             disabled={atStart}
             aria-label={t.navFirst}
             onClick={() => go(boardNavFirstTurnIndexV1())}
@@ -63,7 +63,7 @@ export default function BoardTurnNavigation({
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 min-w-9 px-2 text-xs sm:min-w-10 sm:text-sm"
+            className="h-7 min-w-8 px-1.5 text-xs sm:h-8 sm:min-w-10 sm:px-2 sm:text-sm"
             disabled={atStart}
             aria-label={t.navPrev}
             onClick={() => go(boardNavStepTurnIndexV1(current, -1, total))}
@@ -75,7 +75,7 @@ export default function BoardTurnNavigation({
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 min-w-9 px-2 text-xs sm:min-w-10 sm:text-sm"
+            className="h-7 min-w-8 px-1.5 text-xs sm:h-8 sm:min-w-10 sm:px-2 sm:text-sm"
             disabled={atEnd}
             aria-label={t.navNext}
             onClick={() => go(boardNavStepTurnIndexV1(current, 1, total))}
@@ -87,7 +87,7 @@ export default function BoardTurnNavigation({
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 min-w-9 px-2 text-xs sm:min-w-10 sm:text-sm"
+            className="h-7 min-w-8 px-1.5 text-xs sm:h-8 sm:min-w-10 sm:px-2 sm:text-sm"
             disabled={atEnd}
             aria-label={t.navEnd}
             onClick={() => go(boardNavLastTurnIndexV1(total))}
@@ -97,16 +97,16 @@ export default function BoardTurnNavigation({
           </Button>
         </div>
         <p
-          className="shrink-0 font-mono text-sm tabular-nums text-amber-100/95"
+          className="shrink-0 font-mono text-xs tabular-nums text-amber-100/95 sm:text-sm"
           aria-live="polite"
           aria-atomic="true"
         >
           {interp(t.navTurnCounter, { current, total })}
         </p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <Slider
-          className="flex-1"
+          className="min-w-0 flex-1"
           min={0}
           max={Math.max(0, total)}
           step={1}

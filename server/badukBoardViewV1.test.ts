@@ -63,6 +63,166 @@ describe("badukBoardViewV1 helpers", () => {
     expect(ghosts.every((g) => !occupied.includes(`${g.x},${g.y}`))).toBe(true);
   });
 
+  it("selected variation overlays numbered PV markers and skips occupied points", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const selectedVariation = {
+      turnIndex: 3,
+      playedMove: "pp",
+      bestMove: "C6",
+      pv: ["Q16", "C6", "pass", "D5"],
+      source: "multi-turn" as const,
+    };
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [],
+      variationPreview: [selectedVariation],
+      selectedVariation,
+      overlayMode: "variation-review",
+      pvStartColor: "W",
+    });
+    expect(ghosts.map((g) => g.gtp)).toEqual(["C6", "D5"]);
+    expect(ghosts.map((g) => g.order)).toEqual([2, 4]);
+    expect(ghosts.map((g) => g.color)).toEqual(["B", "B"]);
+    expect(ghosts.every((g) => g.kind === "pv")).toBe(true);
+  });
+
+  it("candidate-selected mode does not create candidate or PV reference ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "candidate-selected",
+    });
+    expect(ghosts).toEqual([]);
+  });
+
+  it("mainline mode never falls back to PV reference ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: null, pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "mainline",
+    });
+    expect(ghosts).toEqual([]);
+  });
+
+  it("try-play mode with no stones does not fall back to analysis markers", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "try-play",
+      tryPlayStones: [],
+    });
+    expect(ghosts).toEqual([]);
+  });
+
+  it("try-play mode returns only try-play stones", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "try-play",
+      tryPlayStones: [{ x: 2, y: 3, gtp: "try-2-3-1", kind: "try", color: "B", order: 1 }],
+    });
+    expect(ghosts).toEqual([{ x: 2, y: 3, gtp: "try-2-3-1", kind: "try", color: "B", order: 1 }]);
+  });
+
+  it("empty selected variation falls back to mainline candidate ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [],
+      selectedVariation: { turnIndex: 3, playedMove: "pp", bestMove: null, pv: [], source: "multi-turn" },
+    });
+    expect(ghosts.map((g) => g.gtp)).toEqual(["C6"]);
+    expect(ghosts.some((g) => g.order != null)).toBe(false);
+  });
+
+  it("selected reference legend no longer says first move", () => {
+    const forbiddenFirstMoveWords = ["첫 수", "first move", "初手", "第一手"];
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const t = getAnalysisResultUiStrings(lang);
+      const label = `${t.boardGhostPvLegend} ${t.boardGhostPvLegendFallback}`;
+      expect(forbiddenFirstMoveWords.some((w) => label.includes(w))).toBe(false);
+    }
+  });
+
   it("board UI strings avoid forbidden decisive labels", () => {
     for (const lang of ["ko", "en", "ja", "zh"] as const) {
       const t = getAnalysisResultUiStrings(lang);
@@ -72,6 +232,20 @@ describe("badukBoardViewV1 helpers", () => {
       expect(uiTextContainsForbiddenLabel(t.boardSnapshotHint, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navTurnCounter, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.winrateCollapse, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.winrateExpand, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.candidateChipMemo, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.candidateChipReferenceAvailable, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoCandidate, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoSelectCandidate, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoVariation, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoPvCaution, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoSignalCaution, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationNoDisplayable, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationPvState, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationReasons, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.tryPlayEnter, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.tryPlayNotice, lang)).toBe(false);
     }
   });
 });

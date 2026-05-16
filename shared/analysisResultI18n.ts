@@ -433,6 +433,10 @@ type UiBlock = {
   summaryStatusComplete: string;
   summaryTitle: string;
   betaNote: string;
+  blackPlayer: string;
+  whitePlayer: string;
+  gameResult: string;
+  analysisModel: string;
   engine: string;
   totalMoves: string;
   flagsSectionTitle: string;
@@ -476,6 +480,8 @@ type UiBlock = {
   winrateYAxis: string;
   winrateEmpty: string;
   winrateToggleNote: string;
+  winrateCollapse: string;
+  winrateExpand: string;
   winratePerspectiveNote: string;
   winrateFullTimelineNote: string;
   winrateClickHint: string;
@@ -489,14 +495,36 @@ type UiBlock = {
   dsSelected: string;
   dsCompleted: string;
   candidateSelected: string;
+  candidateChipMemo: string;
+  candidateChipReferenceAvailable: string;
+  reviewMainlineButton: string;
   variationTitle: string;
   variationSubDeep: string;
   variationSubMulti: string;
   variationEmpty: string;
+  variationSelectHint: string;
   variationTurn: string;
   variationPlayed: string;
   variationCandidate: string;
   variationPvDisclaimer: string;
+  variationShowOnBoard: string;
+  variationSelectedOnBoard: string;
+  variationNoDisplayable: string;
+  variationPvState: string;
+  variationReasons: string;
+  reviewBackToMainline: string;
+  analysisMemoTitle: string;
+  analysisMemoSelectCandidate: string;
+  analysisMemoCandidate: string;
+  analysisMemoVariation: string;
+  analysisMemoPvCaution: string;
+  analysisMemoSignalCaution: string;
+  analysisMemoNoLlM: string;
+  tryPlayDisabled: string;
+  tryPlayEnter: string;
+  tryPlayUndo: string;
+  tryPlayReset: string;
+  tryPlayNotice: string;
 };
 
 const UI: Record<AnalysisResultLang, UiBlock> = {
@@ -505,6 +533,10 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     summaryTitle: "분석 요약",
     betaNote:
       "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
+    blackPlayer: "흑",
+    whitePlayer: "백",
+    gameResult: "결과",
+    analysisModel: "분석 모델",
     engine: "엔진",
     totalMoves: "총 수순",
     flagsSectionTitle: "신호·플랜",
@@ -537,8 +569,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "메인라인 수가 없어 수순 탐색을 사용할 수 없습니다.",
     boardGhostLegend: "반투명 마커: 참고 후보수",
     boardGhostLegendFallback: "반투명 마커: 참고 좌표",
-    boardGhostPvLegend: "KataGo 참고도(PV) 첫 수",
-    boardGhostPvLegendFallback: "참고도 첫 수",
+    boardGhostPvLegend: "선택한 참고도 수순",
+    boardGhostPvLegendFallback: "선택한 참고도 수순",
     boardDebugOrder: "현재 수순(메인라인)",
     boardDebugLast: "마지막 착수(GTP)",
     boardDebugStones: "돌 개수",
@@ -548,6 +580,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateYAxis: "KataGo 기준 승률 (%)",
     winrateEmpty: "표시할 승률 추이가 없습니다.",
     winrateToggleNote: "흑/백 관점 전환 — 준비 중",
+    winrateCollapse: "그래프 접기",
+    winrateExpand: "그래프 펼치기",
     winratePerspectiveNote: "KataGo 출력 관점이며 흑/백 고정 해석이 아닙니다.",
     winrateFullTimelineNote: "메인라인 전체 수순 흐름(KataGo timeline 분석 출력).",
     winrateClickHint: "점을 눌러 해당 수순을 선택할 수 있습니다.",
@@ -561,19 +595,45 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 선택",
     dsCompleted: "Deep Search 완료",
     candidateSelected: "선택됨",
+    candidateChipMemo: "해설 보기",
+    candidateChipReferenceAvailable: "참고도 있음",
+    reviewMainlineButton: "메인라인 보기",
     variationTitle: "KataGo 참고도",
     variationSubDeep: "Deep Search 참고도",
     variationSubMulti: "Multi-turn 참고도",
     variationEmpty: "표시할 참고도 없음",
+    variationSelectHint: "참고도 버튼을 누르면 바둑판 위에 표시됩니다.",
     variationTurn: "수순",
     variationPlayed: "실전수",
     variationCandidate: "후보수",
     variationPvDisclaimer: "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
+    variationShowOnBoard: "참고도 보기",
+    variationSelectedOnBoard: "참고도 표시 중",
+    variationNoDisplayable: "표시할 참고도 없음",
+    variationPvState: "PV 있음",
+    variationReasons: "참고 신호",
+    reviewBackToMainline: "전체 수순으로 돌아가기",
+    analysisMemoTitle: "AI 분석 메모",
+    analysisMemoSelectCandidate: "검토 후보를 선택하면 해설이 표시됩니다.",
+    analysisMemoCandidate: "이 수순은 KataGo 기준으로 검토할 만한 후보입니다.",
+    analysisMemoVariation: "선택한 참고도는 바둑판 위의 반투명 번호로 표시됩니다.",
+    analysisMemoPvCaution: "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
+    analysisMemoSignalCaution: "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
+    analysisMemoNoLlM: "LLM 자연어 해설은 아직 실행하지 않습니다.",
+    tryPlayDisabled: "놓아보기 준비 중",
+    tryPlayEnter: "놓아보기",
+    tryPlayUndo: "무르기",
+    tryPlayReset: "초기화",
+    tryPlayNotice: "화면에서만 놓아보는 기능이며, KataGo 재분석은 수행하지 않습니다.",
   },
   en: {
     summaryStatusComplete: "Analysis complete",
     summaryTitle: "Analysis summary",
     betaNote: "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
+    blackPlayer: "Black",
+    whitePlayer: "White",
+    gameResult: "Result",
+    analysisModel: "Analysis model",
     engine: "Engine",
     totalMoves: "Total moves",
     flagsSectionTitle: "Signals / plan",
@@ -606,8 +666,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "No mainline moves — turn navigation is unavailable.",
     boardGhostLegend: "Faded markers: reference candidate moves",
     boardGhostLegendFallback: "Faded markers: reference coordinates",
-    boardGhostPvLegend: "KataGo reference line (PV) first move",
-    boardGhostPvLegendFallback: "Reference line first move",
+    boardGhostPvLegend: "Selected reference line",
+    boardGhostPvLegendFallback: "Selected reference line",
     boardDebugOrder: "Current move index (mainline)",
     boardDebugLast: "Last stone (GTP)",
     boardDebugStones: "Stone count",
@@ -617,6 +677,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateYAxis: "KataGo output winrate (%)",
     winrateEmpty: "No winrate series to display.",
     winrateToggleNote: "Black/white perspective — coming soon",
+    winrateCollapse: "Collapse graph",
+    winrateExpand: "Expand graph",
     winratePerspectiveNote: "Shown as KataGo output; not fixed as black-only or white-only winrate.",
     winrateFullTimelineNote: "Full mainline flow (KataGo timeline analysis output).",
     winrateClickHint: "Click a point to select that move index.",
@@ -630,19 +692,45 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search selected",
     dsCompleted: "Deep Search completed",
     candidateSelected: "Selected",
+    candidateChipMemo: "Show memo",
+    candidateChipReferenceAvailable: "Reference available",
+    reviewMainlineButton: "Show mainline",
     variationTitle: "KataGo reference line",
     variationSubDeep: "Deep Search reference line",
     variationSubMulti: "Multi-turn reference line",
     variationEmpty: "No reference line to show",
+    variationSelectHint: "Select a reference button to show it on the board.",
     variationTurn: "Move",
     variationPlayed: "Played",
     variationCandidate: "Candidate",
     variationPvDisclaimer: "Reference PV only — not a single authoritative continuation.",
+    variationShowOnBoard: "Show reference",
+    variationSelectedOnBoard: "Reference shown",
+    variationNoDisplayable: "No reference to show",
+    variationPvState: "PV available",
+    variationReasons: "Reference signals",
+    reviewBackToMainline: "Back to mainline",
+    analysisMemoTitle: "AI analysis memo",
+    analysisMemoSelectCandidate: "Select a review candidate to show the memo.",
+    analysisMemoCandidate: "This move index is worth reviewing under KataGo output.",
+    analysisMemoVariation: "The selected reference line is shown as faded numbered markers on the board.",
+    analysisMemoPvCaution: "The reference line is one possible continuation, not a single answer.",
+    analysisMemoSignalCaution: "BSI/ADI are internal reference signals, not final judgments.",
+    analysisMemoNoLlM: "LLM commentary is not running yet.",
+    tryPlayDisabled: "Try-play coming soon",
+    tryPlayEnter: "Try play",
+    tryPlayUndo: "Undo",
+    tryPlayReset: "Reset",
+    tryPlayNotice: "Local try-play only; no KataGo re-analysis is performed.",
   },
   ja: {
     summaryStatusComplete: "解析完了",
     summaryTitle: "分析サマリ",
     betaNote: "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
+    blackPlayer: "黒",
+    whitePlayer: "白",
+    gameResult: "結果",
+    analysisModel: "解析モデル",
     engine: "エンジン",
     totalMoves: "総手数",
     flagsSectionTitle: "シグナル/プラン",
@@ -675,8 +763,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "メインラインの手がありません — 手数ナビは使用できません。",
     boardGhostLegend: "半透明マーカー: 参考候補手",
     boardGhostLegendFallback: "半透明マーカー: 参考座標",
-    boardGhostPvLegend: "KataGo 参考図(PV)の初手",
-    boardGhostPvLegendFallback: "参考図の初手",
+    boardGhostPvLegend: "選択した参考手順",
+    boardGhostPvLegendFallback: "選択した参考手順",
     boardDebugOrder: "現在の手数（メインライン）",
     boardDebugLast: "最終着手（GTP）",
     boardDebugStones: "石の数",
@@ -686,6 +774,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateYAxis: "KataGo 出力の勝率 (%)",
     winrateEmpty: "表示できる勝率系列がありません。",
     winrateToggleNote: "黒白視点の切替 — 準備中",
+    winrateCollapse: "グラフを閉じる",
+    winrateExpand: "グラフを開く",
     winratePerspectiveNote: "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
     winrateFullTimelineNote: "メインライン全手の推移（KataGo timeline 分析出力）。",
     winrateClickHint: "点をクリックして手数を選べます。",
@@ -699,19 +789,45 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 選択",
     dsCompleted: "Deep Search 完了",
     candidateSelected: "選択中",
+    candidateChipMemo: "メモ表示",
+    candidateChipReferenceAvailable: "参考図あり",
+    reviewMainlineButton: "メインライン表示",
     variationTitle: "KataGo 参照",
     variationSubDeep: "Deep Search 参照",
     variationSubMulti: "Multi-turn 参照",
     variationEmpty: "表示する参考がありません",
+    variationSelectHint: "参考ボタンを押すと碁盤上に表示します。",
     variationTurn: "手数",
     variationPlayed: "実戦手",
     variationCandidate: "候補手",
     variationPvDisclaimer: "参考用の変化（PV）であり、単一の断定手順としては扱いません。",
+    variationShowOnBoard: "参考を表示",
+    variationSelectedOnBoard: "参考を表示中",
+    variationNoDisplayable: "表示する参考なし",
+    variationPvState: "PV あり",
+    variationReasons: "参考シグナル",
+    reviewBackToMainline: "メインラインに戻る",
+    analysisMemoTitle: "AI 分析メモ",
+    analysisMemoSelectCandidate: "検討候補を選択するとメモを表示します。",
+    analysisMemoCandidate: "この手数は KataGo 出力上、検討対象として扱えます。",
+    analysisMemoVariation: "選択した参考図は碁盤上の半透明番号で表示されます。",
+    analysisMemoPvCaution: "参考図は一つの可能性であり、単一の進行とは見なしません。",
+    analysisMemoSignalCaution: "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
+    analysisMemoNoLlM: "LLM の自然言語解説はまだ実行しません。",
+    tryPlayDisabled: "試し打ちは準備中",
+    tryPlayEnter: "試し打ち",
+    tryPlayUndo: "戻す",
+    tryPlayReset: "リセット",
+    tryPlayNotice: "画面上だけの試し打ちで、KataGo の再解析は行いません。",
   },
   zh: {
     summaryStatusComplete: "分析完成",
     summaryTitle: "分析摘要",
     betaNote: "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
+    blackPlayer: "黑",
+    whitePlayer: "白",
+    gameResult: "结果",
+    analysisModel: "分析模型",
     engine: "引擎",
     totalMoves: "总手数",
     flagsSectionTitle: "信号与计划",
@@ -744,8 +860,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navEmptyMainline: "主线无手 — 无法使用手数导航。",
     boardGhostLegend: "半透明标记：参考候选手",
     boardGhostLegendFallback: "半透明标记：参考坐标",
-    boardGhostPvLegend: "KataGo 参考图(PV)第一手",
-    boardGhostPvLegendFallback: "参考图第一手",
+    boardGhostPvLegend: "所选参考序列",
+    boardGhostPvLegendFallback: "所选参考序列",
     boardDebugOrder: "当前手数（主线）",
     boardDebugLast: "最后一手（GTP）",
     boardDebugStones: "棋子数",
@@ -755,6 +871,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateYAxis: "KataGo 输出胜率 (%)",
     winrateEmpty: "没有可显示的胜率序列。",
     winrateToggleNote: "黑/白视角 — 准备中",
+    winrateCollapse: "收起图表",
+    winrateExpand: "展开图表",
     winratePerspectiveNote: "为 KataGo 输出视角，不作黑方或白方固定解读。",
     winrateFullTimelineNote: "主线全盘走势（KataGo timeline 分析输出）。",
     winrateClickHint: "点击节点可选择对应手数。",
@@ -768,14 +886,36 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     dsSelected: "Deep Search 已选",
     dsCompleted: "Deep Search 已完成",
     candidateSelected: "已选择",
+    candidateChipMemo: "查看备忘",
+    candidateChipReferenceAvailable: "有参考图",
+    reviewMainlineButton: "查看主线",
     variationTitle: "KataGo 参考图",
     variationSubDeep: "Deep Search 参考",
     variationSubMulti: "Multi-turn 参考",
     variationEmpty: "无参考变化可显示",
+    variationSelectHint: "点击参考按钮后会显示在棋盘上。",
     variationTurn: "手数",
     variationPlayed: "实战手",
     variationCandidate: "候选手",
     variationPvDisclaimer: "仅为参考变化（PV），不作为唯一权威应手序列。",
+    variationShowOnBoard: "显示参考",
+    variationSelectedOnBoard: "正在显示参考",
+    variationNoDisplayable: "无参考可显示",
+    variationPvState: "有 PV",
+    variationReasons: "参考信号",
+    reviewBackToMainline: "返回全局主线",
+    analysisMemoTitle: "AI 分析备忘",
+    analysisMemoSelectCandidate: "选择复核候选后会显示备忘。",
+    analysisMemoCandidate: "此手数可作为 KataGo 输出下的复核候选。",
+    analysisMemoVariation: "所选参考图会以半透明编号标记显示在棋盘上。",
+    analysisMemoPvCaution: "参考图只是一种可能，不应视为唯一进程。",
+    analysisMemoSignalCaution: "BSI/ADI 是内部参考信号，并非最终判断。",
+    analysisMemoNoLlM: "尚未运行 LLM 自然语言解说。",
+    tryPlayDisabled: "试下功能准备中",
+    tryPlayEnter: "试下",
+    tryPlayUndo: "撤销",
+    tryPlayReset: "重置",
+    tryPlayNotice: "仅在画面本地试下，不执行 KataGo 重新分析。",
   },
 };
 

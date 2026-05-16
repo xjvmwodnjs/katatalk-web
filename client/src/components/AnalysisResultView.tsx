@@ -3,10 +3,23 @@ import { buildAnalysisResultViewModel } from "@/lib/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import AnalysisCandidateList from "@/components/AnalysisCandidateList";
-import AnalysisVariationPreview from "@/components/AnalysisVariationPreview";
 import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
+import {
+  backToMainlineStateV3,
+  canEnterTryPlayModeV3,
+  canPlaceTryPlayStoneV3,
+  candidateSelectedStateV3,
+  hasRenderableVariationOverlayV2,
+  nextTryPlayColorV3,
+  nextWinrateCollapsedV2,
+  readCompactGameInfoV2,
+  renderableVariationTurnIndexesV2,
+  variationReviewStateV3,
+  variationIdV2,
+  type AnalysisReviewModeV3,
+} from "@shared/analysisReviewUiV2";
 import {
   clampSelectedTurnIndexV1,
   isBoardKeyboardNavKeyV1,
@@ -18,19 +31,28 @@ import {
 } from "@shared/boardNavigationV1";
 import {
   getAnalysisResultUiStrings,
+  internalReferenceSignalLabel,
   normalizeAnalysisResultLang,
   translatePlaceholderMessageKey,
   translateSgfPlaybackWarning,
   translateVmWarning,
 } from "@shared/analysisResultI18n";
+import { mapReasonPhraseForUi, uiTextContainsForbiddenLabel } from "@shared/analysisResultUiHelpers";
 
 type Props = {
   data: unknown;
   lang: Language;
 };
 
+type TryPlayStone = { x: number; y: number; color: "B" | "W"; gtp: string; kind: "try"; order: number };
+
 export default function AnalysisResultView({ data, lang }: Props) {
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
+  const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
+  const [selectedCandidateTurnIndex, setSelectedCandidateTurnIndex] = useState<number | null>(null);
+  const [reviewMode, setReviewMode] = useState<AnalysisReviewModeV3>("mainline");
+  const [tryPlayStones, setTryPlayStones] = useState<TryPlayStone[]>([]);
+  const [winrateCollapsed, setWinrateCollapsed] = useState(false);
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
 
@@ -46,6 +68,10 @@ export default function AnalysisResultView({ data, lang }: Props) {
     } else {
       setSelectedTurnIndex(null);
     }
+    setSelectedVariationId(null);
+    setSelectedCandidateTurnIndex(null);
+    setReviewMode("mainline");
+    setTryPlayStones([]);
   }, [data]);
 
   const vm = useMemo(
@@ -67,22 +93,189 @@ export default function AnalysisResultView({ data, lang }: Props) {
     vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder
       ? vm.sgfPlayback.selectedTurnIndex
       : 0;
+  const canTryPlay = vm.kind === "katago-worker-v1" && canEnterTryPlayModeV3(vm.sgfPlayback.placeholder);
+  const actualStoneKeys = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+      return new Set<string>();
+    }
+    return new Set(vm.sgfPlayback.stones.map((st) => `${st.x},${st.y}`));
+  }, [vm]);
+  const selectedVariation = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedVariationId == null || vm.sgfPlayback.placeholder) {
+      return null;
+    }
+    if (!("boardSize" in vm.sgfPlayback)) {
+      return null;
+    }
+    const row = vm.variationPreview.find((p) => variationIdV2(p) === selectedVariationId) ?? null;
+    return row && hasRenderableVariationOverlayV2(row, vm.sgfPlayback.boardSize, actualStoneKeys) ? row : null;
+  }, [vm, selectedVariationId, actualStoneKeys]);
+  const variationTurnIndexes = useMemo(
+    () =>
+      vm.kind === "katago-worker-v1" && !vm.sgfPlayback.placeholder && "boardSize" in vm.sgfPlayback
+        ? renderableVariationTurnIndexesV2(vm.variationPreview, vm.sgfPlayback.boardSize, actualStoneKeys)
+        : new Set<number>(),
+    [vm, actualStoneKeys]
+  );
+  const gameInfo = useMemo(() => readCompactGameInfoV2(data, uiLang), [data, uiLang]);
+  const selectedCandidate = useMemo(
+    () =>
+      vm.kind === "katago-worker-v1" && selectedCandidateTurnIndex != null
+      && (reviewMode === "candidate-selected" || reviewMode === "variation-review")
+        ? vm.keyMoveCandidates.find((c) => c.turnIndex === selectedCandidateTurnIndex) ?? null
+        : null,
+    [vm, selectedCandidateTurnIndex, reviewMode]
+  );
+  const selectedCandidateVariation = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedCandidateTurnIndex == null || vm.sgfPlayback.placeholder) {
+      return null;
+    }
+    if (!("boardSize" in vm.sgfPlayback)) {
+      return null;
+    }
+    const boardSize = vm.sgfPlayback.boardSize;
+    return (
+      vm.variationPreview.find(
+        (p) =>
+          p.turnIndex === selectedCandidateTurnIndex &&
+          hasRenderableVariationOverlayV2(p, boardSize, actualStoneKeys)
+      ) ?? null
+    );
+  }, [vm, selectedCandidateTurnIndex, actualStoneKeys]);
 
   const selectTurnIndex = useCallback(
     (raw: number | null) => {
       if (raw == null) {
         setSelectedTurnIndex(null);
+        setSelectedVariationId(null);
+        setSelectedCandidateTurnIndex(null);
+        setReviewMode("mainline");
+        setTryPlayStones([]);
         return;
       }
       if (showBoardNav) {
         setSelectedTurnIndex(clampSelectedTurnIndexV1(raw, boardNavTotalMoves));
+        setSelectedVariationId(null);
+        setSelectedCandidateTurnIndex(null);
+        setReviewMode("mainline");
+        setTryPlayStones([]);
         return;
       }
       const n = Math.trunc(Number(raw));
       setSelectedTurnIndex(Number.isFinite(n) ? n : null);
+      setSelectedVariationId(null);
+      setSelectedCandidateTurnIndex(null);
+      setReviewMode("mainline");
+      setTryPlayStones([]);
     },
     [showBoardNav, boardNavTotalMoves]
   );
+
+  const selectCandidate = useCallback(
+    (turnIndex: number) => {
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(turnIndex, boardNavTotalMoves));
+      } else {
+        setSelectedTurnIndex(turnIndex);
+      }
+      const next = candidateSelectedStateV3(
+        { selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStoneCount: tryPlayStones.length },
+        turnIndex
+      );
+      setSelectedCandidateTurnIndex(next.selectedCandidateTurnIndex);
+      setSelectedVariationId(next.selectedVariationId);
+      setTryPlayStones([]);
+      setReviewMode(next.reviewMode);
+    },
+    [showBoardNav, boardNavTotalMoves, selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]
+  );
+
+  const selectVariationByTurnIndex = useCallback(
+    (turnIndex: number) => {
+      if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder || !("boardSize" in vm.sgfPlayback)) {
+        return;
+      }
+      const boardSize = vm.sgfPlayback.boardSize;
+      const row = vm.variationPreview.find(
+        (p) => p.turnIndex === turnIndex && hasRenderableVariationOverlayV2(p, boardSize, actualStoneKeys)
+      );
+      if (!row) {
+        return;
+      }
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(row.turnIndex, boardNavTotalMoves));
+      } else {
+        setSelectedTurnIndex(row.turnIndex);
+      }
+      const next = variationReviewStateV3(
+        { selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStoneCount: tryPlayStones.length },
+        variationIdV2(row),
+        true
+      );
+      setSelectedCandidateTurnIndex(row.turnIndex);
+      setTryPlayStones([]);
+      setSelectedVariationId(next.selectedVariationId);
+      setReviewMode(next.reviewMode);
+    },
+    [vm, actualStoneKeys, showBoardNav, boardNavTotalMoves, selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]
+  );
+
+  const backToMainline = useCallback(() => {
+    const next = backToMainlineStateV3({
+      selectedVariationId,
+      selectedCandidateTurnIndex,
+      reviewMode,
+      tryPlayStoneCount: tryPlayStones.length,
+    });
+    setSelectedVariationId(next.selectedVariationId);
+    setSelectedCandidateTurnIndex(next.selectedCandidateTurnIndex);
+    setTryPlayStones([]);
+    setReviewMode(next.reviewMode);
+  }, [selectedVariationId, selectedCandidateTurnIndex, reviewMode, tryPlayStones.length]);
+
+  const enterTryPlayMode = useCallback(() => {
+    if (vm.kind !== "katago-worker-v1" || !canEnterTryPlayModeV3(vm.sgfPlayback.placeholder)) {
+      return;
+    }
+    setSelectedVariationId(null);
+    setSelectedCandidateTurnIndex(null);
+    setTryPlayStones([]);
+    setReviewMode("try-play");
+  }, [vm]);
+
+  const undoTryPlay = useCallback(() => {
+    setTryPlayStones((prev) => prev.slice(0, -1));
+  }, []);
+
+  const resetTryPlay = useCallback(() => {
+    setTryPlayStones([]);
+  }, []);
+
+  const occupiedKeys = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+      return new Set<string>();
+    }
+    return new Set([...vm.sgfPlayback.stones.map((st) => `${st.x},${st.y}`), ...tryPlayStones.map((st) => `${st.x},${st.y}`)]);
+  }, [vm, tryPlayStones]);
+
+  const handleTryPlayPoint = useCallback(
+    (x: number, y: number) => {
+      if (reviewMode !== "try-play" || vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+        return;
+      }
+      if (!canPlaceTryPlayStoneV3(occupiedKeys, x, y)) {
+        return;
+      }
+      const color = nextTryPlayColorV3(vm.sgfPlayback.currentPlayer, tryPlayStones.length);
+      const order = tryPlayStones.length + 1;
+      setTryPlayStones((prev) => [...prev, { x, y, color, gtp: `try-${x}-${y}-${order}`, kind: "try", order }]);
+    },
+    [reviewMode, vm, occupiedKeys, tryPlayStones]
+  );
+
+  const toggleWinrateCollapsed = useCallback(() => {
+    setWinrateCollapsed((v) => nextWinrateCollapsedV2(v));
+  }, []);
 
   const boardGhosts = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
@@ -95,8 +288,12 @@ export default function AnalysisResultView({ data, lang }: Props) {
       selectedTurnIndex: vm.sgfPlayback.selectedTurnIndex,
       candidates: vm.keyMoveCandidates,
       variationPreview: vm.variationPreview,
+      overlayMode: reviewMode,
+      selectedVariation: reviewMode === "variation-review" ? selectedVariation : null,
+      pvStartColor: vm.sgfPlayback.currentPlayer,
+      tryPlayStones: reviewMode === "try-play" ? tryPlayStones : [],
     });
-  }, [vm]);
+  }, [vm, selectedVariation, reviewMode, tryPlayStones]);
 
   useEffect(() => {
     if (!showBoardNav) {
@@ -146,44 +343,23 @@ export default function AnalysisResultView({ data, lang }: Props) {
   const yn = (v: boolean) => (v ? t.yesShort : t.noShort);
 
   return (
-    <div className="space-y-6 mb-8">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 md:p-8">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-widest text-amber-400/80 font-mono">
-          <span>v1</span>
-          <span className="rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] normal-case text-amber-200/90">
+    <div className="mb-8 max-w-full space-y-3 overflow-hidden sm:space-y-4">
+      <section className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:gap-x-3 sm:gap-y-2 sm:text-xs">
+          <span className="rounded-full border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] text-amber-200/90">
             {t.summaryStatusComplete}
           </span>
+          <span className="text-slate-400">{t.blackPlayer}: <span className="text-amber-100">{gameInfo.blackPlayer ?? "—"}</span></span>
+          <span className="text-slate-400">{t.whitePlayer}: <span className="text-amber-100">{gameInfo.whitePlayer ?? "—"}</span></span>
+          <span className="text-slate-400">{t.gameResult}: <span className="text-amber-100">{gameInfo.resultText ?? "—"}</span></span>
+          <span className="text-slate-400">{t.analysisModel}: <span className="font-mono text-amber-100">{s.engine}</span></span>
+          <span className="text-slate-400">{t.totalMoves}: <span className="font-mono text-amber-100">{s.totalMoves}</span></span>
+          <span className="text-slate-500 hidden sm:inline">
+            {t.flagMT}:{yn(s.hasMultiTurn)} · {t.flagBSI}:{yn(s.hasBsi)} · {t.flagADI}:{yn(s.hasAdi)} · {t.flagDSR}:{yn(s.hasDeepSearchResults)}
+          </span>
         </div>
-        <h1
-          className="text-2xl md:text-3xl font-bold text-amber-100 mb-2"
-          style={{ fontFamily: "'Noto Serif KR', serif" }}
-        >
-          {t.summaryTitle}
-        </h1>
-        <p className="text-sm text-amber-50/90 mb-4 border-l-2 border-amber-400/50 pl-3">{t.betaNote}</p>
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5">
-            <dt className="text-slate-500 text-xs">{t.engine}</dt>
-            <dd className="text-amber-100 font-mono">{s.engine}</dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5">
-            <dt className="text-slate-500 text-xs">{t.totalMoves}</dt>
-            <dd className="text-amber-100 font-mono">{s.totalMoves}</dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5 sm:col-span-2 lg:col-span-1">
-            <dt className="text-slate-500 text-xs">{t.flagsSectionTitle}</dt>
-            <dd className="text-amber-100 font-mono text-xs leading-relaxed">
-              {t.flagMT}:{yn(s.hasMultiTurn)} · {t.flagBSI}:{yn(s.hasBsi)} · {t.flagADI}:{yn(s.hasAdi)} · {t.flagDSP}:
-              {yn(s.hasDeepSearchPlan)} · {t.flagDSR}:{yn(s.hasDeepSearchResults)}
-            </dd>
-          </div>
-          <div className="rounded-lg bg-black/20 px-3 py-2 border border-white/5 sm:col-span-2 lg:col-span-3">
-            <dt className="text-slate-500 text-xs">{t.deepSearchRowTitle}</dt>
-            <dd className="text-amber-100 text-sm">{s.deepSearchEnabled ? t.dsOn : t.dsOff}</dd>
-          </div>
-        </dl>
         {vm.warnings.length > 0 ? (
-          <ul className="mt-4 text-xs text-slate-400 space-y-1 list-disc pl-5">
+          <ul className="mt-2 text-xs text-slate-400 space-y-1 list-disc pl-5">
             {vm.warnings.map((w, i) => (
               <li key={`${w.code}-${i}`}>{translateVmWarning(w, uiLang)}</li>
             ))}
@@ -191,30 +367,10 @@ export default function AnalysisResultView({ data, lang }: Props) {
         ) : null}
       </section>
 
-      <AnalysisWinratePanel
-        series={vm.graph.winrateSeries}
-        selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={selectTurnIndex}
-        lang={lang}
-        fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
-      />
-
-      <AnalysisCandidateList
-        raw={data}
-        candidates={vm.keyMoveCandidates}
-        selectedTurnIndex={selectedTurnIndex}
-        onSelectTurnIndex={selectTurnIndex}
-        lang={lang}
-      />
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AnalysisVariationPreview
-          previews={vm.variationPreview}
-          selectedTurnIndex={selectedTurnIndex}
-          lang={lang}
-        />
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 flex flex-col min-h-[200px]">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+        <div className="min-w-0 space-y-3">
+          <section className="flex min-h-[200px] min-w-0 flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-4 md:p-5">
+          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{t.boardTitle}</h3>
             <span
               className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-slate-500 font-mono uppercase tracking-wide"
@@ -222,6 +378,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
             >
               {t.boardBadge}
             </span>
+            {reviewMode === "variation-review" && selectedVariation ? (
+              <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] text-amber-100">
+                {t.variationSelectedOnBoard}
+              </span>
+            ) : null}
           </div>
           {vm.sgfPlayback.placeholder ? (
             <div className="space-y-2">
@@ -241,21 +402,33 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 {t.boardSnapshotHint}
               </p>
               <p className="text-[11px] text-slate-600 mb-3">{t.boardViewOnlyNote}</p>
-              {showBoardNav ? (
-                <BoardTurnNavigation
-                  selectedTurnIndex={boardNavTurnIndex}
-                  totalMoves={boardNavTotalMoves}
-                  onSelectTurnIndex={selectTurnIndex}
-                  lang={uiLang}
-                />
-              ) : null}
               <BadukBoardView
                 boardSize={vm.sgfPlayback.boardSize}
                 stones={vm.sgfPlayback.stones}
                 lastMove={vm.sgfPlayback.lastMove}
                 ghosts={boardGhosts}
                 lang={uiLang}
+                onPointClick={reviewMode === "try-play" ? handleTryPlayPoint : undefined}
               />
+              {showBoardNav ? (
+                <div className="mt-2 min-w-0">
+                  <BoardTurnNavigation
+                    selectedTurnIndex={boardNavTurnIndex}
+                    totalMoves={boardNavTotalMoves}
+                    onSelectTurnIndex={selectTurnIndex}
+                    lang={uiLang}
+                  />
+                </div>
+              ) : null}
+              {reviewMode === "variation-review" || reviewMode === "try-play" ? (
+                <button
+                  type="button"
+                  onClick={backToMainline}
+                  className="mx-auto mt-3 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
+                >
+                  {t.reviewBackToMainline}
+                </button>
+              ) : null}
               {vm.sgfPlayback.warnings.length > 0 ? (
                 <ul className="mt-3 text-[11px] text-amber-200/80 space-y-1 list-disc pl-4">
                   {vm.sgfPlayback.warnings.map((w, i) => (
@@ -267,7 +440,118 @@ export default function AnalysisResultView({ data, lang }: Props) {
               ) : null}
             </>
           )}
-        </section>
+          </section>
+
+          <AnalysisWinratePanel
+            series={vm.graph.winrateSeries}
+            selectedTurnIndex={selectedTurnIndex}
+            onSelectTurnIndex={selectTurnIndex}
+            lang={lang}
+            fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
+            collapsed={winrateCollapsed}
+            onToggleCollapsed={toggleWinrateCollapsed}
+          />
+        </div>
+
+        <div className="min-w-0 space-y-3">
+          <AnalysisCandidateList
+            raw={data}
+            candidates={vm.keyMoveCandidates}
+            selectedTurnIndex={selectedTurnIndex}
+            onSelectTurnIndex={selectTurnIndex}
+            selectedCandidateTurnIndex={selectedCandidate?.turnIndex ?? null}
+            onSelectCandidate={selectCandidate}
+            variationTurnIndexes={variationTurnIndexes}
+            lang={lang}
+          />
+
+          <section className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-5">
+            <h2 className="mb-2 text-base font-bold text-amber-100 sm:mb-3 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+              {t.analysisMemoTitle}
+            </h2>
+            <div className="space-y-1.5 text-xs text-slate-300 sm:space-y-2 sm:text-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+              <p>{reviewMode === "try-play" ? t.tryPlayNotice : selectedCandidate ? t.analysisMemoCandidate : t.analysisMemoSelectCandidate}</p>
+              {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
+              <p>{t.analysisMemoPvCaution}</p>
+              <p>{t.analysisMemoSignalCaution}</p>
+              <p className="text-xs text-slate-500">{t.analysisMemoNoLlM}</p>
+            </div>
+            {selectedCandidate ? (
+              <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 rounded-xl border border-white/10 bg-black/20 p-3 text-xs sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2">
+                <dt className="text-slate-500">{t.variationTurn}</dt>
+                <dd className="min-w-0 truncate font-mono text-amber-100">#{selectedCandidate.turnIndex}</dd>
+                <dt className="text-slate-500">{t.playedMove}</dt>
+                <dd className="min-w-0 truncate font-mono text-amber-100">{selectedCandidate.playedMove}</dd>
+                <dt className="text-slate-500">{t.candidateMove}</dt>
+                <dd className="min-w-0 truncate font-mono text-amber-100">{selectedCandidate.bestMove ?? "—"}</dd>
+                <dt className="text-slate-500">{t.bsi}</dt>
+                <dd className="text-slate-200">{selectedCandidate.bsiScore != null ? selectedCandidate.bsiScore.toFixed(0) : "—"}</dd>
+                <dt className="text-slate-500">{t.adi}</dt>
+                <dd className="text-slate-200">{selectedCandidate.adiScore != null ? selectedCandidate.adiScore.toFixed(2) : "—"}</dd>
+                <dt className="text-slate-500">{t.dsSelected}</dt>
+                <dd className="text-slate-200">{selectedCandidate.deepSearchSelected ? t.yesShort : t.noShort}</dd>
+                <dt className="text-slate-500">{t.dsCompleted}</dt>
+                <dd className="text-slate-200">{selectedCandidate.deepSearchCompleted ? t.yesShort : t.noShort}</dd>
+                <dt className="text-slate-500">{t.variationPvState}</dt>
+                <dd className="text-slate-200">{selectedCandidateVariation ? t.yesShort : t.noShort}</dd>
+                <dt className="col-span-2 text-slate-500">{t.variationReasons}</dt>
+                <dd className="col-span-2 flex min-w-0 flex-wrap gap-1">
+                  {selectedCandidate.reasons.length > 0
+                    ? selectedCandidate.reasons.slice(0, 4).map((r) => {
+                        let mapped = mapReasonPhraseForUi(r, uiLang);
+                        if (uiTextContainsForbiddenLabel(mapped, uiLang)) {
+                          mapped = internalReferenceSignalLabel(uiLang);
+                        }
+                        return (
+                          <span key={r} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300">
+                            {mapped}
+                          </span>
+                        );
+                      })
+                    : "—"}
+                </dd>
+              </dl>
+            ) : null}
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!selectedCandidateVariation}
+                onClick={() => selectedCandidateVariation && selectVariationByTurnIndex(selectedCandidateVariation.turnIndex)}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {selectedCandidateVariation ? t.variationShowOnBoard : t.variationNoDisplayable}
+              </button>
+              <button
+                type="button"
+                onClick={enterTryPlayMode}
+                disabled={!canTryPlay}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {canTryPlay ? t.tryPlayEnter : t.tryPlayDisabled}
+              </button>
+              {reviewMode === "try-play" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={undoTryPlay}
+                    disabled={tryPlayStones.length === 0}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {t.tryPlayUndo}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetTryPlay}
+                    disabled={tryPlayStones.length === 0}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {t.tryPlayReset}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

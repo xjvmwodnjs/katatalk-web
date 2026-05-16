@@ -10,9 +10,14 @@ export type BadukBoardGhostMarkerV1 = {
   x: number;
   y: number;
   gtp: string;
-  /** candidate | pv */
-  kind: "candidate" | "pv";
+  /** candidate | pv | try */
+  kind: "candidate" | "pv" | "try";
+  color?: "B" | "W";
+  /** Optional display order for selected PV overlays. */
+  order?: number;
 };
+
+export type BadukBoardOverlayModeV1 = "mainline" | "candidate-selected" | "variation-review" | "try-play";
 
 /** 보드 크기별 화점(0-based x,y). 19×19만 9개, 그 외는 간단 패턴. */
 export function boardStarPointsV1(boardSize: number): [number, number][] {
@@ -60,7 +65,9 @@ function addGhost(
   gtp: string | null | undefined,
   kind: BadukBoardGhostMarkerV1["kind"],
   boardSize: number,
-  occupied: Set<string>
+  occupied: Set<string>,
+  order?: number,
+  color?: "B" | "W"
 ): void {
   if (!gtp || /^pass$/i.test(gtp.trim())) {
     return;
@@ -74,7 +81,11 @@ function addGhost(
     return;
   }
   seen.add(key);
-  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind });
+  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind, ...(color ? { color } : {}), ...(order != null ? { order } : {}) });
+}
+
+function nextColor(color: "B" | "W"): "B" | "W" {
+  return color === "B" ? "W" : "B";
 }
 
 /** 선택 수순의 후보수·PV 첫 수를 ghost 로 수집(실돌 위치는 제외). */
@@ -84,14 +95,44 @@ export function collectBadukBoardGhostMarkersV1(args: {
   selectedTurnIndex: number | null;
   candidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
+  selectedVariation?: AnalysisResultVariationPreviewV1 | null;
+  overlayMode?: BadukBoardOverlayModeV1;
+  pvStartColor?: "B" | "W";
+  tryPlayStones?: BadukBoardGhostMarkerV1[];
 }): BadukBoardGhostMarkerV1[] {
-  const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview } = args;
+  const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview, selectedVariation } = args;
   if (selectedTurnIndex == null) {
     return [];
   }
   const occupied = new Set(occupiedKeys);
   const out: BadukBoardGhostMarkerV1[] = [];
   const seen = new Set<string>();
+  const overlayMode = args.overlayMode ?? "mainline";
+
+  if (overlayMode === "variation-review" && selectedVariation && selectedVariation.pv.length > 0) {
+    let color = args.pvStartColor ?? "B";
+    selectedVariation.pv.forEach((gtp, i) => {
+      addGhost(out, seen, gtp, "pv", boardSize, occupied, i + 1, color);
+      color = nextColor(color);
+    });
+    return out;
+  }
+
+  if (overlayMode === "try-play") {
+    for (const st of args.tryPlayStones ?? []) {
+      const key = `${st.x},${st.y}`;
+      if (seen.has(key) || occupied.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(st);
+    }
+    return out;
+  }
+
+  if (overlayMode === "candidate-selected") {
+    return out;
+  }
 
   const cand = candidates.find((c) => c.turnIndex === selectedTurnIndex);
   if (cand?.bestMove) {
@@ -101,10 +142,6 @@ export function collectBadukBoardGhostMarkersV1(args: {
   const pvRow = variationPreview.find((p) => p.turnIndex === selectedTurnIndex);
   if (pvRow?.bestMove) {
     addGhost(out, seen, pvRow.bestMove, "candidate", boardSize, occupied);
-  }
-  const firstPv = pvRow?.pv?.[0];
-  if (firstPv) {
-    addGhost(out, seen, firstPv, "pv", boardSize, occupied);
   }
 
   return out;
