@@ -20,16 +20,27 @@ export function assertKatagoPathsConfiguredOrThrow(): void {
   }
 }
 
+function clampInt(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+function parseStrictPositiveInt(raw: string | undefined): number | null {
+  const t = raw?.trim();
+  if (!t || !/^\d+$/.test(t)) {
+    return null;
+  }
+  const n = Number(t);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 export function readKatagoMaxVisitsFrom(env: NodeJS.ProcessEnv): number {
-  const raw = env.KATAGO_MAX_VISITS?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 200;
+  const n = parseStrictPositiveInt(env.KATAGO_MAX_VISITS);
+  return n != null && n > 0 ? clampInt(n, 1, 5000) : 200;
 }
 
 export function readKatagoTimeoutMsFrom(env: NodeJS.ProcessEnv): number {
-  const raw = env.KATAGO_ANALYSIS_TIMEOUT_MS?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 120_000;
+  const n = parseStrictPositiveInt(env.KATAGO_ANALYSIS_TIMEOUT_MS);
+  return n != null && n > 0 ? clampInt(n, 30_000, 900_000) : 120_000;
 }
 
 export function readKatagoMaxVisits(): number {
@@ -42,23 +53,20 @@ export function readKatagoTimeoutMs(): number {
 
 /** multi-turn 후보 최대 개수 (0이면 multi-turn 생략). 기본 6 */
 export function readKatagoMultiTurnMaxFrom(env: NodeJS.ProcessEnv): number {
-  const raw = env.KATAGO_MULTI_TURN_MAX?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : 6;
+  const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_MAX);
+  return n != null ? clampInt(n, 0, 100) : 6;
 }
 
 /** 미설정 시 `readKatagoMaxVisitsFrom` 과 동일 */
 export function readKatagoMultiTurnMaxVisitsFrom(env: NodeJS.ProcessEnv, fallbackMax: number): number {
-  const raw = env.KATAGO_MULTI_TURN_MAX_VISITS?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : fallbackMax;
+  const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_MAX_VISITS);
+  return n != null && n > 0 ? clampInt(n, 1, 5000) : clampInt(fallbackMax, 1, 5000);
 }
 
 /** 한 줄(한 수순) 분석에 쓰는 타임아웃. 미설정 시 전체 분석과 동일 */
 export function readKatagoMultiTurnQueryTimeoutMsFrom(env: NodeJS.ProcessEnv): number {
-  const raw = env.KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS?.trim();
-  const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : readKatagoTimeoutMsFrom(env);
+  const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS);
+  return n != null && n > 0 ? clampInt(n, 30_000, 900_000) : readKatagoTimeoutMsFrom(env);
 }
 
 /**
@@ -66,12 +74,9 @@ export function readKatagoMultiTurnQueryTimeoutMsFrom(env: NodeJS.ProcessEnv): n
  * 미설정 시 `max(KATAGO_ANALYSIS_TIMEOUT_MS, perQuery * 줄수)` 상한 900000ms.
  */
 export function readKatagoMultiTurnBatchTimeoutMsFrom(env: NodeJS.ProcessEnv, lineCount: number): number {
-  const explicit = env.KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS?.trim();
-  if (explicit) {
-    const n = Number.parseInt(explicit, 10);
-    if (Number.isFinite(n) && n > 0) {
-      return n;
-    }
+  const explicit = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS);
+  if (explicit != null && explicit > 0) {
+    return clampInt(explicit, 30_000, 900_000);
   }
   const per = readKatagoTimeoutMsFrom(env);
   const scaled = per * Math.max(1, lineCount);

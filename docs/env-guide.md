@@ -247,6 +247,12 @@ KATAGO_WINRATE_TIMELINE_VISITS=200
 
 | 변수 | 기본 | 비고 |
 |------|------|------|
+| `KATAGO_MAX_VISITS` | `200` | strict integer, 무효값 → 200, clamp 1–5000 |
+| `KATAGO_ANALYSIS_TIMEOUT_MS` | `120000` | strict integer, 무효값 → 120000, clamp 30000–900000 |
+| `KATAGO_MULTI_TURN_MAX` | `6` | strict integer, 무효값 → 6, clamp 0–100 (`0`이면 multi-turn 생략) |
+| `KATAGO_MULTI_TURN_MAX_VISITS` | `KATAGO_MAX_VISITS` | strict integer, 무효값 → fallback, clamp 1–5000 |
+| `KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS` | `KATAGO_ANALYSIS_TIMEOUT_MS` | strict integer, 무효값 → fallback, clamp 30000–900000 |
+| `KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS` | 자동 산출 | strict integer, 무효값 → 자동 산출, clamp 30000–900000 |
 | `KATAGO_DEEP_SEARCH_ENABLED` | `false` | `true` 시 plan 후보에 추가 고 visits KataGo |
 | `KATAGO_DEEP_SEARCH_VISITS` | `800` | 후보별 순차 실행 |
 | `KATAGO_WINRATE_TIMELINE_ENABLED` | `false` | `true` 시 `analyzeTurns` 0..N 단일 쿼리 |

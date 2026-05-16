@@ -358,7 +358,7 @@ describe("runKatagoWorkerAnalysisV1 timeout + SIGKILL fallback", () => {
     process.env.KATAGO_BINARY_PATH = "/x/katago";
     process.env.KATAGO_CONFIG_PATH = "/x/cfg";
     process.env.KATAGO_MODEL_PATH = "/x/model";
-    process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "100";
+    process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "30000";
 
     const sgf = "(;FF[4]GM[1]SZ[19];B[pd])";
     const p = runKatagoWorkerAnalysisV1({
@@ -376,7 +376,7 @@ describe("runKatagoWorkerAnalysisV1 timeout + SIGKILL fallback", () => {
     });
 
     const expectation = expect(p).rejects.toThrow(/KATAGO_TIMEOUT/);
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(30_150);
     await expectation;
     await vi.runAllTimersAsync();
   });
