@@ -54,6 +54,10 @@ export type ProductReviewMoveCategoryV1 =
   | "learning_candidate"
   | "flow_shift_candidate"
   | "response_candidate"
+  | "direction_candidate"
+  | "shape_review_candidate"
+  | "deep_search_candidate"
+  | "volatility_candidate"
   | "score_shift_candidate"
   | "winrate_shift_candidate";
 
@@ -76,6 +80,10 @@ export const PRODUCT_REVIEW_MOVE_CATEGORY_LABELS_V1: Record<ProductReviewMoveCat
   learning_candidate: "학습 후보",
   flow_shift_candidate: "흐름 변화 후보",
   response_candidate: "응수 검토 후보",
+  direction_candidate: "방향 검토 후보",
+  shape_review_candidate: "모양 검토 후보",
+  deep_search_candidate: "추가 탐색 후보",
+  volatility_candidate: "변동 장면 후보",
   score_shift_candidate: "집 차이 변화 후보",
   winrate_shift_candidate: "승률 변화 후보",
 };
@@ -112,6 +120,10 @@ const REVIEW_CATEGORIES = new Set<ProductReviewMoveCategoryV1>([
   "learning_candidate",
   "flow_shift_candidate",
   "response_candidate",
+  "direction_candidate",
+  "shape_review_candidate",
+  "deep_search_candidate",
+  "volatility_candidate",
   "score_shift_candidate",
   "winrate_shift_candidate",
 ]);
