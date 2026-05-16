@@ -107,6 +107,16 @@ KATAGO_WINRATE_TIMELINE_INCLUDE_FINAL=true
 9. `GET /api/analyze/:id` → `meta.mock` — `false`
 10. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
 
+PowerShell 예시:
+
+```powershell
+# 기존 dev/worker 터미널을 Ctrl+C로 모두 종료한 뒤 새 터미널에서 실행
+corepack pnpm dev
+corepack pnpm dev:worker
+```
+
+`dev:worker`는 development 실행 시 `.env` 값을 우선 로드합니다. 그래도 기존 worker 프로세스가 살아 있으면 이전 env로 계속 claim할 수 있으므로 반드시 재시작하세요. production `worker:analysis`는 Railway/쉘 env가 우선이며, `.env` 파일은 커밋하지 않습니다.
+
 ---
 
 ## 3. Railway Web 서비스 env
