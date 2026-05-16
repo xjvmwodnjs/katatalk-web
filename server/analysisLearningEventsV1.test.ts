@@ -264,21 +264,41 @@ describe("analysis learning events v1", () => {
     expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(Number.NaN) }] })).toBe(false);
     expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(Number.POSITIVE_INFINITY) }] })).toBe(false);
     expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), turnIndex: "1" }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(50.9) }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(-1) }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(20.1), score: 80 }, { ...embeddedEvent(20.9), score: 70 }] })).toBe(false);
     expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), confidence: "certain" }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({
+      version: "learning-events-v1",
+      events: [{ ...embeddedEvent(1), eventType: "deep_search_candidate", labelKey: "ar_label_review_candidate" }],
+    })).toBe(false);
   });
 
-  it("rejects malformed embedded evidence and keeps valid embedded events", () => {
+  it("rejects malformed or unsafe embedded evidence sources and keeps valid embedded events", () => {
     expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), evidence: { source: "embedded" } }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), evidence: { source: ["best move"] } }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), evidence: { source: ["blunder"] } }] })).toBe(false);
     const valid = { version: "learning-events-v1", events: [embeddedEvent(1)] };
     expect(isAnalysisLearningEventsV1(valid)).toBe(true);
+    expect(isAnalysisLearningEventsV1({
+      version: "learning-events-v1",
+      events: [
+        {
+          ...embeddedEvent(2),
+          evidence: {
+            source: ["turnAnalyses", "deepSearchPlan", "deepSearchResults", "adiV1", "bsiV1", "winrateTimelineV1", "learningEventsV1", "embedded"],
+          },
+        },
+      ],
+    })).toBe(true);
   });
 
   it("normalizes embedded events by score, dedupe, final position exclusion, and max five", () => {
     const raw = {
       version: "learning-events-v1",
       events: [
-        embeddedEvent(1, 10),
-        embeddedEvent(2, 70),
+        embeddedEvent(1, -10),
+        embeddedEvent(2, 170),
         embeddedEvent(2, 60),
         embeddedEvent(3, 30),
         embeddedEvent(4, 40),
@@ -291,6 +311,8 @@ describe("analysis learning events v1", () => {
     const normalized = normalizeAnalysisLearningEventsV1(raw, { analysisPlan: plan, turnAnalyses: [turn(99)] });
     expect(normalized.events).toHaveLength(5);
     expect(normalized.events.map((e) => e.turnIndex)).toEqual([2, 5, 4, 3, 6]);
+    expect(normalized.events[0]?.score).toBe(100);
+    expect(normalized.events.every((e) => e.score >= 0 && e.score <= 100)).toBe(true);
     expect(new Set(normalized.events.map((e) => e.turnIndex)).size).toBe(5);
     expect(normalized.events.every((e) => e.turnIndex !== 99)).toBe(true);
   });

@@ -33,6 +33,7 @@ import {
   getAnalysisResultUiStrings,
   internalReferenceSignalLabel,
   normalizeAnalysisResultLang,
+  translateLearningEventSourceLabel,
   translatePlaceholderMessageKey,
   translateSgfPlaybackWarning,
   translateVmWarning,
@@ -140,7 +141,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
       ? selectedLearningEvent.signals.scoreLeadDelta
       : null;
   const selectedLearningEventSources = Array.isArray(selectedLearningEvent?.evidence.source)
-    ? selectedLearningEvent.evidence.source
+    ? selectedLearningEvent.evidence.source.map((source) => translateLearningEventSourceLabel(source, uiLang))
     : [];
   const selectedCandidateVariation = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || selectedCandidateTurnIndex == null || vm.sgfPlayback.placeholder) {

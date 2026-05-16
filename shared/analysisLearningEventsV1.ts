@@ -20,6 +20,16 @@ export type AnalysisLearningEventTypeV1 =
 
 export type AnalysisLearningEventConfidenceV1 = "low" | "medium" | "high";
 
+export type AnalysisLearningEventSourceV1 =
+  | "turnAnalyses"
+  | "deepSearchPlan"
+  | "deepSearchResults"
+  | "adiV1"
+  | "bsiV1"
+  | "winrateTimelineV1"
+  | "learningEventsV1"
+  | "embedded";
+
 export type AnalysisLearningEventV1 = {
   id: string;
   turnIndex: number;
@@ -39,7 +49,7 @@ export type AnalysisLearningEventV1 = {
     deepSearchChangedTop?: boolean;
   };
   evidence: {
-    source: string[];
+    source: AnalysisLearningEventSourceV1[];
     pv?: string[];
     deepSearchPv?: string[];
     notes?: string[];
@@ -67,7 +77,7 @@ type Candidate = {
   candidateMove: string | null;
   score: number;
   signals: AnalysisLearningEventV1["signals"];
-  source: Set<string>;
+  source: Set<AnalysisLearningEventSourceV1>;
   pv: string[];
   deepSearchPv: string[];
   notes: Set<string>;
@@ -95,6 +105,17 @@ const LEARNING_EVENT_LABEL_KEYS = new Set([
   "ar_label_deep_search_candidate",
 ]);
 
+const LEARNING_EVENT_SOURCES = new Set<AnalysisLearningEventSourceV1>([
+  "turnAnalyses",
+  "deepSearchPlan",
+  "deepSearchResults",
+  "adiV1",
+  "bsiV1",
+  "winrateTimelineV1",
+  "learningEventsV1",
+  "embedded",
+]);
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
@@ -105,6 +126,10 @@ function finiteNumber(v: unknown): number | null {
 
 function isFiniteNumber(v: unknown): v is number {
   return finiteNumber(v) != null;
+}
+
+function isNonNegativeInteger(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
 }
 
 function isStringOrNull(v: unknown): v is string | null {
@@ -121,6 +146,10 @@ function isOptionalBoolean(v: unknown): boolean {
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function isLearningEventSourceArray(v: unknown): v is AnalysisLearningEventSourceV1[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string" && LEARNING_EVENT_SOURCES.has(x as AnalysisLearningEventSourceV1));
 }
 
 function clampScore(v: number): number {
@@ -149,7 +178,7 @@ function isAnalysisLearningEventV1(v: unknown): v is AnalysisLearningEventV1 {
   if (!isPlainObject(v)) {
     return false;
   }
-  if (typeof v.id !== "string" || !isFiniteNumber(v.turnIndex)) {
+  if (typeof v.id !== "string" || !isNonNegativeInteger(v.turnIndex)) {
     return false;
   }
   if (!isStringOrNull(v.playedMove) || !isStringOrNull(v.candidateMove)) {
@@ -159,6 +188,9 @@ function isAnalysisLearningEventV1(v: unknown): v is AnalysisLearningEventV1 {
     return false;
   }
   if (typeof v.eventType !== "string" || !LEARNING_EVENT_TYPES.has(v.eventType as AnalysisLearningEventTypeV1)) {
+    return false;
+  }
+  if (v.labelKey !== learningEventLabelKeyV1(v.eventType as AnalysisLearningEventTypeV1)) {
     return false;
   }
   if (typeof v.confidence !== "string" || !LEARNING_EVENT_CONFIDENCE.has(v.confidence as AnalysisLearningEventConfidenceV1)) {
@@ -179,7 +211,7 @@ function isAnalysisLearningEventV1(v: unknown): v is AnalysisLearningEventV1 {
     return false;
   }
   return (
-    isStringArray(v.evidence.source) &&
+    isLearningEventSourceArray(v.evidence.source) &&
     (v.evidence.pv === undefined || isStringArray(v.evidence.pv)) &&
     (v.evidence.deepSearchPv === undefined || isStringArray(v.evidence.deepSearchPv)) &&
     (v.evidence.notes === undefined || isStringArray(v.evidence.notes))
@@ -199,17 +231,18 @@ function getCandidate(map: Map<number, Candidate>, turnIndex: number): Candidate
       candidateMove: null,
       score: 0,
       signals: {},
-      source: new Set<string>(),
+      source: new Set<AnalysisLearningEventSourceV1>(),
       pv: [],
       deepSearchPv: [],
       notes: new Set<string>(),
     };
     map.set(turnIndex, row);
+    return row;
   }
   return row;
 }
 
-function addScore(row: Candidate, score: number, source: string, note?: string) {
+function addScore(row: Candidate, score: number, source: AnalysisLearningEventSourceV1, note?: string) {
   row.score += score;
   row.source.add(source);
   if (note) {
@@ -480,7 +513,20 @@ export function normalizeAnalysisLearningEventsV1(
   context?: Pick<BuildAnalysisLearningEventsV1Input, "analysisPlan" | "turnAnalyses">
 ): AnalysisLearningEventsV1 {
   const byTurn = new Map<number, AnalysisLearningEventV1>();
-  const sorted = [...value.events]
+  const normalized = value.events
+    .map((event) => ({
+      ...event,
+      turnIndex: event.turnIndex,
+      score: clampScore(event.score),
+      signals: { ...event.signals },
+      evidence: {
+        source: [...event.evidence.source],
+        ...(event.evidence.pv ? { pv: [...event.evidence.pv] } : {}),
+        ...(event.evidence.deepSearchPv ? { deepSearchPv: [...event.evidence.deepSearchPv] } : {}),
+        ...(event.evidence.notes ? { notes: [...event.evidence.notes] } : {}),
+      },
+    }));
+  const sorted = normalized
     .filter((event) => !isFinalPositionTurn(event.turnIndex, context?.analysisPlan, context?.turnAnalyses))
     .sort((a, b) => {
       if (b.score !== a.score) {
@@ -493,18 +539,7 @@ export function normalizeAnalysisLearningEventsV1(
     if (byTurn.has(event.turnIndex)) {
       continue;
     }
-    byTurn.set(event.turnIndex, {
-      ...event,
-      turnIndex: Math.trunc(event.turnIndex),
-      score: clampScore(event.score),
-      signals: { ...event.signals },
-      evidence: {
-        source: [...event.evidence.source],
-        ...(event.evidence.pv ? { pv: [...event.evidence.pv] } : {}),
-        ...(event.evidence.deepSearchPv ? { deepSearchPv: [...event.evidence.deepSearchPv] } : {}),
-        ...(event.evidence.notes ? { notes: [...event.evidence.notes] } : {}),
-      },
-    });
+    byTurn.set(event.turnIndex, event);
     if (byTurn.size >= 5) {
       break;
     }

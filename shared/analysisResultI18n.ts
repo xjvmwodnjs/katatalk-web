@@ -4,7 +4,7 @@
  */
 
 import type { SgfPlaybackWarningV1 } from "./sgfPlaybackV1";
-import type { AnalysisLearningEventTypeV1 } from "./analysisLearningEventsV1";
+import type { AnalysisLearningEventSourceV1, AnalysisLearningEventTypeV1 } from "./analysisLearningEventsV1";
 
 export type AnalysisResultLang = "ko" | "en" | "ja" | "zh";
 
@@ -455,6 +455,22 @@ const LEARNING_EVENT_CHIP_PREFIX: Record<AnalysisLearningEventTypeV1, Record<Ana
 
 export function translateLearningEventChipPrefix(eventType: AnalysisLearningEventTypeV1, lang: AnalysisResultLang): string {
   return LEARNING_EVENT_CHIP_PREFIX[eventType]?.[lang] ?? LEARNING_EVENT_CHIP_PREFIX.review_candidate[lang];
+}
+
+const LEARNING_EVENT_SOURCE_LABELS: Record<AnalysisLearningEventSourceV1, Record<AnalysisResultLang, string>> = {
+  turnAnalyses: { ko: "수순 분석", en: "Turn analysis", ja: "手順解析", zh: "手数分析" },
+  deepSearchPlan: { ko: "추가 분석 계획", en: "Further analysis plan", ja: "追加解析計画", zh: "追加分析计划" },
+  deepSearchResults: { ko: "추가 분석 결과", en: "Further analysis result", ja: "追加解析結果", zh: "追加分析结果" },
+  adiV1: { ko: "ADI 신호", en: "ADI signal", ja: "ADI シグナル", zh: "ADI 信号" },
+  bsiV1: { ko: "BSI 신호", en: "BSI signal", ja: "BSI シグナル", zh: "BSI 信号" },
+  winrateTimelineV1: { ko: "승률 흐름", en: "Winrate flow", ja: "勝率推移", zh: "胜率走势" },
+  learningEventsV1: { ko: "검토 후보", en: "Review candidate", ja: "検討候補", zh: "复核候选" },
+  embedded: { ko: "저장된 검토 후보", en: "Stored review candidate", ja: "保存済み検討候補", zh: "已存复核候选" },
+};
+
+export function translateLearningEventSourceLabel(source: string, lang: AnalysisResultLang): string {
+  const row = LEARNING_EVENT_SOURCE_LABELS[source as AnalysisLearningEventSourceV1];
+  return row?.[lang] ?? INTERNAL_SIGNAL[lang];
 }
 
 /** Winrate chart axis labels — keyed by `WinrateNormalizedV1.displayLabelKey` */

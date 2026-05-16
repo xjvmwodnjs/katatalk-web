@@ -4,6 +4,7 @@ import {
   mapReasonPhraseForUi,
   translateCandidateLabelKey,
   translateLearningEventChipPrefix,
+  translateLearningEventSourceLabel,
   translateSgfPlaybackWarning,
   translateVmWarning,
   uiTextContainsForbiddenLabel,
@@ -82,6 +83,9 @@ describe("analysisResultI18n", () => {
       for (const type of eventTypes) {
         expect(uiTextContainsForbiddenLabel(translateLearningEventChipPrefix(type, lang), lang)).toBe(false);
       }
+      expect(uiTextContainsForbiddenLabel(translateLearningEventSourceLabel("embedded", lang), lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(translateLearningEventSourceLabel("blunder", lang), lang)).toBe(false);
+      expect(translateLearningEventSourceLabel("best move", lang).toLowerCase()).not.toContain("best move");
       expect(uiTextContainsForbiddenLabel(t.analysisMemoLearningEvent, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoDeepSearchEvidence, lang)).toBe(false);
     }

@@ -425,6 +425,26 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
   });
 
+  it("rejects fractional embedded turnIndex instead of truncating into final or duplicate turns", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [
+          embeddedLearningEvent(50.9, 100),
+          embeddedLearningEvent(20.1, 90),
+          embeddedLearningEvent(20.9, 80),
+        ],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events.every((e) => Number.isInteger(e.turnIndex))).toBe(true);
+    expect(vm.learningEvents.events.every((e) => e.turnIndex !== 50)).toBe(true);
+    expect(vm.learningEvents.events.every((e) => e.evidence.source[0] !== "embedded")).toBe(true);
+  });
+
   it("normalizes valid embedded learningEventsV1 before using them", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult({
       learningEventsV1: {
