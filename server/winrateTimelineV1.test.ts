@@ -172,6 +172,24 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
     expect(q.includeOwnership).toBe(false);
     expect(q.includePolicy).toBe(false);
   });
+
+  it("includes initialStones for analyzeTurns queries", () => {
+    const parsed = parseMinimalSgfForSmoke("(;FF[4]GM[1]SZ[19]AB[pd]AW[dd];B[qq])");
+    const line = buildKatagoAnalyzeTurnsQueryLine({
+      parsed,
+      jobId: "j-setup",
+      analyzeTurns: [0, 1],
+      maxVisits: 200,
+      analysisPVLen: 1,
+    });
+    const q = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(q.initialStones).toEqual([
+      ["B", "Q16"],
+      ["W", "D16"],
+    ]);
+    expect(q.moves).toEqual([["B", "R3"]]);
+    expect(q.analyzeTurns).toEqual([0, 1]);
+  });
 });
 
 describe("timelineMetaForTurnNumber", () => {

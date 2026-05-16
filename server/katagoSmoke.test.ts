@@ -221,6 +221,26 @@ describe("katagoSgfQuery", () => {
     expect(line.endsWith("\n")).toBe(true);
     expect(JSON.parse(line.trim())).toEqual(q);
   });
+
+  it("AB/AW/AE setup stones become KataGo initialStones", () => {
+    const parsed = parseMinimalSgfForSmoke("(;FF[4]GM[1]SZ[19]AB[pd][dd]AW[pp]AE[dd];B[qq];W[dc])");
+    const q = buildKatagoAnalysisQueryObject({
+      boardSize: parsed.boardSize,
+      komi: parsed.komi,
+      moves: parsed.moves,
+      initialStones: parsed.initialStones,
+      maxVisits: 10,
+      id: "setup",
+    });
+    expect(q.initialStones).toEqual([
+      ["B", "Q16"],
+      ["W", "Q4"],
+    ]);
+    expect(q.moves).toEqual([
+      ["B", "R3"],
+      ["W", "D17"],
+    ]);
+  });
 });
 
 describe("raceOutputWithTimeout", () => {

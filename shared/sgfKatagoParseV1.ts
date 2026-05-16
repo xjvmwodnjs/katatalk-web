@@ -5,8 +5,10 @@
 import {
   extractMainlineBwMoves,
   readSgfBracketValue,
+  sgfLetterToCoordIndex,
   sgfPointToGtp,
   type ParsedMainlineMoveV1,
+  type ParsedSetupStoneV1,
   type SgfPlaybackWarningV1,
 } from "./sgfPlaybackV1";
 
@@ -14,12 +16,14 @@ export type ParsedMinimalSgfV1 = {
   boardSize: number;
   komi: number;
   moves: { color: "B" | "W"; sgfPoint: string }[];
+  initialStones: { color: "B" | "W"; sgfPoint: string }[];
   parseWarnings: SgfPlaybackWarningV1[];
 };
 
 export type SgfKatagoParseErrorCodeV1 =
   | "SGF_PARSE_FAILED"
   | "SGF_UNSUPPORTED_SETUP_STONES"
+  | "SGF_UNSUPPORTED_GAME_TYPE"
   | "SGF_INVALID_COORDINATE"
   | "KATAGO_QUERY_BUILD_FAILED";
 
@@ -135,11 +139,38 @@ function assertParseableMainline(warnings: SgfPlaybackWarningV1[]): void {
   if (warnings.some((w) => w.code === "no_root")) {
     throw new SgfKatagoParseError("SGF_PARSE_FAILED", "SGF root (; missing");
   }
-  if (warnings.some((w) => w.code === "setup_markers_ignored")) {
+  const unsupportedGm = warnings.find((w) => w.code === "unsupported_game_type");
+  if (unsupportedGm) {
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_GAME_TYPE",
+      `only GM[1] is supported; got GM[${String(unsupportedGm.params?.gm ?? "?")}]`
+    );
+  }
+  if (warnings.some((w) => w.code === "setup_after_move_unsupported")) {
     throw new SgfKatagoParseError(
       "SGF_UNSUPPORTED_SETUP_STONES",
-      "AB/AW/AE setup stones are not supported for KataGo analysis v1"
+      "AB/AW/AE after the first move is not supported for KataGo analysis v1"
     );
+  }
+}
+
+function validateSetupStoneCoordinates(stones: ParsedSetupStoneV1[], boardSize: number): void {
+  for (let i = 0; i < stones.length; i++) {
+    const pt = stones[i]!.sgfPoint.trim().toLowerCase();
+    if (pt.length !== 2) {
+      throw new SgfKatagoParseError(
+        "SGF_INVALID_COORDINATE",
+        `setup stone ${String(i + 1)} coordinate invalid for SZ[${String(boardSize)}]`
+      );
+    }
+    const x = sgfLetterToCoordIndex(pt[0]!, boardSize);
+    const y = sgfLetterToCoordIndex(pt[1]!, boardSize);
+    if (x == null || y == null) {
+      throw new SgfKatagoParseError(
+        "SGF_INVALID_COORDINATE",
+        `setup stone ${String(i + 1)} coordinate invalid for SZ[${String(boardSize)}]`
+      );
+    }
   }
 }
 
@@ -167,15 +198,17 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
   if (!sgf?.trim()) {
     throw new SgfKatagoParseError("SGF_PARSE_FAILED", "empty SGF");
   }
-  const { moves, warnings, boardSizeHint } = extractMainlineBwMoves(sgf);
+  const { moves, initialStones, warnings, boardSizeHint } = extractMainlineBwMoves(sgf);
   assertParseableMainline(warnings);
   const boardSize = resolveBoardSize(boardSizeHint);
+  validateSetupStoneCoordinates(initialStones, boardSize);
   validateMoveCoordinates(moves, boardSize);
   const komi = readKomiFromSgf(sgf);
   return {
     boardSize,
     komi,
     moves: moves.map((m) => ({ color: m.color, sgfPoint: m.sgfPoint })),
+    initialStones: initialStones.map((s) => ({ color: s.color, sgfPoint: s.sgfPoint })),
     parseWarnings: warnings,
   };
 }

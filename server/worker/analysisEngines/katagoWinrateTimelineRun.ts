@@ -35,9 +35,14 @@ export function buildKatagoAnalyzeTurnsQueryLine(params: {
     color,
     sgfPointToGtp(sgfPoint, params.parsed.boardSize),
   ]);
+  const initialStones: [string, string][] = params.parsed.initialStones.map(({ color, sgfPoint }) => [
+    color,
+    sgfPointToGtp(sgfPoint, params.parsed.boardSize),
+  ]);
   const body = {
     id: `katatalk-wt-${params.jobId}-${timestampSuffix()}`,
     moves: pairs,
+    ...(initialStones.length > 0 ? { initialStones } : {}),
     rules: "japanese",
     komi: params.parsed.komi,
     boardXSize: params.parsed.boardSize,

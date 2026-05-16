@@ -55,6 +55,7 @@ export type ParsedMinimalSgf = {
   boardSize: number;
   komi: number;
   moves: { color: "B" | "W"; sgfPoint: string }[];
+  initialStones: { color: "B" | "W"; sgfPoint: string }[];
 };
 
 export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
@@ -64,6 +65,7 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       moves: parsed.moves,
+      initialStones: parsed.initialStones,
     };
   } catch (e) {
     if (e instanceof SgfKatagoParseError) {
@@ -76,6 +78,7 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
 export type KatagoSmokeAnalysisQuery = {
   id: string;
   moves: [string, string][];
+  initialStones?: [string, string][];
   rules: string;
   komi: number;
   boardXSize: number;
@@ -89,6 +92,7 @@ export function buildKatagoAnalysisQueryObject(params: {
   boardSize: number;
   komi: number;
   moves: { color: "B" | "W"; sgfPoint: string }[];
+  initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
   id: string;
 }): KatagoSmokeAnalysisQuery {
@@ -96,9 +100,14 @@ export function buildKatagoAnalysisQueryObject(params: {
     color,
     sgfPointToGtp(sgfPoint, params.boardSize),
   ]);
+  const initialStones: [string, string][] = (params.initialStones ?? []).map(({ color, sgfPoint }) => [
+    color,
+    sgfPointToGtp(sgfPoint, params.boardSize),
+  ]);
   return {
     id: params.id,
     moves: pairs,
+    ...(initialStones.length > 0 ? { initialStones } : {}),
     rules: "japanese",
     komi: params.komi,
     boardXSize: params.boardSize,
@@ -112,6 +121,7 @@ export function buildKatagoAnalysisQueryLine(params: {
   boardSize: number;
   komi: number;
   moves: { color: "B" | "W"; sgfPoint: string }[];
+  initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
   id: string;
 }): string {

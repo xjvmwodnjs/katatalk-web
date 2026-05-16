@@ -227,6 +227,7 @@ export async function computeDeepSearchResultsV1(opts: {
       boardSize: opts.parsed.boardSize,
       komi: opts.parsed.komi,
       moves: sliced.movesBefore,
+      initialStones: opts.parsed.initialStones,
       maxVisits: policy.visits,
       id: queryId,
     });

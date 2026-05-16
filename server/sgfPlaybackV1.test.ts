@@ -105,11 +105,63 @@ describe("sgfPlaybackV1", () => {
     ]);
   });
 
-  it("warns setup_markers_ignored when AB is not first property, still parses B", () => {
-    const sgf = "(;FF[4]AB[aa];B[bb])";
-    const { moves, warnings } = extractMainlineBwMoves(sgf);
-    expect(warnings.some((w) => w.code === "setup_markers_ignored")).toBe(true);
+  it("parses root setup stones and still parses B", () => {
+    const sgf = "(;FF[4]GM[1]AB[aa];B[bb])";
+    const { moves, initialStones, warnings } = extractMainlineBwMoves(sgf);
+    expect(initialStones).toEqual([{ color: "B", sgfPoint: "aa" }]);
+    expect(warnings.some((w) => w.code === "setup_stones_applied")).toBe(true);
     expect(moves).toEqual([{ color: "B", sgfPoint: "bb" }]);
+  });
+
+  it("applies setup stones at selectedTurnIndex 0 and keeps them at turn 1", () => {
+    const sgf = "(;FF[4]GM[1]SZ[19]AB[pd][dd]AW[pp]AE[dd];B[qq])";
+    const st0 = buildSgfPlaybackStateV1({ sgfText: sgf, selectedTurnIndex: 0 });
+    expect(st0.stones).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ x: 15, y: 3, color: "B", turnIndex: 0 }),
+        expect.objectContaining({ x: 15, y: 15, color: "W", turnIndex: 0 }),
+      ])
+    );
+    expect(st0.stones.find((s) => s.x === 3 && s.y === 3)).toBeUndefined();
+
+    const st1 = buildSgfPlaybackStateV1({ sgfText: sgf, selectedTurnIndex: 1 });
+    expect(st1.stones).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ color: "B", turnIndex: 0 }),
+        expect.objectContaining({ color: "W", turnIndex: 0 }),
+        expect.objectContaining({ x: 16, y: 16, color: "B", turnIndex: 1 }),
+      ])
+    );
+  });
+
+  it("uses the later setup color on AB/AW conflict and warns", () => {
+    const sgf = "(;FF[4]GM[1]SZ[19]AB[aa]AW[aa];B[bb])";
+    const st = buildSgfPlaybackStateV1({ sgfText: sgf, selectedTurnIndex: 0 });
+    expect(st.stones).toEqual([expect.objectContaining({ x: 0, y: 0, color: "W", turnIndex: 0 })]);
+    expect(st.warnings.some((w) => w.code === "setup_stone_conflict")).toBe(true);
+  });
+
+  it("warns when FF or GM is missing but continues parsing Go mainline", () => {
+    const noFf = extractMainlineBwMoves("(;GM[1]SZ[19];B[aa])");
+    expect(noFf.moves).toHaveLength(1);
+    expect(noFf.warnings.some((w) => w.code === "missing_ff_assumed_v4")).toBe(true);
+
+    const noGm = extractMainlineBwMoves("(;FF[4]SZ[19];B[aa])");
+    expect(noGm.moves).toHaveLength(1);
+    expect(noGm.warnings.some((w) => w.code === "missing_gm_assumed_go")).toBe(true);
+
+    const neither = extractMainlineBwMoves("(;SZ[19];B[aa])");
+    expect(neither.moves).toHaveLength(1);
+    expect(neither.warnings.some((w) => w.code === "missing_ff_assumed_v4")).toBe(true);
+    expect(neither.warnings.some((w) => w.code === "missing_gm_assumed_go")).toBe(true);
+  });
+
+  it("does not treat setup and metadata-looking text inside escaped comments as properties", () => {
+    const sgf = "(;FF[4]GM[1]C[AB[aa\\] AW[bb\\] GM[2\\] FF[3\\] escaped \\] text];B[cc])";
+    const { moves, initialStones, warnings } = extractMainlineBwMoves(sgf);
+    expect(moves).toEqual([{ color: "B", sgfPoint: "cc" }]);
+    expect(initialStones).toEqual([]);
+    expect(warnings.some((w) => w.code === "unsupported_game_type")).toBe(false);
   });
 
   it("extracts W when it follows N on the same node", () => {

@@ -119,6 +119,7 @@ export async function runKatagoSmoke(opts: {
     boardSize: parsed.boardSize,
     komi: parsed.komi,
     moves: parsed.moves,
+    initialStones: parsed.initialStones,
     maxVisits,
     id: queryId,
   });
@@ -291,6 +292,7 @@ export async function runKatagoWorkerAnalysisV1(opts: {
     boardSize: parsed.boardSize,
     komi: parsed.komi,
     moves: parsed.moves,
+    initialStones: parsed.initialStones,
     maxVisits,
     id: `katatalk-worker-${opts.jobId}-${timestampForFilename()}`,
   });
