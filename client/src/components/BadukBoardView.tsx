@@ -12,6 +12,7 @@ export type BadukBoardViewProps = {
   lastMove: SgfPlaybackLastMoveV1 | null;
   ghosts: BadukBoardGhostMarkerV1[];
   lang: AnalysisResultLang;
+  onPointClick?: (x: number, y: number) => void;
 };
 
 const PADDING = 4.2;
@@ -38,7 +39,7 @@ function intersectionPos(index: number, boardSize: number): number {
   return PADDING + (index / (boardSize - 1)) * GRID_AREA;
 }
 
-export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, ghosts, lang }: BadukBoardViewProps) {
+export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, ghosts, lang, onPointClick }: BadukBoardViewProps) {
   const boardSize = clampBoardSize(rawSize);
   const uid = useId().replace(/:/g, "");
   const t = getAnalysisResultUiStrings(lang);
@@ -152,9 +153,23 @@ export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, g
             const cy = intersectionPos(g.y, boardSize);
             const fill = g.kind === "pv" ? "rgba(250,204,21,0.35)" : "rgba(147,197,253,0.45)";
             const stroke = g.kind === "pv" ? "rgba(250,204,21,0.85)" : "rgba(96,165,250,0.9)";
+            const stoneFill =
+              g.color === "B"
+                ? `url(#${uid}-black)`
+                : g.color === "W"
+                  ? `url(#${uid}-white)`
+                  : null;
             return (
               <g key={`ghost-${g.gtp}-${i}`} aria-hidden="true">
-                <circle cx={cx} cy={cy} r={stoneRadius * 0.92} fill={fill} stroke={stroke} strokeWidth="0.22" />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={stoneRadius * 0.92}
+                  fill={stoneFill ?? fill}
+                  opacity={stoneFill ? 0.72 : 1}
+                  stroke={stroke}
+                  strokeWidth={stoneFill ? "0.34" : "0.22"}
+                />
                 {g.order != null ? (
                   <text
                     x={cx}
@@ -218,6 +233,24 @@ export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, g
               </g>
             );
           })}
+
+          {onPointClick
+            ? Array.from({ length: boardSize * boardSize }, (_, idx) => {
+                const x = idx % boardSize;
+                const y = Math.floor(idx / boardSize);
+                return (
+                  <circle
+                    key={`hit-${x}-${y}`}
+                    cx={intersectionPos(x, boardSize)}
+                    cy={intersectionPos(y, boardSize)}
+                    r={stoneRadius * 0.95}
+                    fill="transparent"
+                    className="cursor-crosshair"
+                    onClick={() => onPointClick(x, y)}
+                  />
+                );
+              })
+            : null}
         </svg>
       </div>
 

@@ -10,8 +10,9 @@ export type BadukBoardGhostMarkerV1 = {
   x: number;
   y: number;
   gtp: string;
-  /** candidate | pv */
-  kind: "candidate" | "pv";
+  /** candidate | pv | try */
+  kind: "candidate" | "pv" | "try";
+  color?: "B" | "W";
   /** Optional display order for selected PV overlays. */
   order?: number;
 };
@@ -63,7 +64,8 @@ function addGhost(
   kind: BadukBoardGhostMarkerV1["kind"],
   boardSize: number,
   occupied: Set<string>,
-  order?: number
+  order?: number,
+  color?: "B" | "W"
 ): void {
   if (!gtp || /^pass$/i.test(gtp.trim())) {
     return;
@@ -77,7 +79,11 @@ function addGhost(
     return;
   }
   seen.add(key);
-  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind, ...(order != null ? { order } : {}) });
+  out.push({ x: xy.x, y: xy.y, gtp: gtp.trim(), kind, ...(color ? { color } : {}), ...(order != null ? { order } : {}) });
+}
+
+function nextColor(color: "B" | "W"): "B" | "W" {
+  return color === "B" ? "W" : "B";
 }
 
 /** 선택 수순의 후보수·PV 첫 수를 ghost 로 수집(실돌 위치는 제외). */
@@ -88,6 +94,8 @@ export function collectBadukBoardGhostMarkersV1(args: {
   candidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
   selectedVariation?: AnalysisResultVariationPreviewV1 | null;
+  pvStartColor?: "B" | "W";
+  tryPlayStones?: BadukBoardGhostMarkerV1[];
 }): BadukBoardGhostMarkerV1[] {
   const { boardSize, occupiedKeys, selectedTurnIndex, candidates, variationPreview, selectedVariation } = args;
   if (selectedTurnIndex == null) {
@@ -98,9 +106,23 @@ export function collectBadukBoardGhostMarkersV1(args: {
   const seen = new Set<string>();
 
   if (selectedVariation && selectedVariation.pv.length > 0) {
+    let color = args.pvStartColor ?? "B";
     selectedVariation.pv.forEach((gtp, i) => {
-      addGhost(out, seen, gtp, "pv", boardSize, occupied, i + 1);
+      addGhost(out, seen, gtp, "pv", boardSize, occupied, i + 1, color);
+      color = nextColor(color);
     });
+    return out;
+  }
+
+  if (args.tryPlayStones && args.tryPlayStones.length > 0) {
+    for (const st of args.tryPlayStones) {
+      const key = `${st.x},${st.y}`;
+      if (seen.has(key) || occupied.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(st);
+    }
     return out;
   }
 

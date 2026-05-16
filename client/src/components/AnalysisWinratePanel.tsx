@@ -15,6 +15,8 @@ type Props = {
   lang: Language;
   /** Full mainline timeline chart (vs sparse candidate turns) */
   fullTimeline?: boolean;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 };
 
 function clampWinratePct(n: number): number {
@@ -30,6 +32,8 @@ export default function AnalysisWinratePanel({
   onSelectTurnIndex,
   lang,
   fullTimeline = false,
+  collapsed = false,
+  onToggleCollapsed,
 }: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
@@ -72,15 +76,24 @@ export default function AnalysisWinratePanel({
           <h2 className="text-lg font-bold text-amber-100" style={{ fontFamily: "'Noto Serif KR', serif" }}>
             {t.winrateTitle}
           </h2>
-          <button
-            type="button"
-            disabled
-            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
-          >
-            {t.winrateToggleNote}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:border-white/25"
+            >
+              {collapsed ? t.winrateExpand : t.winrateCollapse}
+            </button>
+            <button
+              type="button"
+              disabled
+              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
+            >
+              {t.winrateToggleNote}
+            </button>
+          </div>
         </div>
-        <p className="text-sm text-slate-500">{t.winrateEmpty}</p>
+        {!collapsed ? <p className="text-sm text-slate-500">{t.winrateEmpty}</p> : null}
       </section>
     );
   }
@@ -91,20 +104,31 @@ export default function AnalysisWinratePanel({
         <h2 className="text-lg font-bold text-amber-100" style={{ fontFamily: "'Noto Serif KR', serif" }}>
           {t.winrateTitle}
         </h2>
-        <button
-          type="button"
-          disabled
-          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
-        >
-          {t.winrateToggleNote}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:border-white/25"
+          >
+            {collapsed ? t.winrateExpand : t.winrateCollapse}
+          </button>
+          <button
+            type="button"
+            disabled
+            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
+          >
+            {t.winrateToggleNote}
+          </button>
+        </div>
       </div>
-      <p className="text-xs text-slate-500 mb-1">{t.winratePerspectiveNote}</p>
-      {fullTimeline ? (
-        <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
-      ) : null}
-      <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
-      <div className="overflow-x-auto">
+      {!collapsed ? (
+        <>
+          <p className="text-xs text-slate-500 mb-1">{t.winratePerspectiveNote}</p>
+          {fullTimeline ? (
+            <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
+          ) : null}
+          <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
+          <div className="overflow-x-auto">
         <svg viewBox="0 0 560 200" className="w-full max-w-3xl h-48 select-none" role="img" aria-label={winrateYAxisLabel}>
           <rect x="0" y="0" width="560" height="200" fill="rgba(0,0,0,0.2)" rx="8" />
           {[0, 25, 50, 75, 100].map((pct) => {
@@ -149,7 +173,9 @@ export default function AnalysisWinratePanel({
             );
           })}
         </svg>
-      </div>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

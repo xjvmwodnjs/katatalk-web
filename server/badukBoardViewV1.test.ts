@@ -80,9 +80,11 @@ describe("badukBoardViewV1 helpers", () => {
       candidates: [],
       variationPreview: [selectedVariation],
       selectedVariation,
+      pvStartColor: "W",
     });
     expect(ghosts.map((g) => g.gtp)).toEqual(["C6", "D5"]);
     expect(ghosts.map((g) => g.order)).toEqual([2, 4]);
+    expect(ghosts.map((g) => g.color)).toEqual(["B", "B"]);
     expect(ghosts.every((g) => g.kind === "pv")).toBe(true);
   });
 
@@ -132,11 +134,18 @@ describe("badukBoardViewV1 helpers", () => {
       expect(uiTextContainsForbiddenLabel(t.boardSnapshotHint, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navTurnCounter, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.navAriaToolbar, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.winrateCollapse, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.winrateExpand, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoCandidate, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.analysisMemoSelectCandidate, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoVariation, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoPvCaution, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoSignalCaution, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.variationNoDisplayable, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationPvState, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.variationReasons, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.tryPlayEnter, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.tryPlayNotice, lang)).toBe(false);
     }
   });
 });

@@ -3,14 +3,16 @@ import { buildAnalysisResultViewModel } from "@/lib/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import AnalysisCandidateList from "@/components/AnalysisCandidateList";
-import AnalysisVariationPreview from "@/components/AnalysisVariationPreview";
 import BadukBoardView from "@/components/BadukBoardView";
 import BoardTurnNavigation from "@/components/BoardTurnNavigation";
 import { collectBadukBoardGhostMarkersV1 } from "@shared/badukBoardViewV1";
 import {
   displayableVariationTurnIndexesV2,
+  canPlaceTryPlayStoneV3,
   hasDisplayableVariationPvV2,
-  reviewModeForSelectedVariationV2,
+  nextTryPlayColorV3,
+  nextWinrateCollapsedV2,
+  readCompactGameInfoV2,
   selectedVariationByIdV2,
   variationIdV2,
 } from "@shared/analysisReviewUiV2";
@@ -25,20 +27,29 @@ import {
 } from "@shared/boardNavigationV1";
 import {
   getAnalysisResultUiStrings,
+  internalReferenceSignalLabel,
   normalizeAnalysisResultLang,
   translatePlaceholderMessageKey,
   translateSgfPlaybackWarning,
   translateVmWarning,
 } from "@shared/analysisResultI18n";
+import { mapReasonPhraseForUi, uiTextContainsForbiddenLabel } from "@shared/analysisResultUiHelpers";
 
 type Props = {
   data: unknown;
   lang: Language;
 };
 
+type ReviewModeV3 = "mainline" | "candidate-selected" | "variation-review" | "try-play";
+type TryPlayStone = { x: number; y: number; color: "B" | "W"; gtp: string; kind: "try"; order: number };
+
 export default function AnalysisResultView({ data, lang }: Props) {
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
   const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
+  const [selectedCandidateTurnIndex, setSelectedCandidateTurnIndex] = useState<number | null>(null);
+  const [reviewMode, setReviewMode] = useState<ReviewModeV3>("mainline");
+  const [tryPlayStones, setTryPlayStones] = useState<TryPlayStone[]>([]);
+  const [winrateCollapsed, setWinrateCollapsed] = useState(false);
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
 
@@ -55,6 +66,9 @@ export default function AnalysisResultView({ data, lang }: Props) {
       setSelectedTurnIndex(null);
     }
     setSelectedVariationId(null);
+    setSelectedCandidateTurnIndex(null);
+    setReviewMode("mainline");
+    setTryPlayStones([]);
   }, [data]);
 
   const vm = useMemo(
@@ -80,10 +94,24 @@ export default function AnalysisResultView({ data, lang }: Props) {
     () => (vm.kind === "katago-worker-v1" ? selectedVariationByIdV2(vm.variationPreview, selectedVariationId) : null),
     [vm, selectedVariationId]
   );
-  const reviewMode = reviewModeForSelectedVariationV2(selectedVariation ? selectedVariationId : null);
   const variationTurnIndexes = useMemo(
     () => (vm.kind === "katago-worker-v1" ? displayableVariationTurnIndexesV2(vm.variationPreview) : new Set<number>()),
     [vm]
+  );
+  const gameInfo = useMemo(() => readCompactGameInfoV2(data, uiLang), [data, uiLang]);
+  const selectedCandidate = useMemo(
+    () =>
+      vm.kind === "katago-worker-v1" && selectedCandidateTurnIndex != null
+        ? vm.keyMoveCandidates.find((c) => c.turnIndex === selectedCandidateTurnIndex) ?? null
+        : null,
+    [vm, selectedCandidateTurnIndex]
+  );
+  const selectedCandidateVariation = useMemo(
+    () =>
+      vm.kind === "katago-worker-v1" && selectedCandidateTurnIndex != null
+        ? vm.variationPreview.find((p) => p.turnIndex === selectedCandidateTurnIndex && hasDisplayableVariationPvV2(p)) ?? null
+        : null,
+    [vm, selectedCandidateTurnIndex]
   );
 
   const selectTurnIndex = useCallback(
@@ -91,16 +119,40 @@ export default function AnalysisResultView({ data, lang }: Props) {
       if (raw == null) {
         setSelectedTurnIndex(null);
         setSelectedVariationId(null);
+        setSelectedCandidateTurnIndex(null);
+        setReviewMode("mainline");
+        setTryPlayStones([]);
         return;
       }
       if (showBoardNav) {
         setSelectedTurnIndex(clampSelectedTurnIndexV1(raw, boardNavTotalMoves));
         setSelectedVariationId(null);
+        setSelectedCandidateTurnIndex(null);
+        setReviewMode("mainline");
+        setTryPlayStones([]);
         return;
       }
       const n = Math.trunc(Number(raw));
       setSelectedTurnIndex(Number.isFinite(n) ? n : null);
       setSelectedVariationId(null);
+      setSelectedCandidateTurnIndex(null);
+      setReviewMode("mainline");
+      setTryPlayStones([]);
+    },
+    [showBoardNav, boardNavTotalMoves]
+  );
+
+  const selectCandidate = useCallback(
+    (turnIndex: number) => {
+      if (showBoardNav) {
+        setSelectedTurnIndex(clampSelectedTurnIndexV1(turnIndex, boardNavTotalMoves));
+      } else {
+        setSelectedTurnIndex(turnIndex);
+      }
+      setSelectedCandidateTurnIndex(turnIndex);
+      setSelectedVariationId(null);
+      setTryPlayStones([]);
+      setReviewMode("candidate-selected");
     },
     [showBoardNav, boardNavTotalMoves]
   );
@@ -119,32 +171,58 @@ export default function AnalysisResultView({ data, lang }: Props) {
       } else {
         setSelectedTurnIndex(row.turnIndex);
       }
+      setSelectedCandidateTurnIndex(row.turnIndex);
+      setTryPlayStones([]);
       setSelectedVariationId(variationIdV2(row));
-    },
-    [vm, showBoardNav, boardNavTotalMoves]
-  );
-
-  const selectVariationRow = useCallback(
-    (row: { turnIndex: number; source: "deep-search" | "multi-turn" }) => {
-      if (vm.kind !== "katago-worker-v1") {
-        return;
-      }
-      const found = vm.variationPreview.find((p) => variationIdV2(p) === variationIdV2(row) && hasDisplayableVariationPvV2(p));
-      if (!found) {
-        return;
-      }
-      if (showBoardNav) {
-        setSelectedTurnIndex(clampSelectedTurnIndexV1(found.turnIndex, boardNavTotalMoves));
-      } else {
-        setSelectedTurnIndex(found.turnIndex);
-      }
-      setSelectedVariationId(variationIdV2(found));
+      setReviewMode("variation-review");
     },
     [vm, showBoardNav, boardNavTotalMoves]
   );
 
   const backToMainline = useCallback(() => {
     setSelectedVariationId(null);
+    setTryPlayStones([]);
+    setReviewMode("mainline");
+  }, []);
+
+  const enterTryPlayMode = useCallback(() => {
+    setSelectedVariationId(null);
+    setTryPlayStones([]);
+    setReviewMode("try-play");
+  }, []);
+
+  const undoTryPlay = useCallback(() => {
+    setTryPlayStones((prev) => prev.slice(0, -1));
+  }, []);
+
+  const resetTryPlay = useCallback(() => {
+    setTryPlayStones([]);
+  }, []);
+
+  const occupiedKeys = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+      return new Set<string>();
+    }
+    return new Set([...vm.sgfPlayback.stones.map((st) => `${st.x},${st.y}`), ...tryPlayStones.map((st) => `${st.x},${st.y}`)]);
+  }, [vm, tryPlayStones]);
+
+  const handleTryPlayPoint = useCallback(
+    (x: number, y: number) => {
+      if (reviewMode !== "try-play" || vm.kind !== "katago-worker-v1" || vm.sgfPlayback.placeholder) {
+        return;
+      }
+      if (!canPlaceTryPlayStoneV3(occupiedKeys, x, y)) {
+        return;
+      }
+      const color = nextTryPlayColorV3(vm.sgfPlayback.currentPlayer, tryPlayStones.length);
+      const order = tryPlayStones.length + 1;
+      setTryPlayStones((prev) => [...prev, { x, y, color, gtp: `try-${x}-${y}-${order}`, kind: "try", order }]);
+    },
+    [reviewMode, vm, occupiedKeys, tryPlayStones]
+  );
+
+  const toggleWinrateCollapsed = useCallback(() => {
+    setWinrateCollapsed((v) => nextWinrateCollapsedV2(v));
   }, []);
 
   const boardGhosts = useMemo(() => {
@@ -158,9 +236,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
       selectedTurnIndex: vm.sgfPlayback.selectedTurnIndex,
       candidates: vm.keyMoveCandidates,
       variationPreview: vm.variationPreview,
-      selectedVariation,
+      selectedVariation: reviewMode === "variation-review" ? selectedVariation : null,
+      pvStartColor: vm.sgfPlayback.currentPlayer,
+      tryPlayStones: reviewMode === "try-play" ? tryPlayStones : [],
     });
-  }, [vm, selectedVariation]);
+  }, [vm, selectedVariation, reviewMode, tryPlayStones]);
 
   useEffect(() => {
     if (!showBoardNav) {
@@ -212,13 +292,16 @@ export default function AnalysisResultView({ data, lang }: Props) {
   return (
     <div className="space-y-4 mb-8">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
           <span className="rounded-full border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] text-amber-200/90">
             {t.summaryStatusComplete}
           </span>
-          <span className="text-slate-400">{t.engine}: <span className="font-mono text-amber-100">{s.engine}</span></span>
+          <span className="text-slate-400">{t.blackPlayer}: <span className="text-amber-100">{gameInfo.blackPlayer ?? "—"}</span></span>
+          <span className="text-slate-400">{t.whitePlayer}: <span className="text-amber-100">{gameInfo.whitePlayer ?? "—"}</span></span>
+          <span className="text-slate-400">{t.gameResult}: <span className="text-amber-100">{gameInfo.resultText ?? "—"}</span></span>
+          <span className="text-slate-400">{t.analysisModel}: <span className="font-mono text-amber-100">{s.engine}</span></span>
           <span className="text-slate-400">{t.totalMoves}: <span className="font-mono text-amber-100">{s.totalMoves}</span></span>
-          <span className="text-slate-500">
+          <span className="text-slate-500 hidden sm:inline">
             {t.flagMT}:{yn(s.hasMultiTurn)} · {t.flagBSI}:{yn(s.hasBsi)} · {t.flagADI}:{yn(s.hasAdi)} · {t.flagDSR}:{yn(s.hasDeepSearchResults)}
           </span>
         </div>
@@ -242,7 +325,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
             >
               {t.boardBadge}
             </span>
-            {reviewMode === "variation" ? (
+            {reviewMode === "variation-review" ? (
               <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] text-amber-100">
                 {t.variationSelectedOnBoard}
               </span>
@@ -266,22 +349,25 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 {t.boardSnapshotHint}
               </p>
               <p className="text-[11px] text-slate-600 mb-3">{t.boardViewOnlyNote}</p>
-              {showBoardNav ? (
-                <BoardTurnNavigation
-                  selectedTurnIndex={boardNavTurnIndex}
-                  totalMoves={boardNavTotalMoves}
-                  onSelectTurnIndex={selectTurnIndex}
-                  lang={uiLang}
-                />
-              ) : null}
               <BadukBoardView
                 boardSize={vm.sgfPlayback.boardSize}
                 stones={vm.sgfPlayback.stones}
                 lastMove={vm.sgfPlayback.lastMove}
                 ghosts={boardGhosts}
                 lang={uiLang}
+                onPointClick={reviewMode === "try-play" ? handleTryPlayPoint : undefined}
               />
-              {reviewMode === "variation" ? (
+              {showBoardNav ? (
+                <div className="mt-3">
+                  <BoardTurnNavigation
+                    selectedTurnIndex={boardNavTurnIndex}
+                    totalMoves={boardNavTotalMoves}
+                    onSelectTurnIndex={selectTurnIndex}
+                    lang={uiLang}
+                  />
+                </div>
+              ) : null}
+              {reviewMode === "variation-review" || reviewMode === "try-play" ? (
                 <button
                   type="button"
                   onClick={backToMainline}
@@ -309,6 +395,8 @@ export default function AnalysisResultView({ data, lang }: Props) {
             onSelectTurnIndex={selectTurnIndex}
             lang={lang}
             fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
+            collapsed={winrateCollapsed}
+            onToggleCollapsed={toggleWinrateCollapsed}
           />
         </div>
 
@@ -318,17 +406,9 @@ export default function AnalysisResultView({ data, lang }: Props) {
             candidates={vm.keyMoveCandidates}
             selectedTurnIndex={selectedTurnIndex}
             onSelectTurnIndex={selectTurnIndex}
-            selectedVariationTurnIndex={selectedVariation?.turnIndex ?? null}
+            selectedCandidateTurnIndex={selectedCandidate?.turnIndex ?? null}
+            onSelectCandidate={selectCandidate}
             variationTurnIndexes={variationTurnIndexes}
-            onSelectVariation={selectVariationByTurnIndex}
-            lang={lang}
-          />
-
-          <AnalysisVariationPreview
-            previews={vm.variationPreview}
-            selectedVariationId={selectedVariation ? selectedVariationId : null}
-            onSelectVariation={selectVariationRow}
-            onBackToMainline={backToMainline}
             lang={lang}
           />
 
@@ -337,18 +417,85 @@ export default function AnalysisResultView({ data, lang }: Props) {
               {t.analysisMemoTitle}
             </h2>
             <div className="space-y-2 text-sm text-slate-300" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-              <p>{selectedVariation ? t.analysisMemoVariation : t.analysisMemoCandidate}</p>
+              <p>{reviewMode === "try-play" ? t.tryPlayNotice : selectedCandidate ? t.analysisMemoCandidate : t.analysisMemoSelectCandidate}</p>
+              {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
               <p>{t.analysisMemoPvCaution}</p>
               <p>{t.analysisMemoSignalCaution}</p>
               <p className="text-xs text-slate-500">{t.analysisMemoNoLlM}</p>
             </div>
-            <button
-              type="button"
-              disabled
-              className="mt-4 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-500 opacity-70 cursor-not-allowed"
-            >
-              {t.tryPlayDisabled}
-            </button>
+            {selectedCandidate ? (
+              <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+                <dt className="text-slate-500">{t.variationTurn}</dt>
+                <dd className="font-mono text-amber-100">#{selectedCandidate.turnIndex}</dd>
+                <dt className="text-slate-500">{t.playedMove}</dt>
+                <dd className="font-mono text-amber-100">{selectedCandidate.playedMove}</dd>
+                <dt className="text-slate-500">{t.candidateMove}</dt>
+                <dd className="font-mono text-amber-100">{selectedCandidate.bestMove ?? "—"}</dd>
+                <dt className="text-slate-500">{t.bsi}</dt>
+                <dd className="text-slate-200">{selectedCandidate.bsiScore != null ? selectedCandidate.bsiScore.toFixed(0) : "—"}</dd>
+                <dt className="text-slate-500">{t.adi}</dt>
+                <dd className="text-slate-200">{selectedCandidate.adiScore != null ? selectedCandidate.adiScore.toFixed(2) : "—"}</dd>
+                <dt className="text-slate-500">{t.dsSelected}</dt>
+                <dd className="text-slate-200">{selectedCandidate.deepSearchSelected ? t.yesShort : t.noShort}</dd>
+                <dt className="text-slate-500">{t.dsCompleted}</dt>
+                <dd className="text-slate-200">{selectedCandidate.deepSearchCompleted ? t.yesShort : t.noShort}</dd>
+                <dt className="text-slate-500">{t.variationPvState}</dt>
+                <dd className="text-slate-200">{selectedCandidateVariation ? t.yesShort : t.noShort}</dd>
+                <dt className="text-slate-500 col-span-2">{t.variationReasons}</dt>
+                <dd className="col-span-2 flex flex-wrap gap-1">
+                  {selectedCandidate.reasons.length > 0
+                    ? selectedCandidate.reasons.slice(0, 4).map((r) => {
+                        let mapped = mapReasonPhraseForUi(r, uiLang);
+                        if (uiTextContainsForbiddenLabel(mapped, uiLang)) {
+                          mapped = internalReferenceSignalLabel(uiLang);
+                        }
+                        return (
+                          <span key={r} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300">
+                            {mapped}
+                          </span>
+                        );
+                      })
+                    : "—"}
+                </dd>
+              </dl>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!selectedCandidateVariation}
+                onClick={() => selectedCandidateVariation && selectVariationByTurnIndex(selectedCandidateVariation.turnIndex)}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {selectedCandidateVariation ? t.variationShowOnBoard : t.variationNoDisplayable}
+              </button>
+              <button
+                type="button"
+                onClick={enterTryPlayMode}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25"
+              >
+                {t.tryPlayEnter}
+              </button>
+              {reviewMode === "try-play" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={undoTryPlay}
+                    disabled={tryPlayStones.length === 0}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {t.tryPlayUndo}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetTryPlay}
+                    disabled={tryPlayStones.length === 0}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {t.tryPlayReset}
+                  </button>
+                </>
+              ) : null}
+            </div>
           </section>
         </div>
       </div>
