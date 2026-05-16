@@ -2,6 +2,7 @@ import { ENV, isMockAnalysisAllowed, validateServerEnv } from "../_core/env";
 import type { AnalysisJobDbRow } from "../creditService";
 import { claimNextAnalysisJobRpc } from "../creditService";
 import { assertKatagoPathsConfiguredOrThrow, getAnalysisEngineName } from "./analysisEngines";
+import { getAnalysisWorkerMode } from "../analysisWorkerMode";
 import { getResolvedAnalysisWorkerId } from "./analysisWorkerId";
 import { processClaimedAnalysisJob } from "./processClaimedAnalysisJob";
 
@@ -16,6 +17,18 @@ function sleep(ms: number): Promise<void> {
 
 const IDLE_MS = 900;
 const IDLE_MOCK_DISABLED_MS = 8000;
+
+export function buildAnalysisWorkerStartupEnvSnapshot(env: NodeJS.ProcessEnv): Record<string, unknown> {
+  return {
+    ANALYSIS_ENGINE: getAnalysisEngineName(),
+    ANALYSIS_WORKER_MODE: getAnalysisWorkerMode(),
+    KATATALK_ALLOW_MOCK_ANALYSIS: env.KATATALK_ALLOW_MOCK_ANALYSIS?.trim() || "(unset)",
+    ANALYSIS_WORKER_ID: env.ANALYSIS_WORKER_ID?.trim() || "(auto)",
+    hasKATAGO_BINARY_PATH: Boolean(env.KATAGO_BINARY_PATH?.trim()),
+    hasKATAGO_CONFIG_PATH: Boolean(env.KATAGO_CONFIG_PATH?.trim()),
+    hasKATAGO_MODEL_PATH: Boolean(env.KATAGO_MODEL_PATH?.trim()),
+  };
+}
 
 export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Promise<void> {
   const signal = opts?.signal;
@@ -57,6 +70,7 @@ export async function runAnalysisWorkerLoop(opts?: { signal?: AbortSignal }): Pr
 
 export async function startAnalysisWorkerMain(): Promise<void> {
   validateServerEnv();
+  console.log("[analysis-worker] startup env", buildAnalysisWorkerStartupEnvSnapshot(process.env));
   if (getAnalysisEngineName() === "katago") {
     assertKatagoPathsConfiguredOrThrow();
   }
