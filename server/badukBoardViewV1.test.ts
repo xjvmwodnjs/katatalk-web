@@ -130,6 +130,62 @@ describe("badukBoardViewV1 helpers", () => {
     expect(ghosts).toEqual([]);
   });
 
+  it("try-play mode with no stones does not fall back to analysis markers", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "try-play",
+      tryPlayStones: [],
+    });
+    expect(ghosts).toEqual([]);
+  });
+
+  it("try-play mode returns only try-play stones", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "try-play",
+      tryPlayStones: [{ x: 2, y: 3, gtp: "try-2-3-1", kind: "try", color: "B", order: 1 }],
+    });
+    expect(ghosts).toEqual([{ x: 2, y: 3, gtp: "try-2-3-1", kind: "try", color: "B", order: 1 }]);
+  });
+
   it("empty selected variation falls back to mainline candidate ghosts", () => {
     const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
     const occupied = state.stones.map((s) => `${s.x},${s.y}`);

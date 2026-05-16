@@ -118,8 +118,8 @@ export function collectBadukBoardGhostMarkersV1(args: {
     return out;
   }
 
-  if (overlayMode === "try-play" && args.tryPlayStones && args.tryPlayStones.length > 0) {
-    for (const st of args.tryPlayStones) {
+  if (overlayMode === "try-play") {
+    for (const st of args.tryPlayStones ?? []) {
       const key = `${st.x},${st.y}`;
       if (seen.has(key) || occupied.has(key)) {
         continue;
