@@ -29,9 +29,18 @@ $env:KATAGO_DEEP_SEARCH_ENABLED="false"
 corepack pnpm dev
 ```
 
-Worker는 별도 터미널에서 같은 env를 설정한 뒤 실행한다.
+Worker는 별도 터미널에서 실행하므로 env를 다시 설정해야 한다.
 
 ```powershell
+$env:AUTH_PROVIDER="local-dev"
+$env:VITE_AUTH_PROVIDER="local-dev"
+$env:ANALYSIS_ENGINE="katago"
+$env:ANALYSIS_WORKER_MODE="external"
+$env:KATATALK_ALLOW_MOCK_ANALYSIS="false"
+$env:KATAGO_MAX_VISITS="200"
+$env:KATAGO_MULTI_TURN_MAX="6"
+$env:KATAGO_WINRATE_TIMELINE_ENABLED="false"
+$env:KATAGO_DEEP_SEARCH_ENABLED="false"
 corepack pnpm dev:worker
 ```
 
@@ -71,15 +80,18 @@ Worker 로그에서 아래 형태를 확인한다. 실제 path/secret 값은 출
 [analysis-config] engine=katago workerMode=external deepSearch=false timeline=false maxVisits=200 multiTurnMax=6
 ```
 
+`KATAGO_MULTI_TURN_MAX=6`은 smoke에서 final position 외 후보 분석 여지를 남기기 위한 값이다. 후보 분석 수가 너무 적으면 completed result가 final_position 중심으로 끝나 learningEvents chip 확인이 어려울 수 있다.
+
 ## Local Smoke Credit Bootstrap
 
-이 절차는 local smoke 또는 격리된 staging 전용이다. production/live 결제 환경에서 사용하지 않는다.
+이 절차는 local smoke 또는 격리된 staging 전용이다. production/live 결제 환경에서 사용하지 않는다. 실행 전 반드시 연결된 Supabase URL/프로젝트가 local 또는 staging DB인지 확인한다.
 
 권장 순서:
 
 1. 먼저 `GET /api/credits/me`로 현재 local-dev credit을 확인한다.
-2. credit이 0이면 Supabase SQL editor 또는 service-role 전용 콘솔에서 기존 RPC를 사용해 local smoke credit을 지급한다.
+2. credit이 0이면 service-role 또는 권한 있는 Supabase SQL editor/콘솔에서만 기존 RPC를 사용해 local smoke credit을 지급한다.
 3. schema 변경, migration 추가, 결제 webhook 우회 코드는 만들지 않는다.
+4. production/live DB에서는 아래 RPC를 실행하지 않는다.
 
 예시 RPC:
 
@@ -100,11 +112,18 @@ select public.add_credits_from_payment(
 
 ## LearningEvents Smoke SGF Fixture
 
-final position 후보만 나오는 너무 짧은 SGF는 learningEvents 후보 chip 확인에 부적합하다. 아래 SGF는 짧은 smoke용이며 parser validation 통과 확인용 fixture다. 실제 learningEvents 생성 여부는 KataGo 결과와 수치 신호에 따라 달라질 수 있으므로, completed result에서 후보 chip이 1개 이상인지 반드시 확인한다.
+final position 후보만 나오는 너무 짧은 SGF는 learningEvents 후보 chip 확인에 부적합하다. 아래 SGF는 21수 smoke용이며 parser validation 통과 확인용 fixture다. 기본 `intervalStep=20`, `includeFinalPosition=true` 기준으로 `turnIndex=20`은 non-final 샘플 후보, `turnIndex=21`은 `final_position` 후보가 된다. 현재 코드에서는 20수가 `opening_sample`로 기록되며, 이는 final position이 아니므로 learningEvents 후보 chip smoke에 사용할 수 있다.
 
 ```sgf
-(;FF[4]GM[1]SZ[19]KM[6.5];B[pd];W[dp];B[pp];W[dd];B[fq];W[cn];B[qf];W[dc];B[cf];W[fc];B[jj];W[qq];B[qd];W[dq];B[oc];W[co];B[pc];W[cp];B[qn];W[dn])
+(;FF[4]GM[1]SZ[19]KM[6.5];B[pd];W[dp];B[pp];W[dd];B[fq];W[cn];B[qf];W[dc];B[cf];W[fc];B[jj];W[qq];B[qd];W[dq];B[oc];W[co];B[pc];W[cp];B[qn];W[dn];B[jp])
 ```
+
+기대 결과:
+
+- `turnIndex=20`: non-final 후보. 현재 reason은 `opening_sample`.
+- `turnIndex=21`: `final_position` 후보.
+- learningEvents는 `final_position`을 제외하므로 `turnIndex=20` 기반 후보 chip smoke가 가능하다.
+- 실제 learningEvents 생성 여부는 KataGo 결과와 수치 신호에 따라 달라질 수 있으므로, completed result에서 후보 chip이 1개 이상인지 반드시 확인한다.
 
 ## Result Deep Link Smoke
 
