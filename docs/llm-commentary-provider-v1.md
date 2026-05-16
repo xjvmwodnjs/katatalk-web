@@ -8,12 +8,14 @@ LLM Commentary Provider v1은 `LLM Commentary Orchestrator v1`에 주입할 수 
 
 Provider는 다음 env를 사용하도록 설계한다.
 
-- `KATALK_LLM_COMMENTARY_ENABLED`
-- `KATALK_LLM_COMMENTARY_API_KEY`
-- `KATALK_LLM_COMMENTARY_ENDPOINT`
-- `KATALK_LLM_COMMENTARY_MODEL`
+- `KATATALK_LLM_COMMENTARY_ENABLED`
+- `KATATALK_LLM_COMMENTARY_API_KEY`
+- `KATATALK_LLM_COMMENTARY_ENDPOINT`
+- `KATATALK_LLM_COMMENTARY_MODEL`
 
-env 값은 로그나 테스트 출력에 노출하지 않는다. `KATALK_LLM_COMMENTARY_ENABLED=true`와 API key가 모두 없으면 provider는 disabled 상태이며 callable LLM function을 제공하지 않는다.
+env 값은 로그나 테스트 출력에 노출하지 않는다. `KATATALK_LLM_COMMENTARY_ENABLED=true`와 API key가 모두 없으면 provider는 disabled 상태이며 callable LLM function을 제공하지 않는다.
+
+`KATALK_LLM_COMMENTARY_*` legacy alias는 지원하지 않는다. env 계약 혼선을 막기 위해 `KATATALK_*` prefix만 허용한다.
 
 ## Orchestrator 연결 정책
 
@@ -45,6 +47,7 @@ prompt에는 다음 지시를 포함한다.
 - output length를 제한한다.
 - malformed JSON response는 throw한다.
 - provider throw/timeout/malformed response는 orchestrator에서 fallback으로 처리한다.
+- request-level max token과 AbortController 기반 취소는 실제 provider 연결 전 follow-up으로 확정한다.
 
 ## 테스트 정책
 

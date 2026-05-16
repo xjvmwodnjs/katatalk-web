@@ -5,10 +5,10 @@ import { validateAndNormalizeExplanationPlanForLlmV1 } from "@shared/llmCommenta
 export const LLM_COMMENTARY_PROVIDER_V1_VERSION = "llm-commentary-provider-v1" as const;
 
 export const LLM_COMMENTARY_PROVIDER_ENV_V1 = {
-  enabled: "KATALK_LLM_COMMENTARY_ENABLED",
-  apiKey: "KATALK_LLM_COMMENTARY_API_KEY",
-  endpoint: "KATALK_LLM_COMMENTARY_ENDPOINT",
-  model: "KATALK_LLM_COMMENTARY_MODEL",
+  enabled: "KATATALK_LLM_COMMENTARY_ENABLED",
+  apiKey: "KATATALK_LLM_COMMENTARY_API_KEY",
+  endpoint: "KATATALK_LLM_COMMENTARY_ENDPOINT",
+  model: "KATATALK_LLM_COMMENTARY_MODEL",
 } as const;
 
 export type LlmCommentaryProviderEnvV1 = Partial<Record<string, string | undefined>>;

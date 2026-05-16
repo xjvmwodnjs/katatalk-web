@@ -60,6 +60,20 @@ describe("llm commentary provider v1", () => {
     expect(provider.llm).toBeNull();
   });
 
+  it("does not enable from legacy KATALK-prefixed env aliases", () => {
+    const provider = createLlmCommentaryProviderV1({
+      env: {
+        KATALK_LLM_COMMENTARY_ENABLED: "true",
+        KATALK_LLM_COMMENTARY_API_KEY: "legacy-secret-api-key",
+        KATALK_LLM_COMMENTARY_ENDPOINT: "https://llm.example.test/v1/chat/completions",
+        KATALK_LLM_COMMENTARY_MODEL: "legacy-model",
+      },
+    });
+    expect(provider.enabled).toBe(false);
+    expect(provider.disabledReason).toBe("missing_env");
+    expect(provider.llm).toBeNull();
+  });
+
   it("does not expose a callable llm when disabled", () => {
     let calls = 0;
     const client: LlmCommentaryProviderClientV1 = {
@@ -123,6 +137,19 @@ describe("llm commentary provider v1", () => {
       },
     });
     await expect(provider.llm?.({ plan: safePlan, boardSize: 19 })).rejects.toThrow("LLM_COMMENTARY_PROVIDER_MALFORMED_RESPONSE");
+  });
+
+  it("throws when provider response exceeds max output length", async () => {
+    const provider = createLlmCommentaryProviderV1({
+      env: enabledEnv(),
+      maxOutputChars: 8,
+      client: {
+        async complete() {
+          return JSON.stringify(safeResponse);
+        },
+      },
+    });
+    await expect(provider.llm?.({ plan: safePlan, boardSize: 19 })).rejects.toThrow("LLM_COMMENTARY_PROVIDER_OUTPUT_TOO_LONG");
   });
 
   it("rejects raw SGF-like payload before prompt/client call", async () => {

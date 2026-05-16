@@ -86,6 +86,12 @@ KATAGO_WINRATE_TIMELINE_MAX_TURNS=300
 KATAGO_WINRATE_TIMELINE_TIMEOUT_MS=600000
 KATAGO_WINRATE_TIMELINE_ANALYSIS_PV_LEN=1
 KATAGO_WINRATE_TIMELINE_INCLUDE_FINAL=true
+
+# LLM Commentary Provider v1 (기본 OFF, UI/Worker 미연결)
+KATATALK_LLM_COMMENTARY_ENABLED=false
+# KATATALK_LLM_COMMENTARY_API_KEY=<placeholder>
+# KATATALK_LLM_COMMENTARY_ENDPOINT=<placeholder>
+# KATATALK_LLM_COMMENTARY_MODEL=<placeholder>
 ```
 
 **로컬 실행 예:**
@@ -155,6 +161,7 @@ KATATALK_ALLOW_MOCK_ANALYSIS=false
 | `ANALYSIS_WORKER_MODE=inline` + `ANALYSIS_ENGINE=katago` | 운영 enqueue **503** (`KATAGO_INLINE_FORBIDDEN`) |
 | Web에 `KATAGO_*` | 불필요·혼동. Worker 전용 |
 | `KATATALK_ALLOW_MOCK_ANALYSIS=true` (공개 유료) | 내부 베타만. 공개 서비스는 **false/미설정** |
+| `KATATALK_LLM_COMMENTARY_ENABLED=true` | provider adapter만 준비됨. 실제 제품 연결 전에는 **false/미설정** |
 | `PORT` 덮어쓰기 | Railway가 주입하는 `PORT` 유지 |
 
 ---
@@ -210,7 +217,25 @@ KATATALK_ALLOW_MOCK_ANALYSIS=true
 
 ---
 
-## 6. Public analysis disabled 모드
+## 6. LLM Commentary Provider v1
+
+기본 disabled:
+
+```env
+KATATALK_LLM_COMMENTARY_ENABLED=false
+# KATATALK_LLM_COMMENTARY_API_KEY=<placeholder>
+# KATATALK_LLM_COMMENTARY_ENDPOINT=<placeholder>
+# KATATALK_LLM_COMMENTARY_MODEL=<placeholder>
+```
+
+- `KATATALK_*` prefix만 허용한다. `KATALK_LLM_COMMENTARY_*` alias는 지원하지 않는다.
+- env 값은 로그·테스트 출력에 노출하지 않는다.
+- 현재는 provider adapter만 있으며 UI/Worker 본 분석 흐름에 연결하지 않는다.
+- 실제 연결 전까지 `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정을 유지한다.
+
+---
+
+## 7. Public analysis disabled 모드
 
 결제·로그인·업로드는 가능, **실분석 enqueue 차단:**
 
@@ -226,7 +251,7 @@ ANALYSIS_WORKER_MODE=external
 
 ---
 
-## 7. Future GPU KataGo Worker 모드
+## 8. Future GPU KataGo Worker 모드
 
 **Web:**
 
@@ -253,7 +278,7 @@ KATAGO_WINRATE_TIMELINE_VISITS=200
 
 ---
 
-## 8. Deep Search / Winrate Timeline 비용 주의
+## 9. Deep Search / Winrate Timeline 비용 주의
 
 | 변수 | 기본 | 비고 |
 |------|------|------|
@@ -274,7 +299,7 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 
 ---
 
-## 9. Supabase 006 / 007 적용 체크
+## 10. Supabase 006 / 007 적용 체크
 
 저장소에 SQL 파일이 있다고 **운영 DB에 자동 적용되지 않습니다.**
 
@@ -287,7 +312,7 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 
 ---
 
-## 10. 절대 커밋하면 안 되는 항목
+## 11. 절대 커밋하면 안 되는 항목
 
 - `.env` (실제 secret 포함 파일)
 - `codex-*.md` (로컬 리뷰 산출물)
@@ -313,6 +338,7 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 | `ANALYSIS_WORKER_MODE` | ✓ | ✓ | production katago: **`external`** |
 | `ANALYSIS_ENGINE` | ✓ | ✓ | `mock` \| `katago` |
 | `KATATALK_ALLOW_MOCK_ANALYSIS` | ✓ | ✓ | production mock 허용 플래그 |
+| `KATATALK_LLM_COMMENTARY_*` | ○ | — | provider adapter용, 기본 disabled |
 | `ANALYSIS_WORKER_ID` | — | ○ | lease 식별(미설정 시 자동 생성) |
 | `ANALYSIS_CLAIM_STALE_SECONDS` | ○ | ✓ | 기본 900 |
 | `ANALYSIS_WORKER_HEARTBEAT_SECONDS` | ○ | ✓ | 기본 60 |
