@@ -33,6 +33,7 @@ import {
   getAnalysisResultUiStrings,
   internalReferenceSignalLabel,
   normalizeAnalysisResultLang,
+  translateLearningEventSourceLabel,
   translatePlaceholderMessageKey,
   translateSgfPlaybackWarning,
   translateVmWarning,
@@ -126,6 +127,22 @@ export default function AnalysisResultView({ data, lang }: Props) {
         : null,
     [vm, selectedCandidateTurnIndex, reviewMode]
   );
+  const selectedLearningEvent = selectedCandidate?.learningEvent ?? null;
+  const selectedLearningEventScore =
+    typeof selectedLearningEvent?.score === "number" && Number.isFinite(selectedLearningEvent.score)
+      ? selectedLearningEvent.score
+      : null;
+  const selectedLearningEventWinrateDelta =
+    typeof selectedLearningEvent?.signals.winrateDelta === "number" && Number.isFinite(selectedLearningEvent.signals.winrateDelta)
+      ? selectedLearningEvent.signals.winrateDelta
+      : null;
+  const selectedLearningEventScoreLeadDelta =
+    typeof selectedLearningEvent?.signals.scoreLeadDelta === "number" && Number.isFinite(selectedLearningEvent.signals.scoreLeadDelta)
+      ? selectedLearningEvent.signals.scoreLeadDelta
+      : null;
+  const selectedLearningEventSources = Array.isArray(selectedLearningEvent?.evidence.source)
+    ? selectedLearningEvent.evidence.source.map((source) => translateLearningEventSourceLabel(source, uiLang))
+    : [];
   const selectedCandidateVariation = useMemo(() => {
     if (vm.kind !== "katago-worker-v1" || selectedCandidateTurnIndex == null || vm.sgfPlayback.placeholder) {
       return null;
@@ -470,7 +487,16 @@ export default function AnalysisResultView({ data, lang }: Props) {
               {t.analysisMemoTitle}
             </h2>
             <div className="space-y-1.5 text-xs text-slate-300 sm:space-y-2 sm:text-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-              <p>{reviewMode === "try-play" ? t.tryPlayNotice : selectedCandidate ? t.analysisMemoCandidate : t.analysisMemoSelectCandidate}</p>
+              <p>
+                {reviewMode === "try-play"
+                  ? t.tryPlayNotice
+                  : selectedLearningEvent
+                    ? t.analysisMemoLearningEvent
+                    : selectedCandidate
+                      ? t.analysisMemoCandidate
+                      : t.analysisMemoSelectCandidate}
+              </p>
+              {selectedLearningEvent?.signals.deepSearchCompleted ? <p>{t.analysisMemoDeepSearchEvidence}</p> : null}
               {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
               <p>{t.analysisMemoPvCaution}</p>
               <p>{t.analysisMemoSignalCaution}</p>
@@ -494,6 +520,28 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 <dd className="text-slate-200">{selectedCandidate.deepSearchCompleted ? t.yesShort : t.noShort}</dd>
                 <dt className="text-slate-500">{t.variationPvState}</dt>
                 <dd className="text-slate-200">{selectedCandidateVariation ? t.yesShort : t.noShort}</dd>
+                {selectedLearningEvent ? (
+                  <>
+                    <dt className="text-slate-500">{t.learningEventConfidence}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">{selectedLearningEvent.confidence}</dd>
+                    <dt className="text-slate-500">{t.learningEventScore}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">
+                      {selectedLearningEventScore != null ? selectedLearningEventScore.toFixed(1) : "—"}
+                    </dd>
+                    <dt className="text-slate-500">{t.learningEventWinrateDelta}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">
+                      {selectedLearningEventWinrateDelta != null ? selectedLearningEventWinrateDelta.toFixed(1) : "—"}
+                    </dd>
+                    <dt className="text-slate-500">{t.learningEventScoreLeadDelta}</dt>
+                    <dd className="min-w-0 truncate font-mono text-slate-200">
+                      {selectedLearningEventScoreLeadDelta != null ? selectedLearningEventScoreLeadDelta.toFixed(1) : "—"}
+                    </dd>
+                    <dt className="col-span-2 text-slate-500">{t.learningEventSources}</dt>
+                    <dd className="col-span-2 min-w-0 truncate font-mono text-[11px] text-slate-300">
+                      {selectedLearningEventSources.length > 0 ? selectedLearningEventSources.join(" · ") : "—"}
+                    </dd>
+                  </>
+                ) : null}
                 <dt className="col-span-2 text-slate-500">{t.variationReasons}</dt>
                 <dd className="col-span-2 flex min-w-0 flex-wrap gap-1">
                   {selectedCandidate.reasons.length > 0

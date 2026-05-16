@@ -13,6 +13,11 @@ const ALLOWED_LABEL_KEYS = new Set([
   "ar_label_followup_candidate",
   "ar_label_large_delta",
   "ar_label_played_vs_candidate_gap",
+  "ar_label_flow_shift_candidate",
+  "ar_label_response_candidate",
+  "ar_label_high_adi_candidate",
+  "ar_label_high_bsi_candidate",
+  "ar_label_deep_search_candidate",
 ]);
 
 function assertAllowedLabelKeys(vm: { keyMoveCandidates: { labelKey: string }[] }) {
@@ -249,6 +254,21 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+function embeddedLearningEvent(turnIndex: number, score = 50): Record<string, unknown> {
+  return {
+    id: `embedded-${turnIndex}`,
+    turnIndex,
+    playedMove: "Q16",
+    candidateMove: "D16",
+    labelKey: "ar_label_review_candidate",
+    eventType: "review_candidate",
+    confidence: "medium",
+    score,
+    signals: { bsiScore: 55 },
+    evidence: { source: ["embedded"] },
+  };
+}
+
 describe("buildAnalysisResultViewModel", () => {
   it("maps katago-worker-v1 and prefers deepSearchPlan candidates", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult());
@@ -259,6 +279,8 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.summary.deepSearchEnabled).toBe(false);
     expect(vm.keyMoveCandidates.length).toBeGreaterThanOrEqual(1);
     expect(vm.keyMoveCandidates[0]!.turnIndex).toBe(10);
+    expect(vm.learningEvents.events.length).toBeGreaterThanOrEqual(1);
+    expect(vm.keyMoveCandidates[0]!.learningEvent?.turnIndex).toBe(10);
     expect(vm.keyMoveCandidates[0]!.deepSearchSelected).toBe(true);
     expect(vm.keyMoveCandidates[0]!.deepSearchCompleted).toBe(false);
     expect(vm.graph.winrateSeries.some((p) => p.turnIndex === 10)).toBe(true);
@@ -367,6 +389,7 @@ describe("buildAnalysisResultViewModel", () => {
     const vm = buildAnalysisResultViewModel(mock);
     expect(vm.kind).toBe("mock-legacy");
     expect(vm.keyMoveCandidates).toEqual([]);
+    expect(vm.learningEvents.events).toEqual([]);
     expect(vm.variationPreview).toEqual([]);
     expect(vm.graph.winrateSeries).toEqual([]);
   });
@@ -375,6 +398,7 @@ describe("buildAnalysisResultViewModel", () => {
     const vm = buildAnalysisResultViewModel({ source: "other" });
     expect(vm.kind).toBe("unknown");
     expect(vm.keyMoveCandidates).toEqual([]);
+    expect(vm.learningEvents.events).toEqual([]);
   });
 
   it("minimal katago payload does not throw", () => {
@@ -383,5 +407,68 @@ describe("buildAnalysisResultViewModel", () => {
       game_info: { total_moves: 0, black_player: "", white_player: "", date: "", result: { ko: "" }, komi: 0 },
     });
     expect(vm.kind).toBe("katago-worker-v1");
+  });
+
+  it("rejects malformed embedded learningEventsV1 and falls back without crashing", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [{ ...embeddedLearningEvent(30), score: "90" }],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events.length).toBeGreaterThan(0);
+    expect(vm.learningEvents.events.every((e) => typeof e.score === "number")).toBe(true);
+    expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
+  });
+
+  it("rejects fractional embedded turnIndex instead of truncating into final or duplicate turns", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [
+          embeddedLearningEvent(50.9, 100),
+          embeddedLearningEvent(20.1, 90),
+          embeddedLearningEvent(20.9, 80),
+        ],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events.every((e) => Number.isInteger(e.turnIndex))).toBe(true);
+    expect(vm.learningEvents.events.every((e) => e.turnIndex !== 50)).toBe(true);
+    expect(vm.learningEvents.events.every((e) => e.evidence.source[0] !== "embedded")).toBe(true);
+  });
+
+  it("normalizes valid embedded learningEventsV1 before using them", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [
+          embeddedLearningEvent(10, 20),
+          embeddedLearningEvent(20, 90),
+          embeddedLearningEvent(20, 80),
+          embeddedLearningEvent(30, 70),
+          embeddedLearningEvent(40, 60),
+          embeddedLearningEvent(50, 100),
+          embeddedLearningEvent(11, 50),
+          embeddedLearningEvent(12, 40),
+        ],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events).toHaveLength(5);
+    expect(vm.learningEvents.events.map((e) => e.turnIndex)).toEqual([20, 30, 40, 11, 12]);
+    expect(new Set(vm.learningEvents.events.map((e) => e.turnIndex)).size).toBe(5);
+    expect(vm.learningEvents.events.every((e) => e.turnIndex !== 50)).toBe(true);
+    expect(vm.keyMoveCandidates[0]?.learningEvent?.evidence.source).toEqual(["embedded"]);
   });
 });

@@ -8,6 +8,13 @@ import type { AdiV1Result, AdiV1Signal } from "./adiV1";
 import type { BsiV1Result, BsiV1Signal } from "./bsiV1";
 import type { DeepSearchPlanCandidateV1, DeepSearchPlanV1Result } from "./deepSearchPlanV1";
 import type { DeepSearchResultsV1Result, DeepSearchSingleResultOkV1 } from "./deepSearchResultsV1";
+import {
+  buildAnalysisLearningEventsV1,
+  isAnalysisLearningEventsV1,
+  normalizeAnalysisLearningEventsV1,
+  type AnalysisLearningEventV1,
+  type AnalysisLearningEventsV1,
+} from "./analysisLearningEventsV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
 import {
   buildSgfPlaybackStateV1,
@@ -171,6 +178,7 @@ export type AnalysisResultKeyMoveCandidateV1 = {
   deepSearchSelected: boolean;
   deepSearchCompleted: boolean;
   reasons: string[];
+  learningEvent?: AnalysisLearningEventV1;
 };
 
 export type AnalysisResultVariationPreviewV1 = {
@@ -200,6 +208,7 @@ export type KatagoWorkerV1AnalysisViewModel = {
     /** true when chart uses `winrateTimelineV1` (full mainline) */
     winrateSeriesFromTimeline: boolean;
   };
+  learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
   warnings: AnalysisResultVmWarningV1[];
@@ -222,6 +231,7 @@ export type MockLegacyAnalysisViewModel = {
     deepSearchEnabled: false;
   };
   graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
+  learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
   variationPreview: [];
   warnings: AnalysisResultVmWarningV1[];
@@ -243,6 +253,7 @@ export type UnknownAnalysisViewModel = {
     deepSearchEnabled: false;
   };
   graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
+  learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
   variationPreview: [];
   warnings: AnalysisResultVmWarningV1[];
@@ -531,6 +542,67 @@ function buildKeyMoveVmList(
   return out;
 }
 
+function playerForLearningEvent(
+  event: AnalysisLearningEventV1,
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined,
+  plan: DeepSearchPlanV1Result | undefined,
+  adi: AdiV1Result | undefined,
+  bsi: BsiV1Result | undefined
+): "B" | "W" {
+  const turn = event.turnIndex;
+  const ta = turnAnalyses?.find((t) => t.turnIndex === turn);
+  if (ta?.player === "B" || ta?.player === "W") {
+    return ta.player;
+  }
+  const p = plan?.candidates?.find((c) => c.turnIndex === turn);
+  if (p?.player === "B" || p?.player === "W") {
+    return p.player;
+  }
+  const a = adi?.signals?.find((s) => s.turnIndex === turn);
+  if (a?.player === "B" || a?.player === "W") {
+    return a.player;
+  }
+  const b = bsi?.signals?.find((s) => s.turnIndex === turn);
+  if (b?.player === "B" || b?.player === "W") {
+    return b.player;
+  }
+  return turn % 2 === 1 ? "B" : "W";
+}
+
+function learningEventsToKeyMoveVmList(
+  learningEvents: AnalysisLearningEventsV1,
+  plan: DeepSearchPlanV1Result | undefined,
+  deep: DeepSearchResultsV1Result | undefined,
+  adi: AdiV1Result | undefined,
+  bsi: BsiV1Result | undefined,
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined
+): AnalysisResultKeyMoveCandidateV1[] {
+  const planTurns = new Set((plan?.candidates ?? []).map((c) => c.turnIndex));
+  return learningEvents.events.map((event) => {
+    const deepOk = getDeepOkRow(deep, event.turnIndex);
+    const adiRow = findAdi(adi, event.turnIndex);
+    const bsiRow = findBsi(bsi, event.turnIndex);
+    const reasons = [
+      event.eventType,
+      ...event.evidence.source,
+      ...(event.evidence.notes ?? []),
+    ];
+    return {
+      turnIndex: event.turnIndex,
+      player: playerForLearningEvent(event, turnAnalyses, plan, adi, bsi),
+      playedMove: event.playedMove ?? "—",
+      bestMove: event.candidateMove,
+      labelKey: event.labelKey,
+      bsiScore: event.signals.bsiScore ?? bsiRow?.bsiScore ?? null,
+      adiScore: event.signals.adiScore ?? adiRow?.adiScore ?? null,
+      deepSearchSelected: event.signals.deepSearchSelected ?? planTurns.has(event.turnIndex),
+      deepSearchCompleted: event.signals.deepSearchCompleted ?? deepOk != null,
+      reasons,
+      learningEvent: event,
+    };
+  });
+}
+
 function buildVariationPreview(
   keys: AnalysisResultKeyMoveCandidateV1[],
   turnAnalyses: TurnAnalysisEntryV1[] | undefined,
@@ -552,14 +624,14 @@ function buildVariationPreview(
     }
     const ta = getTurnAnalysisOk(turnAnalyses, k.turnIndex);
     if (ta) {
-      let pv = extractPvFromTopMove(ta.katago.topMove);
+      let pv = extractPvFromTopMove(ta.katago?.topMove);
       if (pv.length === 0) {
         pv = extractPvFromCandidateMoves(ta);
       }
       previews.push({
         turnIndex: k.turnIndex,
         playedMove: k.playedMove,
-        bestMove: ta.comparisonReady.bestMove ?? k.bestMove,
+        bestMove: ta.comparisonReady?.bestMove ?? k.bestMove,
         pv,
         source: "multi-turn",
       });
@@ -612,13 +684,31 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
     const deep = isPlainObject(result.deepSearchResults) ? (result.deepSearchResults as DeepSearchResultsV1Result) : undefined;
     const adi = isPlainObject(result.adiV1) ? (result.adiV1 as AdiV1Result) : undefined;
     const bsi = isPlainObject(result.bsiV1) ? (result.bsiV1 as BsiV1Result) : undefined;
+    const winrateTimeline = isWinrateTimelineV1(result.winrateTimelineV1) ? result.winrateTimelineV1 : undefined;
 
     const totalMoves = readGameTotalMoves(result);
     const multi = result.multiTurnAnalysis;
     const hasMulti = isPlainObject(multi) && typeof multi.attemptedCount === "number" && multi.attemptedCount > 0;
 
+    const embeddedLearningEvents = isAnalysisLearningEventsV1(result.learningEventsV1)
+      ? normalizeAnalysisLearningEventsV1(result.learningEventsV1, { analysisPlan, turnAnalyses })
+      : null;
+    const learningEvents =
+      embeddedLearningEvents ??
+      buildAnalysisLearningEventsV1({
+        analysisPlan,
+        turnAnalyses,
+        bsi,
+        adi,
+        deepSearchPlan: plan,
+        deepSearchResults: deep,
+        winrateTimeline,
+      });
     const acc = buildCandidateAccumulator(analysisPlan, turnAnalyses, plan, adi, bsi, 5);
-    const keyMoveCandidates = buildKeyMoveVmList(acc, plan, deep, adi, bsi);
+    const keyMoveCandidates =
+      learningEvents.events.length > 0
+        ? learningEventsToKeyMoveVmList(learningEvents, plan, deep, adi, bsi, turnAnalyses)
+        : buildKeyMoveVmList(acc, plan, deep, adi, bsi);
     const variationPreview = buildVariationPreview(keyMoveCandidates, turnAnalyses, deep);
 
     const sgfText = readSgfContentFromResultPayload(result);
@@ -659,6 +749,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         winrateSeries,
         winrateSeriesFromTimeline,
       },
+      learningEvents,
       keyMoveCandidates,
       variationPreview,
       warnings: [...DEFAULT_VM_WARNINGS],
@@ -686,6 +777,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         deepSearchEnabled: false,
       },
       graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
+      learningEvents: { version: "learning-events-v1", events: [] },
       keyMoveCandidates: [],
       variationPreview: [],
       warnings: [{ code: "mock_demo_disclaimer" }, { code: "beta_numeric_reference" }],
@@ -714,6 +806,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       deepSearchEnabled: false,
     },
     graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
+    learningEvents: { version: "learning-events-v1", events: [] },
     keyMoveCandidates: [],
     variationPreview: [],
     warnings: [{ code: "unknown_result_format" }, { code: "beta_numeric_reference" }],

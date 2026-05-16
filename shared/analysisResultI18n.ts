@@ -4,6 +4,7 @@
  */
 
 import type { SgfPlaybackWarningV1 } from "./sgfPlaybackV1";
+import type { AnalysisLearningEventSourceV1, AnalysisLearningEventTypeV1 } from "./analysisLearningEventsV1";
 
 export type AnalysisResultLang = "ko" | "en" | "ja" | "zh";
 
@@ -401,6 +402,36 @@ const LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
     ja: "実戦手と候補手の差が大きい局面",
     zh: "实战手与候选手差异较大的局面",
   },
+  ar_label_flow_shift_candidate: {
+    ko: "흐름 변화 후보",
+    en: "Flow shift candidate",
+    ja: "流れ変化の候補",
+    zh: "走势变化候选",
+  },
+  ar_label_response_candidate: {
+    ko: "응수 후보",
+    en: "Response candidate",
+    ja: "応手候補",
+    zh: "应手候选",
+  },
+  ar_label_high_adi_candidate: {
+    ko: "추가 확인 후보",
+    en: "Additional check candidate",
+    ja: "追加確認候補",
+    zh: "追加确认候选",
+  },
+  ar_label_high_bsi_candidate: {
+    ko: "수치 신호 후보",
+    en: "Numeric signal candidate",
+    ja: "数値シグナル候補",
+    zh: "数值信号候选",
+  },
+  ar_label_deep_search_candidate: {
+    ko: "추가 분석 후보",
+    en: "Further analysis candidate",
+    ja: "追加解析候補",
+    zh: "进一步分析候选",
+  },
 };
 
 export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang): string {
@@ -409,6 +440,37 @@ export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang
     return key;
   }
   return row[lang];
+}
+
+const LEARNING_EVENT_CHIP_PREFIX: Record<AnalysisLearningEventTypeV1, Record<AnalysisResultLang, string>> = {
+  review_candidate: { ko: "검토", en: "Review", ja: "検討", zh: "复核" },
+  flow_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
+  response_candidate: { ko: "응수", en: "Response", ja: "応手", zh: "应手" },
+  high_adi_candidate: { ko: "확인", en: "Check", ja: "確認", zh: "确认" },
+  high_bsi_candidate: { ko: "신호", en: "Signal", ja: "信号", zh: "信号" },
+  deep_search_candidate: { ko: "추가", en: "Further", ja: "追加", zh: "追加" },
+  winrate_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
+  score_lead_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
+};
+
+export function translateLearningEventChipPrefix(eventType: AnalysisLearningEventTypeV1, lang: AnalysisResultLang): string {
+  return LEARNING_EVENT_CHIP_PREFIX[eventType]?.[lang] ?? LEARNING_EVENT_CHIP_PREFIX.review_candidate[lang];
+}
+
+const LEARNING_EVENT_SOURCE_LABELS: Record<AnalysisLearningEventSourceV1, Record<AnalysisResultLang, string>> = {
+  turnAnalyses: { ko: "수순 분석", en: "Turn analysis", ja: "手順解析", zh: "手数分析" },
+  deepSearchPlan: { ko: "추가 분석 계획", en: "Further analysis plan", ja: "追加解析計画", zh: "追加分析计划" },
+  deepSearchResults: { ko: "추가 분석 결과", en: "Further analysis result", ja: "追加解析結果", zh: "追加分析结果" },
+  adiV1: { ko: "ADI 신호", en: "ADI signal", ja: "ADI シグナル", zh: "ADI 信号" },
+  bsiV1: { ko: "BSI 신호", en: "BSI signal", ja: "BSI シグナル", zh: "BSI 信号" },
+  winrateTimelineV1: { ko: "승률 흐름", en: "Winrate flow", ja: "勝率推移", zh: "胜率走势" },
+  learningEventsV1: { ko: "검토 후보", en: "Review candidate", ja: "検討候補", zh: "复核候选" },
+  embedded: { ko: "저장된 검토 후보", en: "Stored review candidate", ja: "保存済み検討候補", zh: "已存复核候选" },
+};
+
+export function translateLearningEventSourceLabel(source: string, lang: AnalysisResultLang): string {
+  const row = LEARNING_EVENT_SOURCE_LABELS[source as AnalysisLearningEventSourceV1];
+  return row?.[lang] ?? INTERNAL_SIGNAL[lang];
 }
 
 /** Winrate chart axis labels — keyed by `WinrateNormalizedV1.displayLabelKey` */
@@ -516,10 +578,17 @@ type UiBlock = {
   analysisMemoTitle: string;
   analysisMemoSelectCandidate: string;
   analysisMemoCandidate: string;
+  analysisMemoLearningEvent: string;
+  analysisMemoDeepSearchEvidence: string;
   analysisMemoVariation: string;
   analysisMemoPvCaution: string;
   analysisMemoSignalCaution: string;
   analysisMemoNoLlM: string;
+  learningEventConfidence: string;
+  learningEventScore: string;
+  learningEventWinrateDelta: string;
+  learningEventScoreLeadDelta: string;
+  learningEventSources: string;
   tryPlayDisabled: string;
   tryPlayEnter: string;
   tryPlayUndo: string;
@@ -616,10 +685,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI 분석 메모",
     analysisMemoSelectCandidate: "검토 후보를 선택하면 해설이 표시됩니다.",
     analysisMemoCandidate: "이 수순은 KataGo 기준으로 검토할 만한 후보입니다.",
+    analysisMemoLearningEvent: "이 장면은 여러 내부 신호가 겹쳐 검토 후보로 선택되었습니다.",
+    analysisMemoDeepSearchEvidence: "Deep Search 결과가 있는 경우 추가 근거로 반영했습니다.",
     analysisMemoVariation: "선택한 참고도는 바둑판 위의 반투명 번호로 표시됩니다.",
     analysisMemoPvCaution: "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
     analysisMemoSignalCaution: "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
     analysisMemoNoLlM: "LLM 자연어 해설은 아직 실행하지 않습니다.",
+    learningEventConfidence: "신뢰도",
+    learningEventScore: "선정 점수",
+    learningEventWinrateDelta: "승률 변화",
+    learningEventScoreLeadDelta: "집 차이 변화",
+    learningEventSources: "근거 신호",
     tryPlayDisabled: "놓아보기 준비 중",
     tryPlayEnter: "놓아보기",
     tryPlayUndo: "무르기",
@@ -713,10 +789,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI analysis memo",
     analysisMemoSelectCandidate: "Select a review candidate to show the memo.",
     analysisMemoCandidate: "This move index is worth reviewing under KataGo output.",
+    analysisMemoLearningEvent: "This position was selected because multiple internal signals overlap.",
+    analysisMemoDeepSearchEvidence: "Deep Search results are reflected as additional evidence when available.",
     analysisMemoVariation: "The selected reference line is shown as faded numbered markers on the board.",
     analysisMemoPvCaution: "The reference line is one possible continuation, not a single answer.",
     analysisMemoSignalCaution: "BSI/ADI are internal reference signals, not final judgments.",
     analysisMemoNoLlM: "LLM commentary is not running yet.",
+    learningEventConfidence: "Confidence",
+    learningEventScore: "Selection score",
+    learningEventWinrateDelta: "Winrate shift",
+    learningEventScoreLeadDelta: "Score lead shift",
+    learningEventSources: "Evidence signals",
     tryPlayDisabled: "Try-play coming soon",
     tryPlayEnter: "Try play",
     tryPlayUndo: "Undo",
@@ -810,10 +893,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI 分析メモ",
     analysisMemoSelectCandidate: "検討候補を選択するとメモを表示します。",
     analysisMemoCandidate: "この手数は KataGo 出力上、検討対象として扱えます。",
+    analysisMemoLearningEvent: "この場面は複数の内部シグナルが重なったため検討候補に選ばれました。",
+    analysisMemoDeepSearchEvidence: "Deep Search 結果がある場合は追加根拠として反映しています。",
     analysisMemoVariation: "選択した参考図は碁盤上の半透明番号で表示されます。",
     analysisMemoPvCaution: "参考図は一つの可能性であり、単一の進行とは見なしません。",
     analysisMemoSignalCaution: "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
     analysisMemoNoLlM: "LLM の自然言語解説はまだ実行しません。",
+    learningEventConfidence: "信頼度",
+    learningEventScore: "選定スコア",
+    learningEventWinrateDelta: "勝率変化",
+    learningEventScoreLeadDelta: "地合い差の変化",
+    learningEventSources: "根拠シグナル",
     tryPlayDisabled: "試し打ちは準備中",
     tryPlayEnter: "試し打ち",
     tryPlayUndo: "戻す",
@@ -907,10 +997,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI 分析备忘",
     analysisMemoSelectCandidate: "选择复核候选后会显示备忘。",
     analysisMemoCandidate: "此手数可作为 KataGo 输出下的复核候选。",
+    analysisMemoLearningEvent: "该局面因多个内部信号重合而被选为复核候选。",
+    analysisMemoDeepSearchEvidence: "如有 Deep Search 结果，会作为追加依据纳入。",
     analysisMemoVariation: "所选参考图会以半透明编号标记显示在棋盘上。",
     analysisMemoPvCaution: "参考图只是一种可能，不应视为唯一进程。",
     analysisMemoSignalCaution: "BSI/ADI 是内部参考信号，并非最终判断。",
     analysisMemoNoLlM: "尚未运行 LLM 自然语言解说。",
+    learningEventConfidence: "置信度",
+    learningEventScore: "选择分数",
+    learningEventWinrateDelta: "胜率变化",
+    learningEventScoreLeadDelta: "目差变化",
+    learningEventSources: "依据信号",
     tryPlayDisabled: "试下功能准备中",
     tryPlayEnter: "试下",
     tryPlayUndo: "撤销",

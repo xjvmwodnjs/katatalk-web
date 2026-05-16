@@ -51,6 +51,10 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 - **실패:** 한 후보가 실패해도 job 을 failed 로 만들지 않고 해당 행만 `status: "failed"` + 짧은 `error` 코드/메시지. 전 후보 실패 시 `deepSearchResults.allFailed === true` 이어도 primary/multi 가 성공했다면 **job 은 completed** 유지. Deep 실패에 **추가 환불 없음**.
 - **저장:** `moveInfos` 전체·raw stdout·stderr 전문은 저장하지 않는다. `katago` 슬라이스는 multi-turn 과 유사한 요약만. `comparison` 에 `deepBestMove` / `plannedBestMoveStillTop` / `playedMoveRank` 만( **패착·악수·정답 라벨 없음** ). `top_mistakes`·LLM·해설 없음.
 
+### Analysis Learning Events v1
+
+`shared/analysisLearningEventsV1.ts` 는 BSI/ADI/Deep Search plan·result/`turnAnalyses`/`winrateTimelineV1` 을 조합해 최대 5개의 **핵심 검토 후보**를 deterministic 하게 고른다. 새 KataGo 호출·LLM 호출·`top_mistakes` 생성은 하지 않으며, `final_position` 은 제외한다. `buildAnalysisResultViewModel` 은 기존 결과에 `learningEventsV1` 이 있으면 사용하고, 없으면 ViewModel 안에서 `learningEvents` 를 만들어 후보 chip 입력에 우선 반영한다.
+
 ### 분석 결과 ViewModel v1 (`analysis-result-viewmodel-v1`)
 
 프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`(각 점에 **`shared/winratePerspectiveV1.ts`** 정규화: `katago_output_only`/`unverified`, 흑백 승률은 아직 null)·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`(코드 배열: UI 에서 `analysisResultI18n` 으로 번역) 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. 승률 차트는 **KataGo 출력 관점**만 표시하며 흑/백 토글 UI는 비활성. **raw winrate (hardening):** `typeof raw === "number"` 이고 `Number.isFinite` 일 때만 유효; 문자열·boolean·NaN·Infinity 는 `unverified`. 차트 축 라벨은 `displayLabelKey` → `translateWinrateDisplayLabelKey`. **`verified` 승격은 v1 에서 생성하지 않음** — 조건은 `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1`·샘플 검증 체크리스트는 **`docs/winrate-axis-verification.md`** (차트는 `moveSummary.played.winrate` 사용). 흑/백 변환 공식 후보는 코드 미적용(`WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1`). **LLM·top_mistakes 생성은 ViewModel 에 포함하지 않는다.**
