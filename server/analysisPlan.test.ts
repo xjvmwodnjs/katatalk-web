@@ -13,6 +13,9 @@ import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery
 
 const SAMPLE_SGF_PATH = path.join(import.meta.dirname, "..", "samples", "test.sgf");
 
+const LEARNING_EVENTS_SMOKE_SGF =
+  "(;FF[4]GM[1]SZ[19]KM[6.5];B[pd];W[dp];B[pp];W[dd];B[fq];W[cn];B[qf];W[dc];B[cf];W[fc];B[jj];W[qq];B[qd];W[dq];B[oc];W[co];B[pc];W[cp];B[qn];W[dn];B[jp])";
+
 function buildSgfWithNMoves(n: number, boardSize = 19): string {
   let s = `(;FF[4]GM[1]SZ[${boardSize}]KM[6.5]`;
   for (let i = 0; i < n; i++) {
@@ -84,6 +87,19 @@ describe("analysisPlan v1", () => {
     expect(t20?.reason).toBe("opening_sample");
     const t25 = turns.find(c => c.turnIndex === 25);
     expect(t25?.reason).toBe("final_position");
+  });
+
+  it("keeps the learning events smoke fixture turn 20 as a non-final candidate", () => {
+    const parsed = parseMinimalSgfForSmoke(LEARNING_EVENTS_SMOKE_SGF);
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    expect(plan.totalMoves).toBe(21);
+
+    const t20 = plan.candidateTurns.find(c => c.turnIndex === 20);
+    expect(t20?.reason).toBe("opening_sample");
+    expect(t20?.reason).not.toBe("final_position");
+
+    const t21 = plan.candidateTurns.find(c => c.turnIndex === 21);
+    expect(t21?.reason).toBe("final_position");
   });
 
   it("sliceMovesBeforeTurnIndex: turn N has movesBeforeCount N-1; turn 1 is empty", () => {
