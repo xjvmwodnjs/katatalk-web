@@ -254,6 +254,21 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+function embeddedLearningEvent(turnIndex: number, score = 50): Record<string, unknown> {
+  return {
+    id: `embedded-${turnIndex}`,
+    turnIndex,
+    playedMove: "Q16",
+    candidateMove: "D16",
+    labelKey: "ar_label_review_candidate",
+    eventType: "review_candidate",
+    confidence: "medium",
+    score,
+    signals: { bsiScore: 55 },
+    evidence: { source: ["embedded"] },
+  };
+}
+
 describe("buildAnalysisResultViewModel", () => {
   it("maps katago-worker-v1 and prefers deepSearchPlan candidates", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult());
@@ -392,5 +407,48 @@ describe("buildAnalysisResultViewModel", () => {
       game_info: { total_moves: 0, black_player: "", white_player: "", date: "", result: { ko: "" }, komi: 0 },
     });
     expect(vm.kind).toBe("katago-worker-v1");
+  });
+
+  it("rejects malformed embedded learningEventsV1 and falls back without crashing", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [{ ...embeddedLearningEvent(30), score: "90" }],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events.length).toBeGreaterThan(0);
+    expect(vm.learningEvents.events.every((e) => typeof e.score === "number")).toBe(true);
+    expect(vm.keyMoveCandidates.length).toBeGreaterThan(0);
+  });
+
+  it("normalizes valid embedded learningEventsV1 before using them", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [
+          embeddedLearningEvent(10, 20),
+          embeddedLearningEvent(20, 90),
+          embeddedLearningEvent(20, 80),
+          embeddedLearningEvent(30, 70),
+          embeddedLearningEvent(40, 60),
+          embeddedLearningEvent(50, 100),
+          embeddedLearningEvent(11, 50),
+          embeddedLearningEvent(12, 40),
+        ],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.learningEvents.events).toHaveLength(5);
+    expect(vm.learningEvents.events.map((e) => e.turnIndex)).toEqual([20, 30, 40, 11, 12]);
+    expect(new Set(vm.learningEvents.events.map((e) => e.turnIndex)).size).toBe(5);
+    expect(vm.learningEvents.events.every((e) => e.turnIndex !== 50)).toBe(true);
+    expect(vm.keyMoveCandidates[0]?.learningEvent?.evidence.source).toEqual(["embedded"]);
   });
 });

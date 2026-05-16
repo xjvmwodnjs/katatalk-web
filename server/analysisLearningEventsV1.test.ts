@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildAnalysisLearningEventsV1 } from "@shared/analysisLearningEventsV1";
+import {
+  buildAnalysisLearningEventsV1,
+  isAnalysisLearningEventsV1,
+  normalizeAnalysisLearningEventsV1,
+} from "@shared/analysisLearningEventsV1";
 
 const plan = {
   version: "analysis-plan-v1",
@@ -163,6 +167,21 @@ function deepResults(turnIndex: number, ok = true) {
   } as any;
 }
 
+function embeddedEvent(turnIndex: number, score = 50) {
+  return {
+    id: `embedded-${turnIndex}`,
+    turnIndex,
+    playedMove: "Q16",
+    candidateMove: "D16",
+    labelKey: "ar_label_review_candidate",
+    eventType: "review_candidate",
+    confidence: "medium",
+    score,
+    signals: { bsiScore: 55, deepSearchSelected: false },
+    evidence: { source: ["embedded"] },
+  };
+}
+
 describe("analysis learning events v1", () => {
   it("selects high BSI, high ADI, and Deep Search plan candidates", () => {
     const out = buildAnalysisLearningEventsV1({
@@ -238,5 +257,41 @@ describe("analysis learning events v1", () => {
     expect(new Set(out.events.map((e) => e.turnIndex)).size).toBe(out.events.length);
     expect(out.events.every((e) => e.turnIndex !== 99)).toBe(true);
     expect(buildAnalysisLearningEventsV1({}).events).toEqual([]);
+  });
+
+  it("rejects malformed embedded events with invalid scalar fields", () => {
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), score: "50" }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(Number.NaN) }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(Number.POSITIVE_INFINITY) }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), turnIndex: "1" }] })).toBe(false);
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), confidence: "certain" }] })).toBe(false);
+  });
+
+  it("rejects malformed embedded evidence and keeps valid embedded events", () => {
+    expect(isAnalysisLearningEventsV1({ version: "learning-events-v1", events: [{ ...embeddedEvent(1), evidence: { source: "embedded" } }] })).toBe(false);
+    const valid = { version: "learning-events-v1", events: [embeddedEvent(1)] };
+    expect(isAnalysisLearningEventsV1(valid)).toBe(true);
+  });
+
+  it("normalizes embedded events by score, dedupe, final position exclusion, and max five", () => {
+    const raw = {
+      version: "learning-events-v1",
+      events: [
+        embeddedEvent(1, 10),
+        embeddedEvent(2, 70),
+        embeddedEvent(2, 60),
+        embeddedEvent(3, 30),
+        embeddedEvent(4, 40),
+        embeddedEvent(5, 50),
+        embeddedEvent(6, 20),
+        embeddedEvent(99, 100),
+      ],
+    };
+    expect(isAnalysisLearningEventsV1(raw)).toBe(true);
+    const normalized = normalizeAnalysisLearningEventsV1(raw, { analysisPlan: plan, turnAnalyses: [turn(99)] });
+    expect(normalized.events).toHaveLength(5);
+    expect(normalized.events.map((e) => e.turnIndex)).toEqual([2, 5, 4, 3, 6]);
+    expect(new Set(normalized.events.map((e) => e.turnIndex)).size).toBe(5);
+    expect(normalized.events.every((e) => e.turnIndex !== 99)).toBe(true);
   });
 });

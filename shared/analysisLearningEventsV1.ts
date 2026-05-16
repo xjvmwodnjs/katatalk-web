@@ -73,12 +73,54 @@ type Candidate = {
   notes: Set<string>;
 };
 
+const LEARNING_EVENT_TYPES = new Set<AnalysisLearningEventTypeV1>([
+  "review_candidate",
+  "flow_shift_candidate",
+  "response_candidate",
+  "high_adi_candidate",
+  "high_bsi_candidate",
+  "deep_search_candidate",
+  "winrate_shift_candidate",
+  "score_lead_shift_candidate",
+]);
+
+const LEARNING_EVENT_CONFIDENCE = new Set<AnalysisLearningEventConfidenceV1>(["low", "medium", "high"]);
+
+const LEARNING_EVENT_LABEL_KEYS = new Set([
+  "ar_label_review_candidate",
+  "ar_label_flow_shift_candidate",
+  "ar_label_response_candidate",
+  "ar_label_high_adi_candidate",
+  "ar_label_high_bsi_candidate",
+  "ar_label_deep_search_candidate",
+]);
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
 function finiteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return finiteNumber(v) != null;
+}
+
+function isStringOrNull(v: unknown): v is string | null {
+  return v === null || typeof v === "string";
+}
+
+function isOptionalFiniteNumberOrNull(v: unknown): boolean {
+  return v === undefined || v === null || isFiniteNumber(v);
+}
+
+function isOptionalBoolean(v: unknown): boolean {
+  return v === undefined || typeof v === "boolean";
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
 
 function clampScore(v: number): number {
@@ -101,6 +143,47 @@ function isFinalPositionTurn(
     return true;
   }
   return turnAnalyses?.some((t) => t.turnIndex === turnIndex && "reason" in t && t.reason === "final_position") ?? false;
+}
+
+function isAnalysisLearningEventV1(v: unknown): v is AnalysisLearningEventV1 {
+  if (!isPlainObject(v)) {
+    return false;
+  }
+  if (typeof v.id !== "string" || !isFiniteNumber(v.turnIndex)) {
+    return false;
+  }
+  if (!isStringOrNull(v.playedMove) || !isStringOrNull(v.candidateMove)) {
+    return false;
+  }
+  if (typeof v.labelKey !== "string" || !LEARNING_EVENT_LABEL_KEYS.has(v.labelKey)) {
+    return false;
+  }
+  if (typeof v.eventType !== "string" || !LEARNING_EVENT_TYPES.has(v.eventType as AnalysisLearningEventTypeV1)) {
+    return false;
+  }
+  if (typeof v.confidence !== "string" || !LEARNING_EVENT_CONFIDENCE.has(v.confidence as AnalysisLearningEventConfidenceV1)) {
+    return false;
+  }
+  if (!isFiniteNumber(v.score) || !isPlainObject(v.signals) || !isPlainObject(v.evidence)) {
+    return false;
+  }
+  if (
+    !isOptionalFiniteNumberOrNull(v.signals.bsiScore) ||
+    !isOptionalFiniteNumberOrNull(v.signals.adiScore) ||
+    !isOptionalFiniteNumberOrNull(v.signals.winrateDelta) ||
+    !isOptionalFiniteNumberOrNull(v.signals.scoreLeadDelta) ||
+    !isOptionalBoolean(v.signals.deepSearchSelected) ||
+    !isOptionalBoolean(v.signals.deepSearchCompleted) ||
+    !isOptionalBoolean(v.signals.deepSearchChangedTop)
+  ) {
+    return false;
+  }
+  return (
+    isStringArray(v.evidence.source) &&
+    (v.evidence.pv === undefined || isStringArray(v.evidence.pv)) &&
+    (v.evidence.deepSearchPv === undefined || isStringArray(v.evidence.deepSearchPv)) &&
+    (v.evidence.notes === undefined || isStringArray(v.evidence.notes))
+  );
 }
 
 function okTurnAnalyses(turnAnalyses: TurnAnalysisEntryV1[] | undefined): TurnAnalysisEntrySuccessV1[] {
@@ -387,6 +470,48 @@ export function isAnalysisLearningEventsV1(v: unknown): v is AnalysisLearningEve
   return (
     isPlainObject(v) &&
     v.version === ANALYSIS_LEARNING_EVENTS_V1_VERSION &&
-    Array.isArray(v.events)
+    Array.isArray(v.events) &&
+    v.events.every(isAnalysisLearningEventV1)
   );
+}
+
+export function normalizeAnalysisLearningEventsV1(
+  value: AnalysisLearningEventsV1,
+  context?: Pick<BuildAnalysisLearningEventsV1Input, "analysisPlan" | "turnAnalyses">
+): AnalysisLearningEventsV1 {
+  const byTurn = new Map<number, AnalysisLearningEventV1>();
+  const sorted = [...value.events]
+    .filter((event) => !isFinalPositionTurn(event.turnIndex, context?.analysisPlan, context?.turnAnalyses))
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return a.turnIndex - b.turnIndex;
+    });
+
+  for (const event of sorted) {
+    if (byTurn.has(event.turnIndex)) {
+      continue;
+    }
+    byTurn.set(event.turnIndex, {
+      ...event,
+      turnIndex: Math.trunc(event.turnIndex),
+      score: clampScore(event.score),
+      signals: { ...event.signals },
+      evidence: {
+        source: [...event.evidence.source],
+        ...(event.evidence.pv ? { pv: [...event.evidence.pv] } : {}),
+        ...(event.evidence.deepSearchPv ? { deepSearchPv: [...event.evidence.deepSearchPv] } : {}),
+        ...(event.evidence.notes ? { notes: [...event.evidence.notes] } : {}),
+      },
+    });
+    if (byTurn.size >= 5) {
+      break;
+    }
+  }
+
+  return {
+    version: ANALYSIS_LEARNING_EVENTS_V1_VERSION,
+    events: Array.from(byTurn.values()),
+  };
 }

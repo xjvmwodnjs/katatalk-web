@@ -11,6 +11,7 @@ import type { DeepSearchResultsV1Result, DeepSearchSingleResultOkV1 } from "./de
 import {
   buildAnalysisLearningEventsV1,
   isAnalysisLearningEventsV1,
+  normalizeAnalysisLearningEventsV1,
   type AnalysisLearningEventV1,
   type AnalysisLearningEventsV1,
 } from "./analysisLearningEventsV1";
@@ -689,7 +690,9 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
     const multi = result.multiTurnAnalysis;
     const hasMulti = isPlainObject(multi) && typeof multi.attemptedCount === "number" && multi.attemptedCount > 0;
 
-    const embeddedLearningEvents = isAnalysisLearningEventsV1(result.learningEventsV1) ? result.learningEventsV1 : null;
+    const embeddedLearningEvents = isAnalysisLearningEventsV1(result.learningEventsV1)
+      ? normalizeAnalysisLearningEventsV1(result.learningEventsV1, { analysisPlan, turnAnalyses })
+      : null;
     const learningEvents =
       embeddedLearningEvents ??
       buildAnalysisLearningEventsV1({
