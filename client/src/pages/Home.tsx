@@ -23,6 +23,7 @@ import {
   parseStoredAnalysisJobResult,
 } from "@shared/analysisJob";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
+import { readAnalysisJobIdFromSearch } from "@/lib/analysisJobDeepLink";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import type { KatagoWorkerV1ResultData } from "@/components/KatagoWorkerV1ResultPanel";
@@ -63,6 +64,100 @@ export default function Home() {
   }, []);
 
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (authLoading) return;
+    const jobId = readAnalysisJobIdFromSearch(window.location.search);
+    if (!jobId) return;
+
+    let cancelled = false;
+    pollAbortRef.current = false;
+    setKatagoWorkerV1Result(null);
+    setJobProgress(0);
+    setJobStatus("queued");
+    setView("loading");
+
+    void (async () => {
+      try {
+        if (!isAuthenticated) {
+          throw new Error(
+            lang === "ko" ? "결과를 보려면 로그인이 필요합니다." :
+            lang === "en" ? "Please log in to view this analysis result." :
+            lang === "zh" ? "请登录后查看分析结果。" : "解析結果を見るにはログインが必要です。"
+          );
+        }
+
+        const deadline = Date.now() + POLL_MAX_MS;
+        while (!cancelled && !pollAbortRef.current && Date.now() < deadline) {
+          const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
+            credentials: "include",
+            headers: { ...(await getAnalyzeAuthHeaders()) },
+          });
+          const pollBody = (await pollRes.json().catch(() => ({}))) as
+            | AnalysisJobGetResponse
+            | { success?: false; message?: string };
+
+          if (!pollRes.ok || pollBody.success === false) {
+            const msg =
+              "message" in pollBody && typeof pollBody.message === "string"
+                ? pollBody.message
+                : `Job status request failed (${pollRes.status})`;
+            throw new Error(msg);
+          }
+
+          const job = pollBody as AnalysisJobGetResponse;
+          const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
+          setJobStatus(normalizedStatus);
+          setJobProgress(typeof job.progress === "number" ? job.progress : 0);
+
+          if (normalizedStatus === "completed") {
+            const parsed = parseStoredAnalysisJobResult(job.data);
+            if (parsed == null) {
+              throw new Error("Analysis finished but no data was returned.");
+            }
+            if (isKatagoWorkerV1ResultPayload(parsed)) {
+              setKatagoWorkerV1Result(parsed as KatagoWorkerV1ResultData);
+            } else {
+              setKatagoWorkerV1Result(null);
+              setReport(parsed as AnalysisReport);
+            }
+            setView("result");
+            setJobStatus("idle");
+            return;
+          }
+
+          if (normalizedStatus === "failed") {
+            throw new Error(job.error?.message ?? "Analysis job failed.");
+          }
+
+          await sleep(POLL_INTERVAL_MS);
+        }
+
+        if (!cancelled && !pollAbortRef.current) {
+          throw new Error(
+            lang === "ko" ? "분석 작업 시간이 초과되었습니다." :
+            lang === "en" ? "Analysis timed out. Please try again." :
+            lang === "zh" ? "分析超时，请重试。" : "分析がタイムアウトしました。もう一度お試しください。"
+          );
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        setView("upload");
+        setJobStatus("idle");
+        setJobProgress(0);
+        toast.error(
+          lang === "ko" ? "분석 결과를 불러오지 못했습니다." :
+          lang === "en" ? "Could not load the analysis result." :
+          lang === "zh" ? "无法加载分析结果。" : "解析結果を読み込めませんでした。",
+          { description: error.message }
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, isAuthenticated, lang]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

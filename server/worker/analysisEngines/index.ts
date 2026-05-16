@@ -29,6 +29,7 @@ export {
 export {
   assertKatagoPathsConfiguredOrThrow,
   getAnalysisEngineName,
+  readKatagoMaxVisitsFrom,
   readKatagoMaxVisits,
   readKatagoTimeoutMs,
   readKatagoMultiTurnMaxFrom,
