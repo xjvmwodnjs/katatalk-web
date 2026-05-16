@@ -45,8 +45,8 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 - `B+2.5`, `W+2.5`: `resultType="points"`, `margin=2.5`
 - `B+T`, `W+T`: `resultType="time"`
 - `B+F`, `W+F`: `resultType="forfeit"`
-- `0`, `Draw`, `Jigo`: `resultType="draw"`, winner/loser 없음
-- `RE[]`가 없거나 해석할 수 없으면 `resultType="unknown"`
+- `0`, `Draw`, `Jigo`: `resultType="draw"`, winner/loser 없음, `margin=null`
+- `RE[]`가 없거나 해석할 수 없으면 `resultType="unknown"`, winner/loser 없음, `margin=null`
 
 원문은 `rawResult`에 보존하되, secret이나 path를 포함하지 않는다.
 
@@ -54,7 +54,7 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 
 승자가 `B`이면 패자는 `W`, 승자가 `W`이면 패자는 `B`다.
 
-무승부 또는 unknown 결과에서는 `winnerColor=null`, `loserColor=null`로 둔다. 결과 suffix가 unknown이어도 `B+...` 또는 `W+...` 형태라면 winner/loser color는 계산할 수 있다.
+무승부 또는 unknown 결과에서는 `winnerColor=null`, `loserColor=null`로 둔다. v1에서는 malformed `B+...` 또는 `W+...` suffix에서도 winner/loser를 추론하지 않는다.
 
 ## Decisive Move 정책
 
@@ -93,6 +93,8 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 - `ProductReviewMoveV1`: 쌍방 학습/검토 후보 3~5개를 고르는 제품용 view model 후보
 
 Product Events는 `learningEventsV1`의 label을 그대로 사용자 문구로 노출하지 않는다. 반드시 안전한 제품 label과 explanation policy를 거친다.
+
+현재 shared schema의 label 상수는 UI 미연결 테스트용 안전 label이다. UI 연결 전에는 i18n `labelKey` 기반으로 분리해 raw label이 직접 노출되지 않도록 한다.
 
 ## Explanation Planner와 LLM Commentary 순서
 

@@ -34,10 +34,11 @@ describe("analysis product events v1", () => {
       winnerColor: null,
       loserColor: null,
       resultType: "draw",
-      margin: 0,
+      margin: null,
       rawResult: "0",
     });
     expect(parseProductGameResultV1FromSgf("(;FF[4]GM[1]SZ[19]RE[Draw])").resultType).toBe("draw");
+    expect(parseProductGameResultV1FromSgf("(;FF[4]GM[1]SZ[19]RE[Jigo])").resultType).toBe("draw");
   });
 
   it("returns unknown when RE is missing", () => {
@@ -53,6 +54,110 @@ describe("analysis product events v1", () => {
   it("computes loserColor from winnerColor", () => {
     expect(parseProductGameResultV1FromSgf("(;RE[B+2.5])").loserColor).toBe("W");
     expect(parseProductGameResultV1FromSgf("(;RE[W+R])").loserColor).toBe("B");
+  });
+
+  it("strictly parses point margins and non-point suffixes", () => {
+    expect(parseProductGameResultV1FromSgf("(;RE[B+2.5])")).toMatchObject({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "points",
+      margin: 2.5,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[W+2,5])")).toMatchObject({
+      winnerColor: "W",
+      loserColor: "B",
+      resultType: "points",
+      margin: 2.5,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[B+T])")).toMatchObject({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "time",
+      margin: null,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[W+F])")).toMatchObject({
+      winnerColor: "W",
+      loserColor: "B",
+      resultType: "forfeit",
+      margin: null,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[B+2.5abc])")).toMatchObject({
+      winnerColor: null,
+      loserColor: null,
+      resultType: "unknown",
+      margin: null,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[B+-0.5])")).toMatchObject({
+      winnerColor: null,
+      loserColor: null,
+      resultType: "unknown",
+      margin: null,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[B+])")).toMatchObject({
+      winnerColor: null,
+      loserColor: null,
+      resultType: "unknown",
+      margin: null,
+    });
+  });
+
+  it("rejects inconsistent game result shapes", () => {
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "draw",
+      margin: null,
+      rawResult: "0",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "unknown",
+      margin: null,
+      rawResult: "B+?",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "B",
+      resultType: "resign",
+      margin: null,
+      rawResult: "B+R",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "points",
+      margin: null,
+      rawResult: "B+2.5",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "points",
+      margin: 0,
+      rawResult: "B+0",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "resign",
+      margin: 1,
+      rawResult: "B+R",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "time",
+      margin: 1,
+      rawResult: "B+T",
+    })).toBe(false);
+    expect(isProductGameResultV1({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "forfeit",
+      margin: 1,
+      rawResult: "B+F",
+    })).toBe(false);
   });
 
   it("guards product event schemas", () => {
@@ -72,6 +177,16 @@ describe("analysis product events v1", () => {
     };
     expect(isProductDecisiveMoveV1(decisive)).toBe(true);
     expect(isProductDecisiveMoveV1({ ...decisive, turnIndex: 1.5 })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, scoreLoss: -1 })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, scoreLoss: Number.NaN })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, scoreLoss: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, scoreLoss: "5" })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: -0.1 })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: 1.1 })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: Number.NaN })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: "0.1" })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: [] } })).toBe(false);
 
     const review = {
       ...decisive,

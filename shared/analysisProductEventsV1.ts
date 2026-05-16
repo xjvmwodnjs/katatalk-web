@@ -41,7 +41,9 @@ export type ProductDecisiveMoveV1 = {
   player: ProductColorV1;
   playedMove: string | null;
   recommendedMove: string | null;
+  /** 집 차이 단위. null 또는 0 이상 finite number. */
   scoreLoss: number | null;
+  /** 0..1 비율 단위. null 또는 0 이상 1 이하 finite number. */
   winrateLoss: number | null;
   confidence: ProductEventConfidenceV1;
   sourceEventId: string | null;
@@ -61,7 +63,9 @@ export type ProductReviewMoveV1 = {
   category: ProductReviewMoveCategoryV1;
   playedMove: string | null;
   recommendedMove: string | null;
+  /** 집 차이 단위. null 또는 0 이상 finite number. */
   scoreLoss: number | null;
+  /** 0..1 비율 단위. null 또는 0 이상 1 이하 finite number. */
   winrateLoss: number | null;
   confidence: ProductEventConfidenceV1;
   sourceEventId: string | null;
@@ -132,6 +136,14 @@ function isFiniteNumberOrNull(v: unknown): v is number | null {
   return v === null || (typeof v === "number" && Number.isFinite(v));
 }
 
+function isNonNegativeFiniteNumberOrNull(v: unknown): v is number | null {
+  return v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
+}
+
+function isWinrateLossOrNull(v: unknown): v is number | null {
+  return v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1);
+}
+
 function isNonNegativeInteger(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
 }
@@ -141,7 +153,11 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 function isEvidenceSourceArray(v: unknown): v is ProductEventEvidenceSourceV1[] {
-  return Array.isArray(v) && v.every((x) => typeof x === "string" && EVIDENCE_SOURCES.has(x as ProductEventEvidenceSourceV1));
+  return (
+    Array.isArray(v) &&
+    v.length > 0 &&
+    v.every((x) => typeof x === "string" && EVIDENCE_SOURCES.has(x as ProductEventEvidenceSourceV1))
+  );
 }
 
 function readSgfBracketValue(s: string, bracketStart: number): { text: string; end: number } | null {
@@ -229,7 +245,7 @@ export function parseProductGameResultV1(rawResult: string | null | undefined): 
   const normalized = raw.replace(/\s+/g, "");
   const lower = normalized.toLowerCase();
   if (lower === "0" || lower === "draw" || lower === "jigo") {
-    return { winnerColor: null, loserColor: null, resultType: "draw", margin: 0, rawResult: raw };
+    return { winnerColor: null, loserColor: null, resultType: "draw", margin: null, rawResult: raw };
   }
 
   const match = normalized.match(/^([BW])\+(.+)$/i);
@@ -240,8 +256,12 @@ export function parseProductGameResultV1(rawResult: string | null | undefined): 
   const winnerColor = match[1]!.toUpperCase() as ProductColorV1;
   const loserColor = oppositeColor(winnerColor);
   const suffix = match[2]!.toLowerCase();
-  const pointMargin = Number.parseFloat(suffix.replace(",", "."));
-  if (Number.isFinite(pointMargin)) {
+  const pointSuffix = suffix.replace(",", ".");
+  if (/^\d+(?:\.\d+)?$/.test(pointSuffix)) {
+    const pointMargin = Number(pointSuffix);
+    if (pointMargin <= 0) {
+      return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: raw };
+    }
     return { winnerColor, loserColor, resultType: "points", margin: pointMargin, rawResult: raw };
   }
   if (suffix === "r" || suffix === "resign" || suffix === "resignation") {
@@ -253,7 +273,7 @@ export function parseProductGameResultV1(rawResult: string | null | undefined): 
   if (suffix === "f" || suffix === "forfeit") {
     return { winnerColor, loserColor, resultType: "forfeit", margin: null, rawResult: raw };
   }
-  return { winnerColor, loserColor, resultType: "unknown", margin: null, rawResult: raw };
+  return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: raw };
 }
 
 export function parseProductGameResultV1FromSgf(sgf: string): ProductGameResultV1 {
@@ -264,14 +284,34 @@ export function isProductGameResultV1(v: unknown): v is ProductGameResultV1 {
   if (!isPlainObject(v)) {
     return false;
   }
-  return (
-    (v.winnerColor === null || isColor(v.winnerColor)) &&
-    (v.loserColor === null || isColor(v.loserColor)) &&
-    typeof v.resultType === "string" &&
-    RESULT_TYPES.has(v.resultType as ProductGameResultTypeV1) &&
-    isFiniteNumberOrNull(v.margin) &&
-    isStringOrNull(v.rawResult)
-  );
+  if (
+    !(v.winnerColor === null || isColor(v.winnerColor)) ||
+    !(v.loserColor === null || isColor(v.loserColor)) ||
+    typeof v.resultType !== "string" ||
+    !RESULT_TYPES.has(v.resultType as ProductGameResultTypeV1) ||
+    !isFiniteNumberOrNull(v.margin) ||
+    !isStringOrNull(v.rawResult)
+  ) {
+    return false;
+  }
+
+  if (v.winnerColor != null && v.loserColor != null && v.winnerColor === v.loserColor) {
+    return false;
+  }
+
+  if (v.resultType === "draw" || v.resultType === "unknown") {
+    return v.winnerColor === null && v.loserColor === null && v.margin === null;
+  }
+
+  if (v.winnerColor == null || v.loserColor == null) {
+    return false;
+  }
+
+  if (v.resultType === "points") {
+    return typeof v.margin === "number" && Number.isFinite(v.margin) && v.margin > 0;
+  }
+
+  return v.margin === null;
 }
 
 export function isProductEventEvidenceV1(v: unknown): v is ProductEventEvidenceV1 {
@@ -291,8 +331,8 @@ function hasProductMoveFields(v: Record<string, unknown>): boolean {
     isColor(v.player) &&
     isStringOrNull(v.playedMove) &&
     isStringOrNull(v.recommendedMove) &&
-    isFiniteNumberOrNull(v.scoreLoss) &&
-    isFiniteNumberOrNull(v.winrateLoss) &&
+    isNonNegativeFiniteNumberOrNull(v.scoreLoss) &&
+    isWinrateLossOrNull(v.winrateLoss) &&
     typeof v.confidence === "string" &&
     CONFIDENCE.has(v.confidence as ProductEventConfidenceV1) &&
     isStringOrNull(v.sourceEventId) &&
