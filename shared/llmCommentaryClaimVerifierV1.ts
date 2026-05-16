@@ -24,7 +24,7 @@ export type LlmCommentaryClaimVerifierResultV1 =
 
 const SUPPORTED_BOARD_SIZES = new Set([9, 13, 19]);
 const CLAIM_COORDINATE_RE = /(?<![A-Z])[A-HJ-T](?:[1-9]|1[0-9])(?![A-Z0-9])/gi;
-const I_COLUMN_COORDINATE_RE = /(?<![A-Z])I(?:[1-9]|1[0-9])(?![A-Z0-9])/gi;
+const I_COLUMN_COORDINATE_RE = /(?<![A-Z])I(?:[1-9]|1[0-9])(?![A-Z0-9])/i;
 const SCORE_CLAIM_RE = /(\d+(?:\.\d+)?)\s*(?:집|points?)/gi;
 const PERCENT_CLAIM_RE = /(\d+(?:\.\d+)?)\s*(?:%|퍼센트|percent)/gi;
 const TIMELINE_LOSS_RE = /(?:timeline|타임라인|승률\s*변동|변동)[\s\S]{0,24}(?:손실|잃|하락|떨어|감소)|(?:손실|잃|하락|떨어|감소)[\s\S]{0,24}(?:timeline|타임라인|승률\s*변동|변동)/i;

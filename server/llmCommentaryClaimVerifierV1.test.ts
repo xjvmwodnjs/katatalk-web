@@ -89,6 +89,20 @@ describe("llm commentary claim verifier v1", () => {
     expect(result.issues).toContain("unknown_coordinate_claim");
   });
 
+  it("rejects I-column coordinates on repeated verifier calls", () => {
+    const args = {
+      plan: basePlan,
+      boardSize: 19,
+      output: { ...safeOutput, body: "I9도 비교합니다." },
+    };
+    const first = verifyLlmCommentaryClaimsV1(args);
+    const second = verifyLlmCommentaryClaimsV1(args);
+    expect(first.ok).toBe(false);
+    expect(second.ok).toBe(false);
+    expect(first.issues).toContain("unknown_coordinate_claim");
+    expect(second.issues).toContain("unknown_coordinate_claim");
+  });
+
   it("rejects coordinates not present in the plan", () => {
     const result = verifyLlmCommentaryClaimsV1({
       plan: basePlan,
