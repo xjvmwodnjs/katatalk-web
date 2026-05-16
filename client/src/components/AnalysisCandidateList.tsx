@@ -47,7 +47,13 @@ export default function AnalysisCandidateList({
             const sel = selectedTurnIndex === c.turnIndex;
             const candidateSelected = selectedCandidateTurnIndex === c.turnIndex;
             const hasVariation = variationTurnIndexes?.has(c.turnIndex) ?? false;
-            const chipPrefix = c.learningEvent ? translateLearningEventChipPrefix(c.learningEvent.eventType, uiLang) : null;
+            const chipPrefix = c.productRole === "decisive"
+              ? "결정"
+              : c.productRole === "review"
+                ? "검토"
+                : c.learningEvent
+                  ? translateLearningEventChipPrefix(c.learningEvent.eventType, uiLang)
+                  : null;
             const chipMove = c.learningEvent?.candidateMove ?? c.playedMove;
             return (
               <button

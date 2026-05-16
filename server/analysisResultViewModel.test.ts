@@ -18,6 +18,8 @@ const ALLOWED_LABEL_KEYS = new Set([
   "ar_label_high_adi_candidate",
   "ar_label_high_bsi_candidate",
   "ar_label_deep_search_candidate",
+  "ar_label_decisive_scene_candidate",
+  "ar_label_product_review_candidate",
 ]);
 
 function assertAllowedLabelKeys(vm: { keyMoveCandidates: { labelKey: string }[] }) {
@@ -39,6 +41,7 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
       result: { ko: "", en: "", zh: "", ja: "" },
       komi: 6.5,
     },
+    sgf_content: "(;FF[4]GM[1]SZ[19]RE[W+R];B[pd];W[dd])",
     analysisPlan: {
       version: "analysis-plan-v1",
       totalMoves: 50,
@@ -270,7 +273,7 @@ function embeddedLearningEvent(turnIndex: number, score = 50): Record<string, un
 }
 
 describe("buildAnalysisResultViewModel", () => {
-  it("maps katago-worker-v1 and prefers deepSearchPlan candidates", () => {
+  it("maps katago-worker-v1 and prefers product review candidates when available", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult());
     expect(vm.kind).toBe("katago-worker-v1");
     if (vm.kind !== "katago-worker-v1") {
@@ -280,15 +283,72 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.keyMoveCandidates.length).toBeGreaterThanOrEqual(1);
     expect(vm.keyMoveCandidates[0]!.turnIndex).toBe(10);
     expect(vm.learningEvents.events.length).toBeGreaterThanOrEqual(1);
-    expect(vm.keyMoveCandidates[0]!.learningEvent?.turnIndex).toBe(10);
-    expect(vm.keyMoveCandidates[0]!.deepSearchSelected).toBe(true);
+    expect(vm.keyMoveCandidates[0]!.productRole).toBe("decisive");
+    expect(vm.keyMoveCandidates[0]!.deepSearchSelected).toBe(false);
     expect(vm.keyMoveCandidates[0]!.deepSearchCompleted).toBe(false);
+    expect(vm.productReviewV1?.version).toBe("product-review-v1");
     expect(vm.graph.winrateSeries.some((p) => p.turnIndex === 10)).toBe(true);
     expect(vm.graph.winrateSeries.every((p) => p.displayPerspective === "katago_output")).toBe(true);
     assertAllowedLabelKeys(vm);
     const pv = vm.variationPreview.find((v) => v.turnIndex === 10);
     expect(pv?.source).toBe("multi-turn");
     expect(pv?.pv.length).toBeGreaterThan(0);
+  });
+
+  it("builds deterministic productReviewV1 with game result, decisive move, review moves, and explanation plans", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult());
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.productReviewV1).toMatchObject({
+      version: "product-review-v1",
+      source: "deterministic-product-events-v1",
+      gameResult: { winnerColor: "W", loserColor: "B", resultType: "resign" },
+    });
+    expect(vm.productReviewV1?.decisiveMove?.turnIndex).toBe(10);
+    expect(vm.productReviewV1?.reviewMoves.some((move) => move.turnIndex === 10)).toBe(false);
+    expect(vm.productReviewV1?.reviewMoves.length).toBeGreaterThan(0);
+    expect(vm.productReviewV1?.explanationPlans.length).toBe(
+      (vm.productReviewV1?.decisiveMove ? 1 : 0) + (vm.productReviewV1?.reviewMoves.length ?? 0)
+    );
+    expect(vm.keyMoveCandidates[0]?.productRole).toBe("decisive");
+    expect(vm.keyMoveCandidates[0]?.labelKey).toBe("ar_label_decisive_scene_candidate");
+  });
+
+  it("keeps decisiveMove null when game result has no loser color", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      sgf_content: "(;FF[4]GM[1]SZ[19]RE[0];B[pd];W[dd])",
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.productReviewV1?.gameResult).toMatchObject({ winnerColor: null, loserColor: null, resultType: "draw" });
+    expect(vm.productReviewV1?.decisiveMove).toBeNull();
+    expect(vm.productReviewV1?.reviewMoves.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to learningEvents UI candidates when product review has no product moves", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      sgf_content: "(;FF[4]GM[1]SZ[19];B[pd];W[dd])",
+      turnAnalyses: [],
+      bsiV1: { ...(baseKatagoResult().bsiV1 as BsiV1Result), signals: [] },
+      adiV1: { ...(baseKatagoResult().adiV1 as AdiV1Result), signals: [] },
+      deepSearchPlan: { ...(baseKatagoResult().deepSearchPlan as DeepSearchPlanV1Result), candidates: [], candidateCount: 0 },
+      deepSearchResults: { ...(baseKatagoResult().deepSearchResults as DeepSearchResultsV1Result), results: [] },
+      learningEventsV1: {
+        version: "learning-events-v1",
+        events: [embeddedLearningEvent(10, 80)],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.productReviewV1).toBeNull();
+    expect(vm.keyMoveCandidates[0]?.learningEvent?.turnIndex).toBe(10);
+    expect(vm.keyMoveCandidates[0]?.productRole).toBeUndefined();
   });
 
   it("excludes final_position turns from keyMoveCandidates", () => {
@@ -469,6 +529,6 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.learningEvents.events.map((e) => e.turnIndex)).toEqual([20, 30, 40, 11, 12]);
     expect(new Set(vm.learningEvents.events.map((e) => e.turnIndex)).size).toBe(5);
     expect(vm.learningEvents.events.every((e) => e.turnIndex !== 50)).toBe(true);
-    expect(vm.keyMoveCandidates[0]?.learningEvent?.evidence.source).toEqual(["embedded"]);
+    expect(vm.learningEvents.events[0]?.evidence.source).toEqual(["embedded"]);
   });
 });

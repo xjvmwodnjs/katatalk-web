@@ -249,7 +249,7 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     setCandidateIdentity(candidate, {
       player,
       playedMove: turn.playedMove,
-      recommendedMove: turn.status === "ok" ? turn.comparisonReady.bestMove : null,
+      recommendedMove: turn.status === "ok" ? turn.comparisonReady?.bestMove ?? null : null,
     });
     if (turn.reason === "final_position") {
       candidate.finalPosition = true;
