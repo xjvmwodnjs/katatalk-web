@@ -60,6 +60,18 @@ describe("winrateTimelineConfig", () => {
     expect(readWinrateTimelineEnabledFrom({})).toBe(false);
   });
 
+  it("reads explicit false and keeps invalid values disabled", () => {
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "false" })).toBe(false);
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "0" })).toBe(false);
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "off" })).toBe(false);
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "invalid" })).toBe(false);
+  });
+
+  it("reads explicit true variants", () => {
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "true" })).toBe(true);
+    expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "1" })).toBe(true);
+  });
+
   it("maxVisits defaults to 200", () => {
     expect(readWinrateTimelineVisitsFrom({})).toBe(200);
   });

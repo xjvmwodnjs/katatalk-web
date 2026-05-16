@@ -45,6 +45,14 @@ export function validateSgfText(raw: string): SgfValidationResult {
     };
   }
 
+  if (parsed.warnings.some((w) => w.code === "setup_after_move_unsupported")) {
+    return {
+      ok: false,
+      message:
+        "Invalid SGF: AB/AW/AE setup stones after the first move are not supported. Put setup stones before the first move.",
+    };
+  }
+
   if (parsed.moves.length === 0) {
     return {
       ok: false,

@@ -95,6 +95,13 @@
 4. **`top_mistakes`** 가 **빈 배열 `[]`** 인지 확인(선정 로직 미구현 상태 유지).
 5. **자연어 해설·LLM 전용 필드가 새로 생성되지 않는지** — `algorithmStage.notYetImplemented` 에 `llm_commentary` 등만 있고, 운영 결과에 **해설 텍스트 파이프라인 출력이 없는지** 샘플 1건으로 육안 확인.
 
+### 결과 화면 수동 smoke
+
+1. completed job id를 준비한다.
+2. 로그인된 같은 사용자 세션에서 `/?jobId=<analysisJobId>` 또는 `/?analysisJobId=<analysisJobId>` 로 접속한다.
+3. 기존 `GET /api/analyze/:jobId` owner check를 통과한 경우에만 결과 화면이 표시되는지 확인한다.
+4. viewport `390x844`, `430x932`, `768x1024`, `1440x900` 에서 board, winrate graph, learningEvents 후보 chip, AI 메모, PV overlay, try-play local 동작을 확인한다.
+
 ### Deep Search **ON** 시 주의 (GPU Worker · 소규모만)
 
 - **Railway/일반 CPU 프로덕션에서는 `true` 금지 권장.** 부하·지연·비용 급증.

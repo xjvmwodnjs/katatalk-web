@@ -1,6 +1,7 @@
 import { config as loadDotenv } from "dotenv";
 
-loadDotenv({ override: process.env.NODE_ENV !== "production" });
+// Explicit shell/service env must win over .env during local smoke runs.
+loadDotenv({ override: false });
 
 void import("./analysisWorkerLoop")
   .then(({ startAnalysisWorkerMain }) => startAnalysisWorkerMain())

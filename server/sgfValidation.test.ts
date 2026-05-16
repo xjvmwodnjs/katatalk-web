@@ -65,12 +65,14 @@ describe("validateSgfText", () => {
   });
 
   it("accepts initial setup stones when a real mainline move exists", () => {
-    expect(validateSgfText("(;SZ[19]AB[pd][dd];W[qq])")).toEqual({ ok: true });
+    expect(validateSgfText("(;SZ[19]AB[pd][dd]AW[pp]AE[dd];W[qq])")).toEqual({ ok: true });
   });
 
-  it("keeps after-move setup rejection in the parser/KataGo stage, not upload validation", () => {
+  it("rejects after-move setup stones before enqueue", () => {
     const sgf = "(;SZ[19];B[pd];AW[dd])";
-    expect(validateSgfText(sgf)).toEqual({ ok: true });
+    const r = validateSgfText(sgf);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/AB\/AW\/AE|setup stones/i);
     try {
       parseSgfForKatagoV1(sgf);
       throw new Error("expected failure");
@@ -78,6 +80,11 @@ describe("validateSgfText", () => {
       expect(e).toBeInstanceOf(SgfKatagoParseError);
       expect((e as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_SETUP_STONES");
     }
+  });
+
+  it("does not treat setup-looking comment text as setup stones", () => {
+    expect(validateSgfText("(;SZ[19]C[AB[aa] AW[bb] AE[cc]];B[pd])")).toEqual({ ok: true });
+    expect(validateSgfText("(;SZ[19]C[escaped \\] text AB[aa\\] AW[bb\\]];B[pd])")).toEqual({ ok: true });
   });
 
   it("accepts pass moves", () => {

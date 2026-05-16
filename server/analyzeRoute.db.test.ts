@@ -370,6 +370,23 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
   });
 
+  it("POST rejects after-move setup stones before credit spend/enqueue", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob(["(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"], { type: "application/octet-stream" }), "late-setup.sgf");
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { success: boolean; message?: string };
+    expect(body.success).toBe(false);
+    expect(body.message).toMatch(/AB\/AW\/AE|setup stones/i);
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
   it("POST inserts is_mock=false when ANALYSIS_ENGINE=katago and ANALYSIS_WORKER_MODE=external", async () => {
     process.env.ANALYSIS_ENGINE = "katago";
     process.env.ANALYSIS_WORKER_MODE = "external";
