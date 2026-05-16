@@ -2,6 +2,8 @@
 // Basic SGF text validation (upload guardrails; not a full parser)
 // =============================================================
 
+import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
+
 export type SgfValidationResult = { ok: true } | { ok: false; message: string };
 
 /**
@@ -27,18 +29,23 @@ export function validateSgfText(raw: string): SgfValidationResult {
     };
   }
 
-  const hasFf = /\bFF\[/i.test(text);
-  const hasGm = /\bGM\[/i.test(text);
-  if (!hasFf && !hasGm) {
+  const parsed = extractMainlineBwMoves(text);
+  if (parsed.warnings.some((w) => w.code === "no_root")) {
     return {
       ok: false,
-      message:
-        "Invalid SGF: the file must contain an FF (file format) or GM (game type) property, for example FF[4] or GM[1].",
+      message: "Invalid SGF: the file must contain an SGF root node like '(;'.",
     };
   }
 
-  const hasMove = /\b[BW]\[[^\]]*\]/i.test(text);
-  if (!hasMove) {
+  const unsupportedGm = parsed.warnings.find((w) => w.code === "unsupported_game_type");
+  if (unsupportedGm) {
+    return {
+      ok: false,
+      message: `Invalid SGF: unsupported game type GM[${String(unsupportedGm.params?.gm ?? "?")}]. Only GM[1] Go records are supported.`,
+    };
+  }
+
+  if (parsed.moves.length === 0) {
     return {
       ok: false,
       message:
