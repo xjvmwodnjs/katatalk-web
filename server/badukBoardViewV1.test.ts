@@ -80,12 +80,54 @@ describe("badukBoardViewV1 helpers", () => {
       candidates: [],
       variationPreview: [selectedVariation],
       selectedVariation,
+      overlayMode: "variation-review",
       pvStartColor: "W",
     });
     expect(ghosts.map((g) => g.gtp)).toEqual(["C6", "D5"]);
     expect(ghosts.map((g) => g.order)).toEqual([2, 4]);
     expect(ghosts.map((g) => g.color)).toEqual(["B", "B"]);
     expect(ghosts.every((g) => g.kind === "pv")).toBe(true);
+  });
+
+  it("candidate-selected mode does not create candidate or PV reference ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [
+        {
+          turnIndex: 3,
+          player: "B",
+          labelKey: "candidate_review",
+          playedMove: "pp",
+          bestMove: "C6",
+          bsiScore: null,
+          adiScore: null,
+          deepSearchSelected: false,
+          deepSearchCompleted: false,
+          reasons: [],
+        },
+      ],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: "C6", pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "candidate-selected",
+    });
+    expect(ghosts).toEqual([]);
+  });
+
+  it("mainline mode never falls back to PV reference ghosts", () => {
+    const state = buildSgfPlaybackStateV1({ sgfText: minimalSgf19, selectedTurnIndex: 3 });
+    const occupied = state.stones.map((s) => `${s.x},${s.y}`);
+    const ghosts = collectBadukBoardGhostMarkersV1({
+      boardSize: 19,
+      occupiedKeys: occupied,
+      selectedTurnIndex: 3,
+      candidates: [],
+      variationPreview: [{ turnIndex: 3, playedMove: "pp", bestMove: null, pv: ["C6"], source: "multi-turn" }],
+      overlayMode: "mainline",
+    });
+    expect(ghosts).toEqual([]);
   });
 
   it("empty selected variation falls back to mainline candidate ghosts", () => {

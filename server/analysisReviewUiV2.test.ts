@@ -5,6 +5,7 @@ import {
   displayableVariationTurnIndexesV2,
   canPlaceTryPlayStoneV3,
   candidateSelectedStateV3,
+  compactCandidateLimitV3,
   getRenderableVariationMovesV2,
   hasDisplayableVariationPvV2,
   hasRenderableVariationOverlayV2,
@@ -126,5 +127,9 @@ describe("analysisReviewUiV2 helpers", () => {
   it("blocks try-play entry for placeholder board states", () => {
     expect(canEnterTryPlayModeV3(false)).toBe(true);
     expect(canEnterTryPlayModeV3(true)).toBe(false);
+  });
+
+  it("keeps mobile candidate chips compact", () => {
+    expect(compactCandidateLimitV3()).toBe(5);
   });
 });

@@ -71,12 +71,12 @@ export default function AnalysisWinratePanel({
 
   if (pts.length === 0) {
     return (
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="text-lg font-bold text-amber-100" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+      <section className="mb-3 min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
+        <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <h2 className="text-base font-bold text-amber-100 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
             {t.winrateTitle}
           </h2>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             <button
               type="button"
               onClick={onToggleCollapsed}
@@ -99,12 +99,12 @@ export default function AnalysisWinratePanel({
   }
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
-        <h2 className="text-lg font-bold text-amber-100" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+    <section className="mb-3 min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <h2 className="text-base font-bold text-amber-100 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
           {t.winrateTitle}
         </h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           <button
             type="button"
             onClick={onToggleCollapsed}
@@ -128,8 +128,8 @@ export default function AnalysisWinratePanel({
             <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
           ) : null}
           <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
-          <div className="overflow-x-auto">
-        <svg viewBox="0 0 560 200" className="w-full max-w-3xl h-48 select-none" role="img" aria-label={winrateYAxisLabel}>
+          <div className="min-w-0 overflow-hidden">
+        <svg viewBox="0 0 560 200" className="h-36 w-full max-w-full select-none sm:h-48" role="img" aria-label={winrateYAxisLabel}>
           <rect x="0" y="0" width="560" height="200" fill="rgba(0,0,0,0.2)" rx="8" />
           {[0, 25, 50, 75, 100].map((pct) => {
             const y = 12 + (1 - pct / 100) * 160;

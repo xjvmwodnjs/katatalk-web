@@ -150,6 +150,10 @@ export function canEnterTryPlayModeV3(isPlaceholder: boolean): boolean {
   return !isPlaceholder;
 }
 
+export function compactCandidateLimitV3(): number {
+  return 5;
+}
+
 export function candidateSelectedStateV3(state: AnalysisReviewUiStateV3, turnIndex: number): AnalysisReviewUiStateV3 {
   return {
     ...state,

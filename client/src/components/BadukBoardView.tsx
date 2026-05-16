@@ -55,8 +55,8 @@ export default function BadukBoardView({ boardSize: rawSize, stones, lastMove, g
     : t.boardGhostPvLegend;
 
   return (
-    <div className="w-full max-w-[min(100%,560px)] mx-auto">
-      <div className="relative w-full aspect-square" role="img" aria-label={t.boardAriaSnapshot}>
+    <div className="mx-auto w-full max-w-[min(100%,calc(100vw-1.5rem),560px)] overflow-hidden">
+      <div className="relative aspect-square w-full max-w-full" role="img" aria-label={t.boardAriaSnapshot}>
         <svg viewBox="0 0 100 100" className="w-full h-full rounded-lg block" aria-hidden="true">
           <defs>
             <radialGradient id={`${uid}-wood`} cx="35%" cy="30%">

@@ -38,6 +38,7 @@
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
 - [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·승률 시리즈(katago_output 원시만), 중립 라벨·경고문. 바둑판/차트 UI 미포함.
 - [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG·후보 카드·참고도 PV·`BadukBoardView` SVG·수순 탐색. `sgf_content` 없으면 placeholder. mock-legacy / unknown 별도 안내. 흑/백 승률 토글은 비활성(준비 중).
+- [ ] **분석 결과 UI v3 모바일 수동 점검** — viewport `390x844`, `430x932`, `768x1024`, desktop `1440px` 에서 바둑판 overflow 없음, 수순 버튼 줄바꿈 없음, 승률 패널 접기/펼치기, 후보 chip horizontal scroll, AI 메모 버튼 wrap 확인.
 - [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인·pass/중복/좌표·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder.
 - [x] **SGF token parser + capture engine v1** — property bracket 이스케이프·주석 속 `;B[]` 오인 방지·변화도 skip 경고·liberty 기반 상대 포획(연결군). ko/자살 미완 경고.
 - [x] **Baduk board renderer v1** — `BadukBoardView` SVG 격자·흑백돌·lastMove 링·ghost(참고 후보/PV). 보기 전용. 9/13/19 SZ.

@@ -288,6 +288,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
       selectedTurnIndex: vm.sgfPlayback.selectedTurnIndex,
       candidates: vm.keyMoveCandidates,
       variationPreview: vm.variationPreview,
+      overlayMode: reviewMode,
       selectedVariation: reviewMode === "variation-review" ? selectedVariation : null,
       pvStartColor: vm.sgfPlayback.currentPlayer,
       tryPlayStones: reviewMode === "try-play" ? tryPlayStones : [],
@@ -342,9 +343,9 @@ export default function AnalysisResultView({ data, lang }: Props) {
   const yn = (v: boolean) => (v ? t.yesShort : t.noShort);
 
   return (
-    <div className="space-y-4 mb-8">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+    <div className="mb-8 max-w-full space-y-3 overflow-hidden sm:space-y-4">
+      <section className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:gap-x-3 sm:gap-y-2 sm:text-xs">
           <span className="rounded-full border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] text-amber-200/90">
             {t.summaryStatusComplete}
           </span>
@@ -366,10 +367,10 @@ export default function AnalysisResultView({ data, lang }: Props) {
         ) : null}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
-        <div className="space-y-4">
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5 flex flex-col min-h-[200px]">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+        <div className="min-w-0 space-y-3">
+          <section className="flex min-h-[200px] min-w-0 flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-4 md:p-5">
+          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{t.boardTitle}</h3>
             <span
               className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-slate-500 font-mono uppercase tracking-wide"
@@ -410,7 +411,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 onPointClick={reviewMode === "try-play" ? handleTryPlayPoint : undefined}
               />
               {showBoardNav ? (
-                <div className="mt-3">
+                <div className="mt-2 min-w-0">
                   <BoardTurnNavigation
                     selectedTurnIndex={boardNavTurnIndex}
                     totalMoves={boardNavTotalMoves}
@@ -452,7 +453,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
           />
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-3">
           <AnalysisCandidateList
             raw={data}
             candidates={vm.keyMoveCandidates}
@@ -464,11 +465,11 @@ export default function AnalysisResultView({ data, lang }: Props) {
             lang={lang}
           />
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <h2 className="text-lg font-bold text-amber-100 mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+          <section className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-5">
+            <h2 className="mb-2 text-base font-bold text-amber-100 sm:mb-3 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
               {t.analysisMemoTitle}
             </h2>
-            <div className="space-y-2 text-sm text-slate-300" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+            <div className="space-y-1.5 text-xs text-slate-300 sm:space-y-2 sm:text-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
               <p>{reviewMode === "try-play" ? t.tryPlayNotice : selectedCandidate ? t.analysisMemoCandidate : t.analysisMemoSelectCandidate}</p>
               {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
               <p>{t.analysisMemoPvCaution}</p>
@@ -476,13 +477,13 @@ export default function AnalysisResultView({ data, lang }: Props) {
               <p className="text-xs text-slate-500">{t.analysisMemoNoLlM}</p>
             </div>
             {selectedCandidate ? (
-              <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+              <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 rounded-xl border border-white/10 bg-black/20 p-3 text-xs sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2">
                 <dt className="text-slate-500">{t.variationTurn}</dt>
-                <dd className="font-mono text-amber-100">#{selectedCandidate.turnIndex}</dd>
+                <dd className="min-w-0 truncate font-mono text-amber-100">#{selectedCandidate.turnIndex}</dd>
                 <dt className="text-slate-500">{t.playedMove}</dt>
-                <dd className="font-mono text-amber-100">{selectedCandidate.playedMove}</dd>
+                <dd className="min-w-0 truncate font-mono text-amber-100">{selectedCandidate.playedMove}</dd>
                 <dt className="text-slate-500">{t.candidateMove}</dt>
-                <dd className="font-mono text-amber-100">{selectedCandidate.bestMove ?? "—"}</dd>
+                <dd className="min-w-0 truncate font-mono text-amber-100">{selectedCandidate.bestMove ?? "—"}</dd>
                 <dt className="text-slate-500">{t.bsi}</dt>
                 <dd className="text-slate-200">{selectedCandidate.bsiScore != null ? selectedCandidate.bsiScore.toFixed(0) : "—"}</dd>
                 <dt className="text-slate-500">{t.adi}</dt>
@@ -493,8 +494,8 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 <dd className="text-slate-200">{selectedCandidate.deepSearchCompleted ? t.yesShort : t.noShort}</dd>
                 <dt className="text-slate-500">{t.variationPvState}</dt>
                 <dd className="text-slate-200">{selectedCandidateVariation ? t.yesShort : t.noShort}</dd>
-                <dt className="text-slate-500 col-span-2">{t.variationReasons}</dt>
-                <dd className="col-span-2 flex flex-wrap gap-1">
+                <dt className="col-span-2 text-slate-500">{t.variationReasons}</dt>
+                <dd className="col-span-2 flex min-w-0 flex-wrap gap-1">
                   {selectedCandidate.reasons.length > 0
                     ? selectedCandidate.reasons.slice(0, 4).map((r) => {
                         let mapped = mapReasonPhraseForUi(r, uiLang);
@@ -511,7 +512,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 </dd>
               </dl>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
               <button
                 type="button"
                 disabled={!selectedCandidateVariation}

@@ -17,6 +17,8 @@ export type BadukBoardGhostMarkerV1 = {
   order?: number;
 };
 
+export type BadukBoardOverlayModeV1 = "mainline" | "candidate-selected" | "variation-review" | "try-play";
+
 /** 보드 크기별 화점(0-based x,y). 19×19만 9개, 그 외는 간단 패턴. */
 export function boardStarPointsV1(boardSize: number): [number, number][] {
   if (boardSize === 19) {
@@ -94,6 +96,7 @@ export function collectBadukBoardGhostMarkersV1(args: {
   candidates: AnalysisResultKeyMoveCandidateV1[];
   variationPreview: AnalysisResultVariationPreviewV1[];
   selectedVariation?: AnalysisResultVariationPreviewV1 | null;
+  overlayMode?: BadukBoardOverlayModeV1;
   pvStartColor?: "B" | "W";
   tryPlayStones?: BadukBoardGhostMarkerV1[];
 }): BadukBoardGhostMarkerV1[] {
@@ -104,8 +107,9 @@ export function collectBadukBoardGhostMarkersV1(args: {
   const occupied = new Set(occupiedKeys);
   const out: BadukBoardGhostMarkerV1[] = [];
   const seen = new Set<string>();
+  const overlayMode = args.overlayMode ?? "mainline";
 
-  if (selectedVariation && selectedVariation.pv.length > 0) {
+  if (overlayMode === "variation-review" && selectedVariation && selectedVariation.pv.length > 0) {
     let color = args.pvStartColor ?? "B";
     selectedVariation.pv.forEach((gtp, i) => {
       addGhost(out, seen, gtp, "pv", boardSize, occupied, i + 1, color);
@@ -114,7 +118,7 @@ export function collectBadukBoardGhostMarkersV1(args: {
     return out;
   }
 
-  if (args.tryPlayStones && args.tryPlayStones.length > 0) {
+  if (overlayMode === "try-play" && args.tryPlayStones && args.tryPlayStones.length > 0) {
     for (const st of args.tryPlayStones) {
       const key = `${st.x},${st.y}`;
       if (seen.has(key) || occupied.has(key)) {
@@ -126,6 +130,10 @@ export function collectBadukBoardGhostMarkersV1(args: {
     return out;
   }
 
+  if (overlayMode === "candidate-selected") {
+    return out;
+  }
+
   const cand = candidates.find((c) => c.turnIndex === selectedTurnIndex);
   if (cand?.bestMove) {
     addGhost(out, seen, cand.bestMove, "candidate", boardSize, occupied);
@@ -134,10 +142,6 @@ export function collectBadukBoardGhostMarkersV1(args: {
   const pvRow = variationPreview.find((p) => p.turnIndex === selectedTurnIndex);
   if (pvRow?.bestMove) {
     addGhost(out, seen, pvRow.bestMove, "candidate", boardSize, occupied);
-  }
-  const firstPv = pvRow?.pv?.[0];
-  if (firstPv) {
-    addGhost(out, seen, firstPv, "pv", boardSize, occupied);
   }
 
   return out;
