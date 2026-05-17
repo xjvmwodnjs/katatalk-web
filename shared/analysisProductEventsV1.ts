@@ -60,6 +60,7 @@ export type ProductEvidenceBreakdownV25 = {
     volatility: number;
     explainability: number;
     openingPenalty: number;
+    /** Reserved for future duplicate-source penalties; currently reported as 0 unless a selector explicitly applies it. */
     duplicatePenalty: number;
   };
 };
@@ -230,7 +231,7 @@ function isEvidenceSourceArray(v: unknown): v is ProductEventEvidenceSourceV1[] 
 }
 
 function isEvidenceTypeArrayV25(v: unknown): v is ProductEvidenceTypeV25[] {
-  return Array.isArray(v) && v.every((x) => typeof x === "string" && EVIDENCE_TYPES_V25.has(x as ProductEvidenceTypeV25));
+  return Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && EVIDENCE_TYPES_V25.has(x as ProductEvidenceTypeV25));
 }
 
 function isRankingBreakdownV25(v: unknown): boolean {

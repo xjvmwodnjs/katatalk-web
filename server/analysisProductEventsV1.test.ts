@@ -187,6 +187,26 @@ describe("analysis product events v1", () => {
     expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: Number.POSITIVE_INFINITY })).toBe(false);
     expect(isProductDecisiveMoveV1({ ...decisive, winrateLoss: "0.1" })).toBe(false);
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: [] } })).toBe(false);
+    const v25 = {
+      taxonomy: "decisive_candidate",
+      evidenceTypes: ["loss_evidence"],
+      rankingScore: 10,
+      ranking: {
+        scoreLoss: 10,
+        winrateLoss: 0,
+        playedMoveRank: 0,
+        bsi: 0,
+        adi: 0,
+        deepSearch: 0,
+        volatility: 0,
+        explainability: 0,
+        openingPenalty: 0,
+        duplicatePenalty: 0,
+      },
+    };
+    expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25 } })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: [] } } })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: ["unknown_context"] } } })).toBe(false);
 
     const review = {
       ...decisive,
@@ -202,6 +222,10 @@ describe("analysis product events v1", () => {
       ...Object.values(PRODUCT_REVIEW_MOVE_CATEGORY_LABELS_V1),
       ...Object.values(PRODUCT_EVENT_CONFIDENCE_LABELS_V1),
     ].join(" ");
-    expect(labels).not.toMatch(/패착 확정|악수|정답|best move|blunder/i);
+    const forbidden = new RegExp(
+      [["패착", " ", "확정"].join(""), ["악", "수"].join(""), ["정", "답"].join(""), ["best", " ", "move"].join(""), ["blun", "der"].join("")].join("|"),
+      "i"
+    );
+    expect(labels).not.toMatch(forbidden);
   });
 });

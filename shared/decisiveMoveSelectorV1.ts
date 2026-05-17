@@ -171,7 +171,7 @@ function addWinrateLoss(candidate: Candidate, value: unknown): void {
 
 function addBsi(candidate: Candidate, value: unknown): void {
   const bsi = finiteNonNegative(value);
-  if (bsi == null) {
+  if (bsi == null || bsi <= 0) {
     return;
   }
   addRanking(candidate, "bsi", positiveContribution(bsi, 100) * 22);
@@ -182,7 +182,7 @@ function addBsi(candidate: Candidate, value: unknown): void {
 
 function addAdi(candidate: Candidate, value: unknown): void {
   const adi = finiteNonNegative(value);
-  if (adi == null) {
+  if (adi == null || adi <= 0) {
     return;
   }
   addRanking(candidate, "adi", positiveContribution(adi, 1) * 12);

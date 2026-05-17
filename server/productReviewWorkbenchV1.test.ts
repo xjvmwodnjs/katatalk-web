@@ -181,7 +181,9 @@ describe("productReviewWorkbenchV1", () => {
     expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy).toBe("decisive_candidate");
     expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes).toContain("loss_evidence");
     expect(report.reviewMovesTrace.selected.some((move) => move.v25Taxonomy != null && move.v25EvidenceTypes.length > 0)).toBe(true);
-    expect(renderProductReviewWorkbenchMarkdownV1(report)).toContain("v25EvidenceTypes");
+    const rendered = renderProductReviewWorkbenchMarkdownV1(report);
+    expect(rendered).toContain("v25EvidenceTypes");
+    expect(rendered).toContain("reservedDuplicatePenalty");
   });
 
   it("safely skips mock or unknown results", () => {
@@ -201,15 +203,16 @@ describe("productReviewWorkbenchV1", () => {
 
   it("redacts SGF-like payloads, secrets, and path-like strings from rendered output", () => {
     const rendered = renderProductReviewWorkbenchMarkdownV1(buildProductReviewWorkbenchV1(completedResultFixture()));
+    const fakeSecret = ["sk", "live", "abcdefghijklmnopqrstuvwxyz123456"].join("_");
     const redacted = redactWorkbenchTextV1(
-      `${rendered}\n(;FF[4]GM[1];B[pd])\n(;GM[1]SZ[19];B[pd];W[dd])\n(;B[pd];W[dd])\nC:\\KataGo\\katago.exe\nsk_live_abcdefghijklmnopqrstuvwxyz123456`
+      `${rendered}\n(;FF[4]GM[1];B[pd])\n(;GM[1]SZ[19];B[pd];W[dd])\n(;B[pd];W[dd])\nC:\\KataGo\\katago.exe\n${fakeSecret}`
     );
 
     expect(redacted).not.toContain("B[pd]");
     expect(redacted).not.toContain("W[dd]");
     expect(redacted).not.toContain("GM[1]");
     expect(redacted).not.toContain("C:\\KataGo\\katago.exe");
-    expect(redacted).not.toContain("sk_live_abcdefghijklmnopqrstuvwxyz123456");
+    expect(redacted).not.toContain(fakeSecret);
     expect(redacted).toContain("[REDACTED_SGF]");
     expect(redacted).toContain("[REDACTED_PATH]");
     expect(redacted).toContain("[REDACTED_SECRET]");

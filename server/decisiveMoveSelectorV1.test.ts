@@ -310,6 +310,23 @@ describe("decisive move selector v1", () => {
     expect(result?.evidence.v25?.ranking.bsi).toBeGreaterThan(0);
   });
 
+  it("does not count zero BSI or ADI as decisive evidence", () => {
+    const result = buildProductDecisiveMoveV1({
+      gameResult: blackWin,
+      turnAnalyses: [turn(10, "W", { bestScoreLead: 5, playedScoreLead: 0 })],
+      bsi: bsi(10, "W", 0),
+      adi: adi(10, "W", 0),
+    });
+
+    expect(result?.turnIndex).toBe(10);
+    expect(result?.evidence.source).not.toContain("bsiV1");
+    expect(result?.evidence.source).not.toContain("adiV1");
+    expect(result?.evidence.v25?.evidenceTypes).toContain("loss_evidence");
+    expect(result?.evidence.v25?.evidenceTypes).not.toContain("learning_context");
+    expect(result?.evidence.v25?.ranking.bsi).toBe(0);
+    expect(result?.evidence.v25?.ranking.adi).toBe(0);
+  });
+
   it("uses Deep Search evidence for confidence and source", () => {
     const result = buildProductDecisiveMoveV1({
       gameResult: blackWin,

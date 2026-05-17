@@ -622,7 +622,7 @@ export function renderProductReviewWorkbenchMarkdownV1(report: ProductReviewWork
   for (const r of report.decisiveMoveTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push("");
   lines.push("## ReviewMoves Trace");
-  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}`);
+  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}, reservedDuplicatePenalty=${mdValue(s.v25Ranking?.duplicatePenalty ?? 0)}`);
   if (report.reviewMovesTrace.selected.length === 0) lines.push("- selected: none");
   for (const r of report.reviewMovesTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push(`- playerDiversityApplied: \`${report.reviewMovesTrace.playerDiversityApplied}\``);
