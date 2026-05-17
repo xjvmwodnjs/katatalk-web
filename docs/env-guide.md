@@ -11,6 +11,8 @@
 | **Railway Web** | 로그인·결제·업로드·API enqueue — **KataGo 실행 금지** |
 | **Railway Worker** | `analysis_jobs` claim·KataGo 실행·DB 결과 기록 |
 
+Master 기준 local/Railway staging smoke 절차와 기록 템플릿은 `docs/master-staging-smoke-v1.md`와 `docs/internal-beta-smoke-report.template.md`를 따른다.
+
 공통 원칙:
 
 - `SUPABASE_SERVICE_ROLE_KEY`, `CLERK_SECRET_KEY`, `LEMONSQUEEZY_*` secret, `JWT_SECRET` → **서버/Worker 전용**, `VITE_` 접두사 금지
