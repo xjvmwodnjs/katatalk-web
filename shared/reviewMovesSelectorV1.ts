@@ -7,6 +7,8 @@ import type {
   ProductDecisiveMoveV1,
   ProductEventConfidenceV1,
   ProductEventEvidenceSourceV1,
+  ProductEvidenceTypeV25,
+  ProductKeyMoveTaxonomyV25,
   ProductGameResultV1,
   ProductReviewMoveCategoryV1,
   ProductReviewMoveV1,
@@ -41,8 +43,23 @@ type Candidate = {
   notes: Set<string>;
   pv: string[];
   score: number;
+  ranking: RankingBreakdown;
+  evidenceTypes: Set<ProductEvidenceTypeV25>;
   signalCount: number;
   finalPosition: boolean;
+};
+
+type RankingBreakdown = {
+  scoreLoss: number;
+  winrateLoss: number;
+  playedMoveRank: number;
+  bsi: number;
+  adi: number;
+  deepSearch: number;
+  volatility: number;
+  explainability: number;
+  openingPenalty: number;
+  duplicatePenalty: number;
 };
 
 function asProductColor(v: unknown): ProductColorV1 | null {
@@ -93,6 +110,19 @@ function candidateFor(map: Map<number, Candidate>, turnIndex: number): Candidate
       notes: new Set(),
       pv: [],
       score: 0,
+      ranking: {
+        scoreLoss: 0,
+        winrateLoss: 0,
+        playedMoveRank: 0,
+        bsi: 0,
+        adi: 0,
+        deepSearch: 0,
+        volatility: 0,
+        explainability: 0,
+        openingPenalty: 0,
+        duplicatePenalty: 0,
+      },
+      evidenceTypes: new Set(),
       signalCount: 0,
       finalPosition: false,
     };
@@ -103,6 +133,15 @@ function candidateFor(map: Map<number, Candidate>, turnIndex: number): Candidate
 
 function addSource(candidate: Candidate, source: ProductEventEvidenceSourceV1): void {
   candidate.evidenceSource.add(source);
+}
+
+function addEvidenceType(candidate: Candidate, type: ProductEvidenceTypeV25): void {
+  candidate.evidenceTypes.add(type);
+}
+
+function addRanking(candidate: Candidate, key: keyof RankingBreakdown, value: number): void {
+  candidate.ranking[key] += value;
+  candidate.score += value;
 }
 
 function setIdentity(
@@ -124,6 +163,26 @@ function preferCategory(candidate: Candidate, category: ProductReviewMoveCategor
   const currentPriority = categoryPriority(candidate.category);
   if (priority >= currentPriority) {
     candidate.category = category;
+  }
+}
+
+function taxonomyFor(candidate: Candidate): ProductKeyMoveTaxonomyV25 {
+  switch (candidate.category) {
+    case "score_shift_candidate":
+    case "winrate_shift_candidate":
+    case "flow_shift_candidate":
+    case "response_candidate":
+      return candidate.scoreLoss != null || candidate.winrateLoss != null ? "swing_candidate" : "learning_candidate";
+    case "shape_review_candidate":
+      return "shape_review_candidate";
+    case "direction_candidate":
+      return "direction_candidate";
+    case "deep_search_candidate":
+      return "deep_search_candidate";
+    case "volatility_candidate":
+      return "volatility_candidate";
+    case "learning_candidate":
+      return "learning_candidate";
   }
 }
 
@@ -154,7 +213,8 @@ function addScoreLoss(candidate: Candidate, value: unknown): void {
   const loss = finitePositive(value);
   if (loss == null) return;
   candidate.scoreLoss = maxNullable(candidate.scoreLoss, loss);
-  candidate.score += contribution(loss, 10) * 35;
+  addEvidenceType(candidate, "loss_evidence");
+  addRanking(candidate, "scoreLoss", contribution(loss, 10) * 35);
   candidate.signalCount += 1;
   preferCategory(candidate, "score_shift_candidate", 80);
 }
@@ -163,7 +223,8 @@ function addWinrateLoss(candidate: Candidate, value: unknown): void {
   const loss = finitePositiveWinrate(value);
   if (loss == null) return;
   candidate.winrateLoss = maxNullable(candidate.winrateLoss, loss);
-  candidate.score += contribution(loss, 0.2) * 30;
+  addEvidenceType(candidate, "loss_evidence");
+  addRanking(candidate, "winrateLoss", contribution(loss, 0.2) * 30);
   candidate.signalCount += 1;
   preferCategory(candidate, "winrate_shift_candidate", 75);
 }
@@ -172,7 +233,8 @@ function addBsi(candidate: Candidate, value: unknown): void {
   const score = finitePositive(value);
   if (score == null) return;
   addSource(candidate, "bsiV1");
-  candidate.score += contribution(score, 100) * 20;
+  addEvidenceType(candidate, "search_evidence");
+  addRanking(candidate, "bsi", contribution(score, 100) * 20);
   candidate.signalCount += 1;
 }
 
@@ -180,9 +242,34 @@ function addAdi(candidate: Candidate, value: unknown): void {
   const score = finitePositive(value);
   if (score == null) return;
   addSource(candidate, "adiV1");
-  candidate.score += contribution(score, 1) * 24;
+  addEvidenceType(candidate, "learning_context");
+  addRanking(candidate, "adi", contribution(score, 1) * 24);
   candidate.signalCount += 1;
   preferCategory(candidate, "learning_candidate", 30);
+}
+
+function addPlayedMoveRank(candidate: Candidate, value: unknown): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 1) return;
+  addEvidenceType(candidate, "search_evidence");
+  addRanking(candidate, "playedMoveRank", contribution(value - 1, 6) * 10);
+}
+
+function addExplainability(candidate: Candidate): void {
+  if (candidate.playedMove != null && candidate.recommendedMove != null && candidate.playedMove !== candidate.recommendedMove) {
+    addRanking(candidate, "explainability", 3);
+  }
+}
+
+function applyOpeningNoisePenalty(candidate: Candidate): void {
+  if (candidate.turnIndex > 0 && candidate.turnIndex <= 6 && candidate.scoreLoss == null && candidate.winrateLoss == null) {
+    addRanking(candidate, "openingPenalty", -8);
+  }
+}
+
+function isPassOrInvalidMove(move: string | null): boolean {
+  if (move == null) return false;
+  const normalized = move.trim().toLowerCase();
+  return normalized === "" || normalized === "pass" || normalized === "tt";
 }
 
 function scoreLossFromTurn(turn: TurnAnalysisEntrySuccessV1): number | null {
@@ -287,7 +374,8 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
     });
     candidate.sourceEventId ??= event.id;
     addSource(candidate, "learningEventsV1");
-    candidate.score += contribution(event.score, 100) * 20;
+    addEvidenceType(candidate, "learning_context");
+    addRanking(candidate, "explainability", contribution(event.score, 100) * 15);
     candidate.signalCount += 1;
     preferCategory(candidate, learningCategory(event), categoryPriority(learningCategory(event)));
     addScoreLoss(candidate, event.signals.scoreLeadDelta == null ? null : Math.abs(event.signals.scoreLeadDelta));
@@ -298,7 +386,8 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
     }
     if (event.signals.deepSearchCompleted === true || event.signals.deepSearchChangedTop === true) {
       addSource(candidate, "deepSearchResultsV1");
-      candidate.score += event.signals.deepSearchChangedTop === true ? 18 : 10;
+      addEvidenceType(candidate, "deep_search_context");
+      addRanking(candidate, "deepSearch", event.signals.deepSearchChangedTop === true ? 18 : 10);
       candidate.signalCount += 1;
       preferCategory(candidate, "deep_search_candidate", 65);
     }
@@ -320,6 +409,8 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
       addSource(candidate, "turnAnalyses");
       addScoreLoss(candidate, scoreLossFromTurn(turn));
       addWinrateLoss(candidate, winrateLossFromTurn(turn));
+      addPlayedMoveRank(candidate, turn.comparisonReady?.playedMoveRank);
+      addExplainability(candidate);
     }
   }
 
@@ -344,7 +435,7 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
     });
     addAdi(candidate, signal.adiScore);
     if (signal.deepSearchCandidate) {
-      candidate.score += 8;
+      addRanking(candidate, "deepSearch", 6);
       candidate.signalCount += 1;
     }
   }
@@ -358,7 +449,9 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
     });
     if (result.status === "ok") {
       addSource(candidate, "deepSearchResultsV1");
-      candidate.score += result.comparison.plannedBestMoveStillTop === false ? 24 : 16;
+      addEvidenceType(candidate, "deep_search_context");
+      addRanking(candidate, "deepSearch", result.comparison.plannedBestMoveStillTop === false ? 24 : 16);
+      addPlayedMoveRank(candidate, result.comparison.playedMoveRank);
       candidate.signalCount += 1;
       preferCategory(candidate, "deep_search_candidate", 65);
     }
@@ -375,16 +468,25 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
       playedMove: point.playedMove,
     });
     addSource(candidate, "winrateTimelineV1");
+    addEvidenceType(candidate, "volatility_context");
     candidate.notes.add("raw timeline delta is volatility context, not product winrateLoss");
     preferCategory(candidate, "volatility_candidate", 55);
     if (prev.status === "ok" && typeof point.rawWinrate === "number" && Number.isFinite(point.rawWinrate) && typeof prev.rawWinrate === "number" && Number.isFinite(prev.rawWinrate)) {
-      candidate.score += contribution(Math.abs(point.rawWinrate - prev.rawWinrate), 0.2) * 18;
+      addRanking(candidate, "volatility", contribution(Math.abs(point.rawWinrate - prev.rawWinrate), 0.2) * 18);
       candidate.signalCount += 1;
+    }
+  }
+
+  for (const candidate of Array.from(candidates.values())) {
+    applyOpeningNoisePenalty(candidate);
+    if (candidate.pv.length === 0) {
+      candidate.notes.add("reference PV is unavailable; keep review wording provisional");
     }
   }
 
   const sorted = Array.from(candidates.values())
     .filter((candidate) => candidate.player === "B" || candidate.player === "W")
+    .filter((candidate) => !isPassOrInvalidMove(candidate.playedMove))
     .filter((candidate) => candidate.turnIndex !== decisiveTurnIndex)
     .filter((candidate) => !isFinal(candidate, input.totalMoves))
     .filter((candidate) => candidate.evidenceSource.size > 0)
@@ -405,6 +507,12 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
         source: Array.from(candidate.evidenceSource).sort(),
         notes: Array.from(candidate.notes),
         pv: candidate.pv,
+        v25: {
+          taxonomy: taxonomyFor(candidate),
+          evidenceTypes: Array.from(candidate.evidenceTypes).sort(),
+          rankingScore: candidate.score,
+          ranking: candidate.ranking,
+        },
       },
     }))
     .filter(isProductReviewMoveV1);
