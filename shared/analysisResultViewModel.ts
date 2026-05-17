@@ -15,6 +15,20 @@ import {
   type AnalysisLearningEventV1,
   type AnalysisLearningEventsV1,
 } from "./analysisLearningEventsV1";
+import {
+  parseProductGameResultV1,
+  parseProductGameResultV1FromSgf,
+  type ProductDecisiveMoveV1,
+  type ProductGameResultV1,
+  type ProductReviewMoveV1,
+} from "./analysisProductEventsV1";
+import { buildProductDecisiveMoveV1 } from "./decisiveMoveSelectorV1";
+import { buildProductReviewMovesV1 } from "./reviewMovesSelectorV1";
+import {
+  buildExplanationPlanForDecisiveMoveV1,
+  buildExplanationPlanForReviewMoveV1,
+  type ExplanationPlanV1,
+} from "./explanationPlannerV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
 import {
   buildSgfPlaybackStateV1,
@@ -179,6 +193,7 @@ export type AnalysisResultKeyMoveCandidateV1 = {
   deepSearchCompleted: boolean;
   reasons: string[];
   learningEvent?: AnalysisLearningEventV1;
+  productRole?: "decisive" | "review";
 };
 
 export type AnalysisResultVariationPreviewV1 = {
@@ -187,6 +202,15 @@ export type AnalysisResultVariationPreviewV1 = {
   bestMove: string | null;
   pv: string[];
   source: "deep-search" | "multi-turn";
+};
+
+export type AnalysisProductReviewV1 = {
+  version: "product-review-v1";
+  gameResult: ProductGameResultV1;
+  decisiveMove: ProductDecisiveMoveV1 | null;
+  reviewMoves: ProductReviewMoveV1[];
+  explanationPlans: ExplanationPlanV1[];
+  source: "deterministic-product-events-v1";
 };
 
 export type KatagoWorkerV1AnalysisViewModel = {
@@ -203,6 +227,7 @@ export type KatagoWorkerV1AnalysisViewModel = {
     hasDeepSearchResults: boolean;
     deepSearchEnabled: boolean;
   };
+  productReviewV1: AnalysisProductReviewV1 | null;
   graph: {
     winrateSeries: AnalysisResultWinratePointV1[];
     /** true when chart uses `winrateTimelineV1` (full mainline) */
@@ -230,6 +255,7 @@ export type MockLegacyAnalysisViewModel = {
     hasDeepSearchResults: false;
     deepSearchEnabled: false;
   };
+  productReviewV1: null;
   graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
   learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
@@ -252,6 +278,7 @@ export type UnknownAnalysisViewModel = {
     hasDeepSearchResults: false;
     deepSearchEnabled: false;
   };
+  productReviewV1: null;
   graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
   learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
@@ -603,6 +630,130 @@ function learningEventsToKeyMoveVmList(
   });
 }
 
+function readRawGameResult(result: Record<string, unknown>): string | null {
+  const gi = result.game_info;
+  if (!isPlainObject(gi)) {
+    return null;
+  }
+  const raw = gi.result;
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+  if (!isPlainObject(raw)) {
+    return null;
+  }
+  for (const key of ["raw", "sgf", "en", "ko", "ja", "zh"]) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function buildProductGameResultForVm(result: Record<string, unknown>, sgfText: string | null): ProductGameResultV1 {
+  if (sgfText != null && sgfText.trim().length > 0) {
+    return parseProductGameResultV1FromSgf(sgfText);
+  }
+  return parseProductGameResultV1(readRawGameResult(result));
+}
+
+function productSourceReasons(source: readonly string[]): string[] {
+  return source.length > 0 ? source.map((s) => `product:${s}`) : ["product:deterministic"];
+}
+
+function productMoveToKeyMoveVm(
+  move: ProductDecisiveMoveV1 | ProductReviewMoveV1,
+  role: "decisive" | "review",
+  deep: DeepSearchResultsV1Result | undefined,
+  adi: AdiV1Result | undefined,
+  bsi: BsiV1Result | undefined
+): AnalysisResultKeyMoveCandidateV1 {
+  const deepOk = getDeepOkRow(deep, move.turnIndex);
+  const adiRow = findAdi(adi, move.turnIndex);
+  const bsiRow = findBsi(bsi, move.turnIndex);
+  return {
+    turnIndex: move.turnIndex,
+    player: move.player,
+    playedMove: move.playedMove ?? "—",
+    bestMove: move.recommendedMove,
+    labelKey: role === "decisive" ? "ar_label_decisive_scene_candidate" : "ar_label_product_review_candidate",
+    bsiScore: bsiRow?.bsiScore ?? null,
+    adiScore: adiRow?.adiScore ?? null,
+    deepSearchSelected: move.evidence.source.includes("deepSearchResultsV1"),
+    deepSearchCompleted: deepOk != null,
+    reasons: productSourceReasons(move.evidence.source),
+    productRole: role,
+  };
+}
+
+function productReviewToKeyMoveVmList(
+  productReview: AnalysisProductReviewV1,
+  deep: DeepSearchResultsV1Result | undefined,
+  adi: AdiV1Result | undefined,
+  bsi: BsiV1Result | undefined
+): AnalysisResultKeyMoveCandidateV1[] {
+  const out: AnalysisResultKeyMoveCandidateV1[] = [];
+  if (productReview.decisiveMove != null) {
+    out.push(productMoveToKeyMoveVm(productReview.decisiveMove, "decisive", deep, adi, bsi));
+  }
+  for (const move of productReview.reviewMoves) {
+    out.push(productMoveToKeyMoveVm(move, "review", deep, adi, bsi));
+  }
+  return out;
+}
+
+function buildProductReviewV1(args: {
+  gameResult: ProductGameResultV1;
+  learningEvents: AnalysisLearningEventsV1;
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined;
+  bsi: BsiV1Result | undefined;
+  adi: AdiV1Result | undefined;
+  deepSearchResults: DeepSearchResultsV1Result | undefined;
+  winrateTimeline: WinrateTimelineV1 | undefined;
+  totalMoves: number;
+}): AnalysisProductReviewV1 | null {
+  const decisiveMove =
+    args.gameResult.loserColor == null
+      ? null
+      : buildProductDecisiveMoveV1({
+          gameResult: args.gameResult,
+          learningEvents: args.learningEvents,
+          turnAnalyses: args.turnAnalyses,
+          bsi: args.bsi,
+          adi: args.adi,
+          deepSearchResults: args.deepSearchResults,
+          winrateTimeline: args.winrateTimeline,
+          totalMoves: args.totalMoves,
+        });
+  const reviewMoves = buildProductReviewMovesV1({
+    gameResult: args.gameResult,
+    decisiveMove,
+    learningEvents: args.learningEvents,
+    turnAnalyses: args.turnAnalyses,
+    bsi: args.bsi,
+    adi: args.adi,
+    deepSearchResults: args.deepSearchResults,
+    winrateTimeline: args.winrateTimeline,
+    totalMoves: args.totalMoves,
+    maxMoves: 5,
+  });
+  if (decisiveMove == null && reviewMoves.length === 0) {
+    return null;
+  }
+  return {
+    version: "product-review-v1",
+    gameResult: args.gameResult,
+    decisiveMove,
+    reviewMoves,
+    explanationPlans: [
+      ...(decisiveMove == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisiveMove)]),
+      ...reviewMoves.map((move) => buildExplanationPlanForReviewMoveV1(move)),
+    ],
+    source: "deterministic-product-events-v1",
+  };
+}
+
 function buildVariationPreview(
   keys: AnalysisResultKeyMoveCandidateV1[],
   turnAnalyses: TurnAnalysisEntryV1[] | undefined,
@@ -687,6 +838,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
     const winrateTimeline = isWinrateTimelineV1(result.winrateTimelineV1) ? result.winrateTimelineV1 : undefined;
 
     const totalMoves = readGameTotalMoves(result);
+    const sgfText = readSgfContentFromResultPayload(result);
     const multi = result.multiTurnAnalysis;
     const hasMulti = isPlainObject(multi) && typeof multi.attemptedCount === "number" && multi.attemptedCount > 0;
 
@@ -704,14 +856,25 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         deepSearchResults: deep,
         winrateTimeline,
       });
+    const productReviewV1 = buildProductReviewV1({
+      gameResult: buildProductGameResultForVm(result, sgfText),
+      learningEvents,
+      turnAnalyses,
+      bsi,
+      adi,
+      deepSearchResults: deep,
+      winrateTimeline,
+      totalMoves,
+    });
     const acc = buildCandidateAccumulator(analysisPlan, turnAnalyses, plan, adi, bsi, 5);
     const keyMoveCandidates =
-      learningEvents.events.length > 0
+      productReviewV1 != null
+        ? productReviewToKeyMoveVmList(productReviewV1, deep, adi, bsi)
+        : learningEvents.events.length > 0
         ? learningEventsToKeyMoveVmList(learningEvents, plan, deep, adi, bsi, turnAnalyses)
         : buildKeyMoveVmList(acc, plan, deep, adi, bsi);
     const variationPreview = buildVariationPreview(keyMoveCandidates, turnAnalyses, deep);
 
-    const sgfText = readSgfContentFromResultPayload(result);
     const sgfPlayback: SgfPlaybackViewModelV1 =
       sgfText != null && sgfText.trim().length > 0
         ? buildSgfPlaybackStateV1({
@@ -745,6 +908,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         hasDeepSearchResults: deep != null,
         deepSearchEnabled: deep?.enabled === true,
       },
+      productReviewV1,
       graph: {
         winrateSeries,
         winrateSeriesFromTimeline,
@@ -776,6 +940,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
         hasDeepSearchResults: false,
         deepSearchEnabled: false,
       },
+      productReviewV1: null,
       graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
       learningEvents: { version: "learning-events-v1", events: [] },
       keyMoveCandidates: [],
@@ -806,6 +971,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       deepSearchEnabled: false,
     },
     graph: { winrateSeries: [], winrateSeriesFromTimeline: false },
+    productReviewV1: null,
     learningEvents: { version: "learning-events-v1", events: [] },
     keyMoveCandidates: [],
     variationPreview: [],

@@ -432,6 +432,18 @@ const LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
     ja: "追加解析候補",
     zh: "进一步分析候选",
   },
+  ar_label_decisive_scene_candidate: {
+    ko: "결정적 장면 후보",
+    en: "Decisive scene candidate",
+    ja: "決定的場面の候補",
+    zh: "关键场面候选",
+  },
+  ar_label_product_review_candidate: {
+    ko: "학습 장면 후보",
+    en: "Learning scene candidate",
+    ja: "学習場面の候補",
+    zh: "学习场面候选",
+  },
 };
 
 export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang): string {

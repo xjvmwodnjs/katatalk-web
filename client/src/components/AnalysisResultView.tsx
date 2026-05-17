@@ -47,6 +47,42 @@ type Props = {
 
 type TryPlayStone = { x: number; y: number; color: "B" | "W"; gtp: string; kind: "try"; order: number };
 
+function productPlanSummaryText(summaryKey: string): string {
+  switch (summaryKey) {
+    case "ep_summary_decisive_loser_perspective_candidate":
+      return "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.";
+    case "ep_summary_review_timeline_context_candidate":
+      return "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.";
+    case "ep_summary_review_learning_candidate":
+      return "여러 내부 신호가 겹쳐 검토할 만한 학습 장면 후보입니다.";
+    default:
+      return "결정론적 분석 근거로 만든 검토 메모입니다.";
+  }
+}
+
+function productPlanBulletText(type: string): string {
+  switch (type) {
+    case "score_loss":
+      return "집 차이 변화 후보";
+    case "winrate_loss":
+      return "승률 변화 후보";
+    case "bsi":
+      return "BSI 참고 신호";
+    case "adi":
+      return "ADI 참고 신호";
+    case "deep_search":
+      return "Deep Search 참고 근거";
+    case "timeline_context":
+      return "승률 타임라인 참고 신호";
+    case "pv":
+      return "참고도 사용 가능";
+    case "learning_event":
+      return "학습 이벤트 기반 후보";
+    default:
+      return "내부 참고 신호";
+  }
+}
+
 export default function AnalysisResultView({ data, lang }: Props) {
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
   const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
@@ -128,6 +164,12 @@ export default function AnalysisResultView({ data, lang }: Props) {
     [vm, selectedCandidateTurnIndex, reviewMode]
   );
   const selectedLearningEvent = selectedCandidate?.learningEvent ?? null;
+  const selectedProductPlan = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedCandidate == null || vm.productReviewV1 == null) {
+      return null;
+    }
+    return vm.productReviewV1.explanationPlans.find((plan) => plan.turnIndex === selectedCandidate.turnIndex) ?? null;
+  }, [vm, selectedCandidate]);
   const selectedLearningEventScore =
     typeof selectedLearningEvent?.score === "number" && Number.isFinite(selectedLearningEvent.score)
       ? selectedLearningEvent.score
@@ -490,12 +532,24 @@ export default function AnalysisResultView({ data, lang }: Props) {
               <p>
                 {reviewMode === "try-play"
                   ? t.tryPlayNotice
-                  : selectedLearningEvent
+                  : selectedProductPlan
+                    ? productPlanSummaryText(selectedProductPlan.summaryKey)
+                    : selectedLearningEvent
                     ? t.analysisMemoLearningEvent
                     : selectedCandidate
                       ? t.analysisMemoCandidate
                       : t.analysisMemoSelectCandidate}
               </p>
+              {selectedProductPlan ? (
+                <ul className="list-disc space-y-1 pl-4 text-xs text-slate-400">
+                  {selectedProductPlan.evidenceBullets.slice(0, 4).map((bullet, index) => (
+                    <li key={`${bullet.type}-${index}`}>
+                      {productPlanBulletText(bullet.type)}
+                      {typeof bullet.value === "number" ? `: ${bullet.value.toFixed(bullet.unit === "ratio" ? 3 : 1)}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {selectedLearningEvent?.signals.deepSearchCompleted ? <p>{t.analysisMemoDeepSearchEvidence}</p> : null}
               {selectedVariation ? <p>{t.analysisMemoVariation}</p> : null}
               <p>{t.analysisMemoPvCaution}</p>

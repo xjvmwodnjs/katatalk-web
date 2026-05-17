@@ -311,7 +311,7 @@ export function buildProductReviewMovesV1(input: BuildProductReviewMovesV1Input)
     setIdentity(candidate, {
       player: asProductColor(turn.player),
       playedMove: turn.playedMove,
-      recommendedMove: turn.status === "ok" ? turn.comparisonReady.bestMove : null,
+      recommendedMove: turn.status === "ok" ? turn.comparisonReady?.bestMove ?? null : null,
     });
     if (turn.reason === "final_position") {
       candidate.finalPosition = true;
