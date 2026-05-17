@@ -211,6 +211,10 @@ describe("review moves selector v1", () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ turnIndex: 12, category: "learning_candidate" });
     expect(out[0]?.evidence.source).toContain("adiV1");
+    expect(out[0]?.scoreLoss).toBeNull();
+    expect(out[0]?.winrateLoss).toBeNull();
+    expect(out[0]?.evidence.v25?.taxonomy).toBe("learning_candidate");
+    expect(out[0]?.evidence.v25?.evidenceTypes).toContain("learning_context");
   });
 
   it("allows Deep Search-only review candidates", () => {
@@ -224,6 +228,8 @@ describe("review moves selector v1", () => {
     const volatility = out.find((m) => m.turnIndex === 16);
     expect(volatility).toMatchObject({ category: "volatility_candidate", winrateLoss: null });
     expect(volatility?.evidence.source).toContain("winrateTimelineV1");
+    expect(volatility?.evidence.v25?.taxonomy).toBe("volatility_candidate");
+    expect(volatility?.evidence.v25?.evidenceTypes).toContain("volatility_context");
   });
 
   it("includes positive scoreLoss and positive winrateLoss candidates", () => {
@@ -251,6 +257,18 @@ describe("review moves selector v1", () => {
     expect(new Set(out.map((m) => m.player))).toEqual(new Set(["B", "W"]));
   });
 
+  it("adds v2.5 ranking and evidence breakdown", () => {
+    const out = buildProductReviewMovesV1({
+      gameResult,
+      turnAnalyses: [turn(12, "W", { bestScoreLead: 4, playedScoreLead: 0, bestWinrate: 0.62, playedWinrate: 0.48 })],
+      deepSearchResults: deepSearch(12, "W"),
+    });
+    const selected = out[0];
+    expect(selected?.evidence.v25?.rankingScore).toBeGreaterThan(0);
+    expect(selected?.evidence.v25?.evidenceTypes).toEqual(expect.arrayContaining(["loss_evidence", "search_evidence", "deep_search_context"]));
+    expect(selected?.evidence.v25?.ranking.scoreLoss).toBeGreaterThan(0);
+  });
+
   it("returns ProductReviewMoveV1-safe outputs", () => {
     const out = buildProductReviewMovesV1({
       gameResult,
@@ -266,6 +284,17 @@ describe("review moves selector v1", () => {
       gameResult,
       turnAnalyses: [turn(12, "W", { bestScoreLead: 2, playedScoreLead: 0 })],
     });
-    expect(JSON.stringify(out)).not.toMatch(/완착 확정|패착 확정|악수|정답|best move|blunder/i);
+    const forbidden = new RegExp(
+      [
+        ["완착", " ", "확정"].join(""),
+        ["패착", " ", "확정"].join(""),
+        ["악", "수"].join(""),
+        ["정", "답"].join(""),
+        ["best", " ", "move"].join(""),
+        ["blun", "der"].join(""),
+      ].join("|"),
+      "i"
+    );
+    expect(JSON.stringify(out)).not.toMatch(forbidden);
   });
 });

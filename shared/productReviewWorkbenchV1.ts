@@ -88,6 +88,7 @@ export type ProductReviewWorkbenchV1 = {
   decisiveMoveTrace: {
     selected: ProductDecisiveMoveV1 | null;
     selectedReason: string | null;
+    v25EvidenceBreakdown: ProductDecisiveMoveV1["evidence"]["v25"] | null;
     loserColorRequired: boolean;
     positiveLossEvidenceRequired: boolean;
     rejectedCandidates: WorkbenchRejectedCandidateV1[];
@@ -98,6 +99,9 @@ export type ProductReviewWorkbenchV1 = {
       category: string;
       rankingScore: number;
       evidence: string[];
+      v25Taxonomy: string | null;
+      v25EvidenceTypes: string[];
+      v25Ranking: Record<string, number> | null;
       decisiveDuplicateExcluded: boolean;
     }>;
     playerDiversityApplied: boolean;
@@ -520,6 +524,7 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
     decisiveMoveTrace: {
       selected: decisive,
       selectedReason: selectedReason(decisive),
+      v25EvidenceBreakdown: decisive?.evidence.v25 ?? null,
       loserColorRequired: gameResult.loserColor != null,
       positiveLossEvidenceRequired: true,
       rejectedCandidates: decisiveRejected,
@@ -528,8 +533,11 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
       selected: reviewMoves.map((move) => ({
         turnIndex: move.turnIndex,
         category: move.category,
-        rankingScore: pool.find((row) => row.turnIndex === move.turnIndex)?.rankingScore ?? 0,
+        rankingScore: move.evidence.v25?.rankingScore ?? pool.find((row) => row.turnIndex === move.turnIndex)?.rankingScore ?? 0,
         evidence: move.evidence.source,
+        v25Taxonomy: move.evidence.v25?.taxonomy ?? null,
+        v25EvidenceTypes: move.evidence.v25?.evidenceTypes ?? [],
+        v25Ranking: move.evidence.v25?.ranking ?? null,
         decisiveDuplicateExcluded: decisive?.turnIndex === move.turnIndex,
       })),
       playerDiversityApplied: new Set(reviewMoves.map((move) => move.player)).size > 1,
@@ -565,7 +573,7 @@ function unsupportedWorkbench(reason: string): ProductReviewWorkbenchV1 {
     sourceSummary: { source: null, metaMock: null, timelineEnabled: null, timelineCompleted: null, deepSearchEnabled: null, deepSearchCompleted: null },
     learningEventsSummary: [],
     candidatePoolSummary: [],
-    decisiveMoveTrace: { selected: null, selectedReason: null, loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
+    decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
     reviewMovesTrace: { selected: [], playerDiversityApplied: false, rejectedCandidates: [] },
     explanationPlanTrace: [],
     uiSummary: [],
@@ -608,10 +616,13 @@ export function renderProductReviewWorkbenchMarkdownV1(report: ProductReviewWork
   lines.push("## DecisiveMove Trace");
   lines.push(`- selected: \`${report.decisiveMoveTrace.selected?.turnIndex ?? "null"}\``);
   lines.push(`- selectedReason: \`${mdValue(report.decisiveMoveTrace.selectedReason)}\``);
+  lines.push(`- v25Taxonomy: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy ?? null)}\``);
+  lines.push(`- v25EvidenceTypes: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes ?? [])}\``);
+  lines.push(`- v25RankingScore: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.rankingScore ?? null)}\``);
   for (const r of report.decisiveMoveTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push("");
   lines.push("## ReviewMoves Trace");
-  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}`);
+  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}`);
   if (report.reviewMovesTrace.selected.length === 0) lines.push("- selected: none");
   for (const r of report.reviewMovesTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push(`- playerDiversityApplied: \`${report.reviewMovesTrace.playerDiversityApplied}\``);

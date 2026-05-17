@@ -175,6 +175,15 @@ describe("productReviewWorkbenchV1", () => {
     expect(report.uiSummary.every((row) => row.tryPlayImpact === "none")).toBe(true);
   });
 
+  it("includes v2.5 evidence breakdown in workbench traces", () => {
+    const report = buildProductReviewWorkbenchV1(completedResultFixture());
+
+    expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy).toBe("decisive_candidate");
+    expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes).toContain("loss_evidence");
+    expect(report.reviewMovesTrace.selected.some((move) => move.v25Taxonomy != null && move.v25EvidenceTypes.length > 0)).toBe(true);
+    expect(renderProductReviewWorkbenchMarkdownV1(report)).toContain("v25EvidenceTypes");
+  });
+
   it("safely skips mock or unknown results", () => {
     expect(buildProductReviewWorkbenchV1({ source: "mock", meta: { mock: true } }).status).toBe("unsupported");
     expect(buildProductReviewWorkbenchV1({ source: "katago-worker-v1", meta: { mock: true } }).unsupportedReason).toBe("mock_result_unsupported");

@@ -30,10 +30,45 @@ export type ProductEventEvidenceSourceV1 =
   | "winrateTimelineV1"
   | "manual";
 
+export type ProductKeyMoveTaxonomyV25 =
+  | "decisive_candidate"
+  | "swing_candidate"
+  | "learning_candidate"
+  | "shape_review_candidate"
+  | "direction_candidate"
+  | "deep_search_candidate"
+  | "volatility_candidate";
+
+export type ProductEvidenceTypeV25 =
+  | "loss_evidence"
+  | "search_evidence"
+  | "volatility_context"
+  | "learning_context"
+  | "deep_search_context";
+
+export type ProductEvidenceBreakdownV25 = {
+  taxonomy: ProductKeyMoveTaxonomyV25;
+  evidenceTypes: ProductEvidenceTypeV25[];
+  rankingScore: number;
+  ranking: {
+    scoreLoss: number;
+    winrateLoss: number;
+    playedMoveRank: number;
+    bsi: number;
+    adi: number;
+    deepSearch: number;
+    volatility: number;
+    explainability: number;
+    openingPenalty: number;
+    duplicatePenalty: number;
+  };
+};
+
 export type ProductEventEvidenceV1 = {
   source: ProductEventEvidenceSourceV1[];
   notes?: string[];
   pv?: string[];
+  v25?: ProductEvidenceBreakdownV25;
 };
 
 export type ProductDecisiveMoveV1 = {
@@ -116,6 +151,24 @@ const EVIDENCE_SOURCES = new Set<ProductEventEvidenceSourceV1>([
   "manual",
 ]);
 
+const KEY_MOVE_TAXONOMY_V25 = new Set<ProductKeyMoveTaxonomyV25>([
+  "decisive_candidate",
+  "swing_candidate",
+  "learning_candidate",
+  "shape_review_candidate",
+  "direction_candidate",
+  "deep_search_candidate",
+  "volatility_candidate",
+]);
+
+const EVIDENCE_TYPES_V25 = new Set<ProductEvidenceTypeV25>([
+  "loss_evidence",
+  "search_evidence",
+  "volatility_context",
+  "learning_context",
+  "deep_search_context",
+]);
+
 const REVIEW_CATEGORIES = new Set<ProductReviewMoveCategoryV1>([
   "learning_candidate",
   "flow_shift_candidate",
@@ -148,6 +201,10 @@ function isFiniteNumberOrNull(v: unknown): v is number | null {
   return v === null || (typeof v === "number" && Number.isFinite(v));
 }
 
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
 function isNonNegativeFiniteNumberOrNull(v: unknown): v is number | null {
   return v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
 }
@@ -169,6 +226,41 @@ function isEvidenceSourceArray(v: unknown): v is ProductEventEvidenceSourceV1[] 
     Array.isArray(v) &&
     v.length > 0 &&
     v.every((x) => typeof x === "string" && EVIDENCE_SOURCES.has(x as ProductEventEvidenceSourceV1))
+  );
+}
+
+function isEvidenceTypeArrayV25(v: unknown): v is ProductEvidenceTypeV25[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string" && EVIDENCE_TYPES_V25.has(x as ProductEvidenceTypeV25));
+}
+
+function isRankingBreakdownV25(v: unknown): boolean {
+  if (!isPlainObject(v)) {
+    return false;
+  }
+  return (
+    isFiniteNumber(v.scoreLoss) &&
+    isFiniteNumber(v.winrateLoss) &&
+    isFiniteNumber(v.playedMoveRank) &&
+    isFiniteNumber(v.bsi) &&
+    isFiniteNumber(v.adi) &&
+    isFiniteNumber(v.deepSearch) &&
+    isFiniteNumber(v.volatility) &&
+    isFiniteNumber(v.explainability) &&
+    isFiniteNumber(v.openingPenalty) &&
+    isFiniteNumber(v.duplicatePenalty)
+  );
+}
+
+function isProductEvidenceBreakdownV25(v: unknown): v is ProductEvidenceBreakdownV25 {
+  if (!isPlainObject(v)) {
+    return false;
+  }
+  return (
+    typeof v.taxonomy === "string" &&
+    KEY_MOVE_TAXONOMY_V25.has(v.taxonomy as ProductKeyMoveTaxonomyV25) &&
+    isEvidenceTypeArrayV25(v.evidenceTypes) &&
+    isFiniteNumber(v.rankingScore) &&
+    isRankingBreakdownV25(v.ranking)
   );
 }
 
@@ -333,7 +425,8 @@ export function isProductEventEvidenceV1(v: unknown): v is ProductEventEvidenceV
   return (
     isEvidenceSourceArray(v.source) &&
     (v.notes === undefined || isStringArray(v.notes)) &&
-    (v.pv === undefined || isStringArray(v.pv))
+    (v.pv === undefined || isStringArray(v.pv)) &&
+    (v.v25 === undefined || isProductEvidenceBreakdownV25(v.v25))
   );
 }
 

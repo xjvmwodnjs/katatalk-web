@@ -2,7 +2,14 @@ import type { AdiV1Result } from "./adiV1";
 import type { AnalysisLearningEventsV1 } from "./analysisLearningEventsV1";
 import type { BsiV1Result } from "./bsiV1";
 import type { DeepSearchResultsV1Result } from "./deepSearchResultsV1";
-import type { ProductColorV1, ProductDecisiveMoveV1, ProductEventConfidenceV1, ProductEventEvidenceSourceV1, ProductGameResultV1 } from "./analysisProductEventsV1";
+import type {
+  ProductColorV1,
+  ProductDecisiveMoveV1,
+  ProductEventConfidenceV1,
+  ProductEventEvidenceSourceV1,
+  ProductEvidenceTypeV25,
+  ProductGameResultV1,
+} from "./analysisProductEventsV1";
 import { isProductDecisiveMoveV1 } from "./analysisProductEventsV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
 import type { WinrateTimelineV1 } from "./winrateTimelineV1";
@@ -30,8 +37,23 @@ type Candidate = {
   notes: Set<string>;
   pv: string[];
   score: number;
+  ranking: RankingBreakdown;
+  evidenceTypes: Set<ProductEvidenceTypeV25>;
   signalCount: number;
   finalPosition: boolean;
+};
+
+type RankingBreakdown = {
+  scoreLoss: number;
+  winrateLoss: number;
+  playedMoveRank: number;
+  bsi: number;
+  adi: number;
+  deepSearch: number;
+  volatility: number;
+  explainability: number;
+  openingPenalty: number;
+  duplicatePenalty: number;
 };
 
 function finiteNonNegative(v: unknown): number | null {
@@ -85,6 +107,19 @@ function candidateFor(map: Map<number, Candidate>, turnIndex: number): Candidate
       notes: new Set(),
       pv: [],
       score: 0,
+      ranking: {
+        scoreLoss: 0,
+        winrateLoss: 0,
+        playedMoveRank: 0,
+        bsi: 0,
+        adi: 0,
+        deepSearch: 0,
+        volatility: 0,
+        explainability: 0,
+        openingPenalty: 0,
+        duplicatePenalty: 0,
+      },
+      evidenceTypes: new Set(),
       signalCount: 0,
       finalPosition: false,
     };
@@ -97,6 +132,15 @@ function addSource(candidate: Candidate, source: ProductEventEvidenceSourceV1): 
   candidate.evidenceSource.add(source);
 }
 
+function addEvidenceType(candidate: Candidate, type: ProductEvidenceTypeV25): void {
+  candidate.evidenceTypes.add(type);
+}
+
+function addRanking(candidate: Candidate, key: keyof RankingBreakdown, value: number): void {
+  candidate.ranking[key] += value;
+  candidate.score += value;
+}
+
 function addScoreLoss(candidate: Candidate, value: unknown): void {
   const loss = finiteNonNegative(value);
   if (loss == null) {
@@ -106,7 +150,8 @@ function addScoreLoss(candidate: Candidate, value: unknown): void {
   if (loss <= 0) {
     return;
   }
-  candidate.score += positiveContribution(loss, 10) * 40;
+  addEvidenceType(candidate, "loss_evidence");
+  addRanking(candidate, "scoreLoss", positiveContribution(loss, 10) * 45);
   candidate.signalCount += 1;
 }
 
@@ -119,7 +164,8 @@ function addWinrateLoss(candidate: Candidate, value: unknown): void {
   if (loss <= 0) {
     return;
   }
-  candidate.score += positiveContribution(loss, 0.2) * 35;
+  addEvidenceType(candidate, "loss_evidence");
+  addRanking(candidate, "winrateLoss", positiveContribution(loss, 0.2) * 40);
   candidate.signalCount += 1;
 }
 
@@ -128,7 +174,8 @@ function addBsi(candidate: Candidate, value: unknown): void {
   if (bsi == null) {
     return;
   }
-  candidate.score += positiveContribution(bsi, 100) * 25;
+  addRanking(candidate, "bsi", positiveContribution(bsi, 100) * 22);
+  addEvidenceType(candidate, "search_evidence");
   candidate.signalCount += 1;
   addSource(candidate, "bsiV1");
 }
@@ -138,9 +185,24 @@ function addAdi(candidate: Candidate, value: unknown): void {
   if (adi == null) {
     return;
   }
-  candidate.score += positiveContribution(adi, 1) * 20;
+  addRanking(candidate, "adi", positiveContribution(adi, 1) * 12);
+  addEvidenceType(candidate, "learning_context");
   candidate.signalCount += 1;
   addSource(candidate, "adiV1");
+}
+
+function addPlayedMoveRank(candidate: Candidate, value: unknown): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 1) {
+    return;
+  }
+  addRanking(candidate, "playedMoveRank", positiveContribution(value - 1, 6) * 12);
+  addEvidenceType(candidate, "search_evidence");
+}
+
+function addExplainability(candidate: Candidate): void {
+  if (candidate.playedMove != null && candidate.recommendedMove != null && candidate.playedMove !== candidate.recommendedMove) {
+    addRanking(candidate, "explainability", 3);
+  }
 }
 
 function setCandidateIdentity(
@@ -233,7 +295,8 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     addAdi(candidate, event.signals.adiScore);
     if (event.signals.deepSearchCompleted === true || event.signals.deepSearchChangedTop === true) {
       addSource(candidate, "deepSearchResultsV1");
-      candidate.score += event.signals.deepSearchChangedTop === true ? 18 : 10;
+      addEvidenceType(candidate, "deep_search_context");
+      addRanking(candidate, "deepSearch", event.signals.deepSearchChangedTop === true ? 14 : 8);
       candidate.signalCount += 1;
     }
     if (event.signals.winrateDelta != null) {
@@ -258,6 +321,8 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
       addSource(candidate, "turnAnalyses");
       addScoreLoss(candidate, scoreLossFromTurn(turn));
       addWinrateLoss(candidate, winrateLossFromTurn(turn));
+      addPlayedMoveRank(candidate, turn.comparisonReady?.playedMoveRank);
+      addExplainability(candidate);
     }
   }
 
@@ -282,7 +347,7 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     });
     addAdi(candidate, signal.adiScore);
     if (signal.deepSearchCandidate) {
-      candidate.score += 8;
+      addRanking(candidate, "deepSearch", 4);
       candidate.signalCount += 1;
     }
   }
@@ -296,7 +361,9 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
     });
     if (result.status === "ok") {
       addSource(candidate, "deepSearchResultsV1");
-      candidate.score += result.comparison.plannedBestMoveStillTop === false ? 18 : 10;
+      addEvidenceType(candidate, "deep_search_context");
+      addRanking(candidate, "deepSearch", result.comparison.plannedBestMoveStillTop === false ? 14 : 8);
+      addPlayedMoveRank(candidate, result.comparison.playedMoveRank);
       candidate.signalCount += 1;
     }
   }
@@ -311,6 +378,7 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
       playedMove: point.playedMove,
     });
     addSource(candidate, "winrateTimelineV1");
+    addEvidenceType(candidate, "volatility_context");
     candidate.notes.add("winrateTimelineV1 is context only until loser-perspective loss is verified");
   }
 
@@ -339,6 +407,12 @@ export function buildProductDecisiveMoveV1(input: BuildProductDecisiveMoveV1Inpu
       source: Array.from(selected.evidenceSource).sort(),
       notes: Array.from(selected.notes),
       pv: selected.pv,
+      v25: {
+        taxonomy: "decisive_candidate",
+        evidenceTypes: Array.from(selected.evidenceTypes).sort(),
+        rankingScore: selected.score,
+        ranking: selected.ranking,
+      },
     },
   };
 
