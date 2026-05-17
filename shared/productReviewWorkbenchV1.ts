@@ -23,6 +23,11 @@ import {
   buildExplanationPlanForReviewMoveV1,
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
+import {
+  buildExplanationPlanV2ForDecisiveMove,
+  buildExplanationPlanV2ForReviewMove,
+  type ExplanationPlanV2,
+} from "./explanationPlannerV2";
 import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
 import { attachCandidateComparisonToProductMoveV1 } from "./candidateComparisonV1";
 import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTurnKatagoAnalysisV1";
@@ -123,6 +128,16 @@ export type ProductReviewWorkbenchV1 = {
     evidenceBullets: string[];
     caveats: string[];
     referenceLinePvLength: number;
+  }>;
+  explanationPlanV2Trace: Array<{
+    audience: string;
+    targetType: string;
+    turnIndex: number;
+    titleKey: string;
+    summaryKey: string;
+    bullets: string[];
+    forbiddenClaims: string[];
+    caveats: string[];
   }>;
   uiSummary: Array<{
     turnIndex: number;
@@ -448,6 +463,19 @@ function buildUiSummary(decisive: ProductDecisiveMoveV1 | null, reviews: Product
   });
 }
 
+function buildExplanationPlanV2Trace(plans: ExplanationPlanV2[]): ProductReviewWorkbenchV1["explanationPlanV2Trace"] {
+  return plans.map((plan) => ({
+    audience: plan.audience,
+    targetType: plan.targetType,
+    turnIndex: plan.turnIndex,
+    titleKey: plan.titleKey,
+    summaryKey: plan.summaryKey,
+    bullets: plan.bullets.map((bullet) => bullet.type),
+    forbiddenClaims: plan.forbiddenClaims,
+    caveats: plan.caveats,
+  }));
+}
+
 export function redactWorkbenchTextV1(input: string): string {
   return input
     .replace(/\(;\s*(?=[\s\S]{0,200}(?:FF\[|GM\[|B\[|W\[))[\s\S]*?\)\s*/g, "[REDACTED_SGF]")
@@ -507,6 +535,10 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
   const plans = [
     ...(decisive == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisive)]),
     ...reviewMoves.map((move) => buildExplanationPlanForReviewMoveV1(move)),
+  ];
+  const plansV2 = [
+    ...(decisive == null ? [] : [buildExplanationPlanV2ForDecisiveMove(decisive, "dan")]),
+    ...reviewMoves.map((move) => buildExplanationPlanV2ForReviewMove(move, "dan")),
   ];
   const pool = buildCandidatePool(result, learningEvents, totalMoves);
   const decisiveRejected = pool
@@ -592,6 +624,7 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
       caveats: plan.caveats,
       referenceLinePvLength: plan.referenceLine.pv.length,
     })),
+    explanationPlanV2Trace: buildExplanationPlanV2Trace(plansV2),
     uiSummary: buildUiSummary(decisive, reviewMoves, plans),
     safety: {
       sgfContentRedacted: true,
@@ -616,6 +649,7 @@ function unsupportedWorkbench(reason: string): ProductReviewWorkbenchV1 {
     decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, conceptTagsV1: [], forbiddenConceptClaims: [], candidateComparisonV1: null, loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
     reviewMovesTrace: { selected: [], playerDiversityApplied: false, rejectedCandidates: [] },
     explanationPlanTrace: [],
+    explanationPlanV2Trace: [],
     uiSummary: [],
     safety: { sgfContentRedacted: true, secretLikeValuesRedacted: true, forbiddenLabelsPresent: [] },
   };
@@ -673,6 +707,10 @@ export function renderProductReviewWorkbenchMarkdownV1(report: ProductReviewWork
   lines.push("## ExplanationPlan Trace");
   for (const p of report.explanationPlanTrace) lines.push(`- #${p.turnIndex}: target=${p.targetType}, title=${p.titleKey}, summary=${p.summaryKey}, bullets=${p.evidenceBullets.join(",")}, caveats=${p.caveats.join(",")}, pvLength=${p.referenceLinePvLength}`);
   if (report.explanationPlanTrace.length === 0) lines.push("- none");
+  lines.push("");
+  lines.push("## ExplanationPlanV2 Trace");
+  for (const p of report.explanationPlanV2Trace) lines.push(`- #${p.turnIndex}: audience=${p.audience}, target=${p.targetType}, title=${p.titleKey}, summary=${p.summaryKey}, bullets=${p.bullets.join(",")}, forbiddenClaims=${p.forbiddenClaims.join(",")}, caveats=${p.caveats.join(",")}`);
+  if (report.explanationPlanV2Trace.length === 0) lines.push("- none");
   lines.push("");
   lines.push("## UI Summary");
   for (const ui of report.uiSummary) lines.push(`- #${ui.turnIndex}: chip=${ui.chipLabel}, memo=${ui.memoSummary}, reference=${ui.referenceAvailable}, tryPlayImpact=${ui.tryPlayImpact}`);
