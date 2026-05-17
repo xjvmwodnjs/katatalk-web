@@ -30,6 +30,7 @@ import {
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
 import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
+import { attachCandidateComparisonToProductMoveV1 } from "./candidateComparisonV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
 import {
   buildSgfPlaybackStateV1,
@@ -735,12 +736,14 @@ function buildProductReviewV1(args: {
   const decisiveMove =
     rawDecisiveMove == null
       ? null
-      : attachConceptTagsToProductMoveV1(rawDecisiveMove, {
-          sgfText: args.sgfText,
-          totalMoves: args.totalMoves,
-          ownershipSummary: ownershipForMove(rawDecisiveMove.turnIndex),
-          ladderEvidence: false,
-        });
+      : attachCandidateComparisonToProductMoveV1(
+          attachConceptTagsToProductMoveV1(rawDecisiveMove, {
+            sgfText: args.sgfText,
+            totalMoves: args.totalMoves,
+            ownershipSummary: ownershipForMove(rawDecisiveMove.turnIndex),
+            ladderEvidence: false,
+          })
+        );
   const reviewMoves = buildProductReviewMovesV1({
     gameResult: args.gameResult,
     decisiveMove,
@@ -753,12 +756,14 @@ function buildProductReviewV1(args: {
     totalMoves: args.totalMoves,
     maxMoves: 5,
   }).map((move) =>
-    attachConceptTagsToProductMoveV1(move, {
-      sgfText: args.sgfText,
-      totalMoves: args.totalMoves,
-      ownershipSummary: ownershipForMove(move.turnIndex),
-      ladderEvidence: false,
-    })
+    attachCandidateComparisonToProductMoveV1(
+      attachConceptTagsToProductMoveV1(move, {
+        sgfText: args.sgfText,
+        totalMoves: args.totalMoves,
+        ownershipSummary: ownershipForMove(move.turnIndex),
+        ladderEvidence: false,
+      })
+    )
   );
   if (decisiveMove == null && reviewMoves.length === 0) {
     return null;

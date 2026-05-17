@@ -242,6 +242,18 @@ describe("analysis product events v1", () => {
       expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: [safe], caveats: [safe] }] })).toBe(true);
       expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: safe }] })).toBe(true);
     }
+    const candidateComparisonV1 = {
+      turnIndex: 42,
+      playedMove: "D4",
+      recommendedMove: "Q16",
+      comparisonType: "move_difference",
+      deltas: [{ type: "score_loss", severity: "medium", evidence: ["scoreLoss=5.5"], caveats: ["comparison_material_only"] }],
+      forbiddenClaims: ["invasion:ownership_evidence_unavailable"],
+    };
+    expect(isProductDecisiveMoveV1({ ...decisive, candidateComparisonV1 })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, candidateComparisonV1: { ...candidateComparisonV1, comparisonType: "wrong_move" } })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, candidateComparisonV1: { ...candidateComparisonV1, deltas: [{ ...candidateComparisonV1.deltas[0], evidence: ["B[pd]"] }] } })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, candidateComparisonV1: { ...candidateComparisonV1, forbiddenClaims: ["C[comment]"] } })).toBe(false);
 
     const review = {
       ...decisive,
