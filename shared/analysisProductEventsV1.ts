@@ -291,6 +291,9 @@ function isSafeConceptStringV1(v: unknown): v is string {
   if (/\(;\s*(?=[\s\S]{0,200}(?:FF\[|GM\[|B\[|W\[))[\s\S]*?\)\s*/i.test(s)) {
     return false;
   }
+  if (/(^|[^A-Za-z])(?:B|W|C|SZ|FF|GM|AB|AW|AE|RE|KM)\[[^\]\r\n]{0,80}\]/.test(s)) {
+    return false;
+  }
   if (/[A-Za-z]:\\(?:[^\\\r\n]+\\)+[^\s\r\n]+/.test(s) || /\/(?:Users|home|opt|usr|var)\/[^\s"'`]+/.test(s)) {
     return false;
   }
