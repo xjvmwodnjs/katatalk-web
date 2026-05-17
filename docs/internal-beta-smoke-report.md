@@ -1,8 +1,8 @@
 # Internal Beta Smoke Report
 
-일시: 2026-05-17 12:08-12:18 KST  
-기준 브랜치: `feature/local-real-katago-smoke-report-v1` from `master`  
-기준 커밋: `e558ac0`  
+일시: 2026-05-17 12:08-12:18 KST<br>
+기준 브랜치: `feature/local-real-katago-smoke-report-v1` from `master`<br>
+기준 커밋: `e558ac0`<br>
 범위: Local Real KataGo Smoke Report v1. 기능 코드 수정 없음.
 
 ## A. 실행 환경
@@ -69,7 +69,7 @@ Worker 시작 로그 요약:
 
 ## E. Product Review UI 확인
 
-Deep link: `/?jobId=<completedJobId>` (`sample-d-25-pass`, masked job `iqUjgQ...`)  
+Deep link: `/?jobId=<completedJobId>` (`sample-d-25-pass`, masked job `iqUjgQ...`)<br>
 Viewport: `390x844`
 
 - Board 표시: 통과
