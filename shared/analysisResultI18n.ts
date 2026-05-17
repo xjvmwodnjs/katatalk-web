@@ -611,6 +611,17 @@ type UiBlock = {
   productBulletPv: string;
   productBulletLearningEvent: string;
   productBulletDefault: string;
+  productV2DeterministicBadge: string;
+  productV2ConceptHint: string;
+  productV2CandidateComparison: string;
+  productV2ScoreLoss: string;
+  productV2WinrateLoss: string;
+  productV2PvReference: string;
+  productV2VolatilityContext: string;
+  productV2DeepSearchContext: string;
+  productV2Caveat: string;
+  productV2ScoreUnit: string;
+  productV2RatioSource: string;
   learningEventConfidence: string;
   learningEventScore: string;
   learningEventWinrateDelta: string;
@@ -733,6 +744,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productBulletPv: "참고도 사용 가능",
     productBulletLearningEvent: "학습 이벤트 기반 후보",
     productBulletDefault: "내부 참고 신호",
+    productV2DeterministicBadge: "결정론적 메모",
+    productV2ConceptHint: "보수적 개념 힌트",
+    productV2CandidateComparison: "실전수와 추천 후보수의 차이",
+    productV2ScoreLoss: "집 차이 변화",
+    productV2WinrateLoss: "승률 변화",
+    productV2PvReference: "참고 수순",
+    productV2VolatilityContext: "흐름 변화 참고",
+    productV2DeepSearchContext: "Deep Search 참고",
+    productV2Caveat: "주의",
+    productV2ScoreUnit: "집",
+    productV2RatioSource: "원본 ratio",
     learningEventConfidence: "신뢰도",
     learningEventScore: "선정 점수",
     learningEventWinrateDelta: "승률 변화",
@@ -852,6 +874,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productBulletPv: "Reference line available",
     productBulletLearningEvent: "Learning-event candidate",
     productBulletDefault: "Internal reference signal",
+    productV2DeterministicBadge: "Deterministic memo",
+    productV2ConceptHint: "Conservative concept hint",
+    productV2CandidateComparison: "Played move and recommended candidate difference",
+    productV2ScoreLoss: "Score shift",
+    productV2WinrateLoss: "Winrate shift",
+    productV2PvReference: "Reference line",
+    productV2VolatilityContext: "Flow context",
+    productV2DeepSearchContext: "Deep Search context",
+    productV2Caveat: "Caveat",
+    productV2ScoreUnit: "points",
+    productV2RatioSource: "source ratio",
     learningEventConfidence: "Confidence",
     learningEventScore: "Selection score",
     learningEventWinrateDelta: "Winrate shift",
@@ -971,6 +1004,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productBulletPv: "参考図あり",
     productBulletLearningEvent: "学習イベント由来の候補",
     productBulletDefault: "内部参考シグナル",
+    productV2DeterministicBadge: "決定論的メモ",
+    productV2ConceptHint: "保守的な概念ヒント",
+    productV2CandidateComparison: "実戦手と推薦候補手の差",
+    productV2ScoreLoss: "地合い差の変化",
+    productV2WinrateLoss: "勝率の変化",
+    productV2PvReference: "参考手順",
+    productV2VolatilityContext: "流れの参考情報",
+    productV2DeepSearchContext: "Deep Search 参考",
+    productV2Caveat: "注意",
+    productV2ScoreUnit: "目",
+    productV2RatioSource: "元の ratio",
     learningEventConfidence: "信頼度",
     learningEventScore: "選定スコア",
     learningEventWinrateDelta: "勝率変化",
@@ -1090,6 +1134,17 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productBulletPv: "有参考图",
     productBulletLearningEvent: "学习事件候选",
     productBulletDefault: "内部参考信号",
+    productV2DeterministicBadge: "确定性备忘",
+    productV2ConceptHint: "保守概念提示",
+    productV2CandidateComparison: "实战手与推荐候选手的差异",
+    productV2ScoreLoss: "目差变化",
+    productV2WinrateLoss: "胜率变化",
+    productV2PvReference: "参考手顺",
+    productV2VolatilityContext: "走势变化参考",
+    productV2DeepSearchContext: "Deep Search 参考",
+    productV2Caveat: "注意",
+    productV2ScoreUnit: "目",
+    productV2RatioSource: "原始 ratio",
     learningEventConfidence: "置信度",
     learningEventScore: "选择分数",
     learningEventWinrateDelta: "胜率变化",

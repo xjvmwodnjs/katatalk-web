@@ -29,6 +29,11 @@ import {
   buildExplanationPlanForReviewMoveV1,
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
+import {
+  buildExplanationPlanV2ForDecisiveMove,
+  buildExplanationPlanV2ForReviewMove,
+  type ExplanationPlanV2,
+} from "./explanationPlannerV2";
 import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
 import { attachCandidateComparisonToProductMoveV1 } from "./candidateComparisonV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
@@ -212,6 +217,7 @@ export type AnalysisProductReviewV1 = {
   decisiveMove: ProductDecisiveMoveV1 | null;
   reviewMoves: ProductReviewMoveV1[];
   explanationPlans: ExplanationPlanV1[];
+  explanationPlansV2: ExplanationPlanV2[];
   source: "deterministic-product-events-v1";
 };
 
@@ -776,6 +782,10 @@ function buildProductReviewV1(args: {
     explanationPlans: [
       ...(decisiveMove == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisiveMove)]),
       ...reviewMoves.map((move) => buildExplanationPlanForReviewMoveV1(move)),
+    ],
+    explanationPlansV2: [
+      ...(decisiveMove == null ? [] : [buildExplanationPlanV2ForDecisiveMove(decisiveMove, "dan")]),
+      ...reviewMoves.map((move) => buildExplanationPlanV2ForReviewMove(move, "dan")),
     ],
     source: "deterministic-product-events-v1",
   };

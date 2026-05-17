@@ -39,6 +39,7 @@ import {
   translateVmWarning,
 } from "@shared/analysisResultI18n";
 import { mapReasonPhraseForUi, uiTextContainsForbiddenLabel } from "@shared/analysisResultUiHelpers";
+import type { ExplanationPlanBulletV2 } from "@shared/explanationPlannerV2";
 
 type Props = {
   data: unknown;
@@ -82,6 +83,43 @@ function productPlanBulletText(type: string, t: AnalysisResultUiStrings): string
     default:
       return t.productBulletDefault;
   }
+}
+
+function productPlanV2BulletText(type: ExplanationPlanBulletV2["type"], t: AnalysisResultUiStrings): string {
+  switch (type) {
+    case "score_loss":
+      return t.productV2ScoreLoss;
+    case "winrate_loss":
+      return t.productV2WinrateLoss;
+    case "concept_hint":
+      return t.productV2ConceptHint;
+    case "candidate_comparison":
+      return t.productV2CandidateComparison;
+    case "pv_reference":
+      return t.productV2PvReference;
+    case "volatility_context":
+      return t.productV2VolatilityContext;
+    case "deep_search_context":
+      return t.productV2DeepSearchContext;
+    case "caveat":
+      return t.productV2Caveat;
+  }
+}
+
+function productPlanV2BulletValue(bullet: ExplanationPlanBulletV2, t: AnalysisResultUiStrings): string | null {
+  if (typeof bullet.value !== "number" || !Number.isFinite(bullet.value)) {
+    return null;
+  }
+  if (bullet.type === "score_loss") {
+    return `${bullet.value.toFixed(1)} ${t.productV2ScoreUnit}`;
+  }
+  if (bullet.type === "winrate_loss") {
+    return `${(bullet.value * 100).toFixed(1)}% (${t.productV2RatioSource})`;
+  }
+  if (bullet.type === "pv_reference") {
+    return `${Math.round(bullet.value)} PV`;
+  }
+  return null;
 }
 
 export default function AnalysisResultView({ data, lang }: Props) {
@@ -170,6 +208,12 @@ export default function AnalysisResultView({ data, lang }: Props) {
       return null;
     }
     return vm.productReviewV1.explanationPlans.find((plan) => plan.turnIndex === selectedCandidate.turnIndex) ?? null;
+  }, [vm, selectedCandidate]);
+  const selectedProductPlanV2 = useMemo(() => {
+    if (vm.kind !== "katago-worker-v1" || selectedCandidate == null || vm.productReviewV1 == null) {
+      return null;
+    }
+    return vm.productReviewV1.explanationPlansV2.find((plan) => plan.turnIndex === selectedCandidate.turnIndex) ?? null;
   }, [vm, selectedCandidate]);
   const selectedLearningEventScore =
     typeof selectedLearningEvent?.score === "number" && Number.isFinite(selectedLearningEvent.score)
@@ -502,15 +546,17 @@ export default function AnalysisResultView({ data, lang }: Props) {
           )}
           </section>
 
-          <AnalysisWinratePanel
-            series={vm.graph.winrateSeries}
-            selectedTurnIndex={selectedTurnIndex}
-            onSelectTurnIndex={selectTurnIndex}
-            lang={lang}
-            fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
-            collapsed={winrateCollapsed}
-            onToggleCollapsed={toggleWinrateCollapsed}
-          />
+          <div className="hidden lg:block">
+            <AnalysisWinratePanel
+              series={vm.graph.winrateSeries}
+              selectedTurnIndex={selectedTurnIndex}
+              onSelectTurnIndex={selectTurnIndex}
+              lang={lang}
+              fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
+              collapsed={winrateCollapsed}
+              onToggleCollapsed={toggleWinrateCollapsed}
+            />
+          </div>
         </div>
 
         <div className="min-w-0 space-y-3">
@@ -541,7 +587,31 @@ export default function AnalysisResultView({ data, lang }: Props) {
                       ? t.analysisMemoCandidate
                       : t.analysisMemoSelectCandidate}
               </p>
-              {selectedProductPlan ? (
+              {selectedProductPlanV2 ? (
+                <div className="rounded-xl border border-amber-400/15 bg-amber-950/10 p-3" data-testid="explanation-plan-v2-memo">
+                  <div className="mb-2 inline-flex rounded-full border border-amber-400/25 px-2 py-0.5 text-[10px] font-medium text-amber-100">
+                    {t.productV2DeterministicBadge}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {selectedProductPlanV2.bullets.map((bullet, index) => {
+                      const value = productPlanV2BulletValue(bullet, t);
+                      return (
+                        <div key={`${bullet.type}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-2">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="truncate text-[11px] font-medium text-amber-100">
+                              {productPlanV2BulletText(bullet.type, t)}
+                            </span>
+                            {value ? <span className="shrink-0 font-mono text-[11px] text-slate-200">{value}</span> : null}
+                          </div>
+                          <div className="mt-1 truncate text-[10px] text-slate-500">
+                            {bullet.evidence.slice(0, 2).join(" · ")}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : selectedProductPlan ? (
                 <ul className="list-disc space-y-1 pl-4 text-xs text-slate-400">
                   {selectedProductPlan.evidenceBullets.slice(0, 4).map((bullet, index) => (
                     <li key={`${bullet.type}-${index}`}>
@@ -654,6 +724,17 @@ export default function AnalysisResultView({ data, lang }: Props) {
               ) : null}
             </div>
           </section>
+          <div className="lg:hidden">
+            <AnalysisWinratePanel
+              series={vm.graph.winrateSeries}
+              selectedTurnIndex={selectedTurnIndex}
+              onSelectTurnIndex={selectTurnIndex}
+              lang={lang}
+              fullTimeline={vm.kind === "katago-worker-v1" ? vm.graph.winrateSeriesFromTimeline : false}
+              collapsed={winrateCollapsed}
+              onToggleCollapsed={toggleWinrateCollapsed}
+            />
+          </div>
         </div>
       </div>
     </div>
