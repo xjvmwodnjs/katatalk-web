@@ -87,12 +87,15 @@ export type ProductConceptTagV1 =
 export type ProductConceptTagEvidenceV1 = {
   tag: ProductConceptTagV1;
   confidence: ProductEventConfidenceV1;
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
   evidence: string[];
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
   caveats: string[];
 };
 
 export type ProductForbiddenConceptClaimV1 = {
   concept: ProductConceptTagV1;
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
   reason: string;
 };
 
@@ -277,6 +280,36 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
 
+function isSafeConceptStringV1(v: unknown): v is string {
+  if (typeof v !== "string") {
+    return false;
+  }
+  const s = v.trim();
+  if (s.length === 0 || s.length > 160) {
+    return false;
+  }
+  if (/\(;\s*(?=[\s\S]{0,200}(?:FF\[|GM\[|B\[|W\[))[\s\S]*?\)\s*/i.test(s)) {
+    return false;
+  }
+  if (/[A-Za-z]:\\(?:[^\\\r\n]+\\)+[^\s\r\n]+/.test(s) || /\/(?:Users|home|opt|usr|var)\/[^\s"'`]+/.test(s)) {
+    return false;
+  }
+  if (/(?:sk|pk|rk|key|token|secret)_[A-Za-z0-9_-]{12,}/i.test(s)) {
+    return false;
+  }
+  if (/[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/.test(s)) {
+    return false;
+  }
+  if (/\b[A-Z][A-Z0-9_]{2,}\s*=\s*\S+/.test(s)) {
+    return false;
+  }
+  return true;
+}
+
+function isSafeConceptStringArrayV1(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every(isSafeConceptStringV1);
+}
+
 function isEvidenceSourceArray(v: unknown): v is ProductEventEvidenceSourceV1[] {
   return (
     Array.isArray(v) &&
@@ -330,8 +363,8 @@ function isConceptTagEvidenceArrayV1(v: unknown): v is ProductConceptTagEvidence
         CONCEPT_TAGS_V1.has(x.tag as ProductConceptTagV1) &&
         typeof x.confidence === "string" &&
         CONFIDENCE.has(x.confidence as ProductEventConfidenceV1) &&
-        isStringArray(x.evidence) &&
-        isStringArray(x.caveats)
+        isSafeConceptStringArrayV1(x.evidence) &&
+        isSafeConceptStringArrayV1(x.caveats)
     )
   );
 }
@@ -344,8 +377,7 @@ function isForbiddenConceptClaimArrayV1(v: unknown): v is ProductForbiddenConcep
         isPlainObject(x) &&
         typeof x.concept === "string" &&
         CONCEPT_TAGS_V1.has(x.concept as ProductConceptTagV1) &&
-        typeof x.reason === "string" &&
-        x.reason.trim().length > 0
+        isSafeConceptStringV1(x.reason)
     )
   );
 }
