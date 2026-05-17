@@ -24,6 +24,7 @@ import {
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
 import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
+import { attachCandidateComparisonToProductMoveV1 } from "./candidateComparisonV1";
 import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTurnKatagoAnalysisV1";
 import { buildProductReviewMovesV1 } from "./reviewMovesSelectorV1";
 import { readSgfContentFromResultPayload } from "./sgfPlaybackV1";
@@ -92,6 +93,7 @@ export type ProductReviewWorkbenchV1 = {
     v25EvidenceBreakdown: ProductDecisiveMoveV1["evidence"]["v25"] | null;
     conceptTagsV1: ProductDecisiveMoveV1["conceptTagsV1"];
     forbiddenConceptClaims: ProductDecisiveMoveV1["forbiddenConceptClaims"];
+    candidateComparisonV1: ProductDecisiveMoveV1["candidateComparisonV1"] | null;
     loserColorRequired: boolean;
     positiveLossEvidenceRequired: boolean;
     rejectedCandidates: WorkbenchRejectedCandidateV1[];
@@ -107,6 +109,7 @@ export type ProductReviewWorkbenchV1 = {
       v25Ranking: Record<string, number> | null;
       conceptTagsV1: ProductReviewMoveV1["conceptTagsV1"];
       forbiddenConceptClaims: ProductReviewMoveV1["forbiddenConceptClaims"];
+      candidateComparisonV1: ProductReviewMoveV1["candidateComparisonV1"] | null;
       decisiveDuplicateExcluded: boolean;
     }>;
     playerDiversityApplied: boolean;
@@ -483,19 +486,23 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
   const decisive =
     rawDecisive == null
       ? null
-      : attachConceptTagsToProductMoveV1(rawDecisive, {
-          sgfText,
-          totalMoves,
-          ownershipSummary: ownershipForTurn(turnAnalyses, rawDecisive.turnIndex),
-          ladderEvidence: false,
-        });
+      : attachCandidateComparisonToProductMoveV1(
+          attachConceptTagsToProductMoveV1(rawDecisive, {
+            sgfText,
+            totalMoves,
+            ownershipSummary: ownershipForTurn(turnAnalyses, rawDecisive.turnIndex),
+            ladderEvidence: false,
+          })
+        );
   const reviewMoves = buildProductReviewMovesV1({ gameResult, decisiveMove: decisive, learningEvents, turnAnalyses, bsi, adi, deepSearchResults: deep, winrateTimeline: timeline, totalMoves, maxMoves: 5 }).map((move) =>
-    attachConceptTagsToProductMoveV1(move, {
-      sgfText,
-      totalMoves,
-      ownershipSummary: ownershipForTurn(turnAnalyses, move.turnIndex),
-      ladderEvidence: false,
-    })
+    attachCandidateComparisonToProductMoveV1(
+      attachConceptTagsToProductMoveV1(move, {
+        sgfText,
+        totalMoves,
+        ownershipSummary: ownershipForTurn(turnAnalyses, move.turnIndex),
+        ladderEvidence: false,
+      })
+    )
   );
   const plans = [
     ...(decisive == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisive)]),
@@ -554,6 +561,7 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
       v25EvidenceBreakdown: decisive?.evidence.v25 ?? null,
       conceptTagsV1: decisive?.conceptTagsV1 ?? [],
       forbiddenConceptClaims: decisive?.forbiddenConceptClaims ?? [],
+      candidateComparisonV1: decisive?.candidateComparisonV1 ?? null,
       loserColorRequired: gameResult.loserColor != null,
       positiveLossEvidenceRequired: true,
       rejectedCandidates: decisiveRejected,
@@ -569,6 +577,7 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
         v25Ranking: move.evidence.v25?.ranking ?? null,
         conceptTagsV1: move.conceptTagsV1 ?? [],
         forbiddenConceptClaims: move.forbiddenConceptClaims ?? [],
+        candidateComparisonV1: move.candidateComparisonV1 ?? null,
         decisiveDuplicateExcluded: decisive?.turnIndex === move.turnIndex,
       })),
       playerDiversityApplied: new Set(reviewMoves.map((move) => move.player)).size > 1,
@@ -604,7 +613,7 @@ function unsupportedWorkbench(reason: string): ProductReviewWorkbenchV1 {
     sourceSummary: { source: null, metaMock: null, timelineEnabled: null, timelineCompleted: null, deepSearchEnabled: null, deepSearchCompleted: null },
     learningEventsSummary: [],
     candidatePoolSummary: [],
-    decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, conceptTagsV1: [], forbiddenConceptClaims: [], loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
+    decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, conceptTagsV1: [], forbiddenConceptClaims: [], candidateComparisonV1: null, loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
     reviewMovesTrace: { selected: [], playerDiversityApplied: false, rejectedCandidates: [] },
     explanationPlanTrace: [],
     uiSummary: [],
@@ -652,10 +661,11 @@ export function renderProductReviewWorkbenchMarkdownV1(report: ProductReviewWork
   lines.push(`- v25RankingScore: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.rankingScore ?? null)}\``);
   lines.push(`- conceptTagsV1: \`${mdValue(report.decisiveMoveTrace.conceptTagsV1?.map((tag) => `${tag.tag}:${tag.confidence}`) ?? [])}\``);
   lines.push(`- forbiddenConceptClaims: \`${mdValue(report.decisiveMoveTrace.forbiddenConceptClaims?.map((claim) => `${claim.concept}:${claim.reason}`) ?? [])}\``);
+  lines.push(`- candidateComparisonV1: \`${mdValue(report.decisiveMoveTrace.candidateComparisonV1?.comparisonType ?? null)}; deltas=${mdValue(report.decisiveMoveTrace.candidateComparisonV1?.deltas.map((delta) => `${delta.type}:${delta.severity}`) ?? [])}\``);
   for (const r of report.decisiveMoveTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push("");
   lines.push("## ReviewMoves Trace");
-  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}, conceptTagsV1=${mdValue(s.conceptTagsV1?.map((tag) => `${tag.tag}:${tag.confidence}`) ?? [])}, forbiddenConceptClaims=${mdValue(s.forbiddenConceptClaims?.map((claim) => `${claim.concept}:${claim.reason}`) ?? [])}, reservedDuplicatePenalty=${mdValue(s.v25Ranking?.duplicatePenalty ?? 0)}`);
+  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}, conceptTagsV1=${mdValue(s.conceptTagsV1?.map((tag) => `${tag.tag}:${tag.confidence}`) ?? [])}, forbiddenConceptClaims=${mdValue(s.forbiddenConceptClaims?.map((claim) => `${claim.concept}:${claim.reason}`) ?? [])}, candidateComparisonV1=${mdValue(s.candidateComparisonV1?.comparisonType ?? null)}:${mdValue(s.candidateComparisonV1?.deltas.map((delta) => `${delta.type}:${delta.severity}`) ?? [])}, reservedDuplicatePenalty=${mdValue(s.v25Ranking?.duplicatePenalty ?? 0)}`);
   if (report.reviewMovesTrace.selected.length === 0) lines.push("- selected: none");
   for (const r of report.reviewMovesTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push(`- playerDiversityApplied: \`${report.reviewMovesTrace.playerDiversityApplied}\``);

@@ -99,6 +99,39 @@ export type ProductForbiddenConceptClaimV1 = {
   reason: string;
 };
 
+export type ProductCandidateComparisonTypeV1 =
+  | "move_difference"
+  | "no_recommendation"
+  | "same_move"
+  | "insufficient_data";
+
+export type ProductCandidateComparisonDeltaTypeV1 =
+  | "score_loss"
+  | "winrate_loss"
+  | "concept_difference"
+  | "pv_direction"
+  | "local_shape"
+  | "timing"
+  | "uncertain";
+
+export type ProductCandidateComparisonSeverityV1 = "low" | "medium" | "high";
+
+export type ProductCandidateComparisonDeltaV1 = {
+  type: ProductCandidateComparisonDeltaTypeV1;
+  severity: ProductCandidateComparisonSeverityV1;
+  evidence: string[];
+  caveats: string[];
+};
+
+export type ProductCandidateComparisonV1 = {
+  turnIndex: number;
+  playedMove: string | null;
+  recommendedMove: string | null;
+  comparisonType: ProductCandidateComparisonTypeV1;
+  deltas: ProductCandidateComparisonDeltaV1[];
+  forbiddenClaims: string[];
+};
+
 export type ProductEventEvidenceV1 = {
   source: ProductEventEvidenceSourceV1[];
   notes?: string[];
@@ -120,6 +153,7 @@ export type ProductDecisiveMoveV1 = {
   evidence: ProductEventEvidenceV1;
   conceptTagsV1?: ProductConceptTagEvidenceV1[];
   forbiddenConceptClaims?: ProductForbiddenConceptClaimV1[];
+  candidateComparisonV1?: ProductCandidateComparisonV1;
 };
 
 export type ProductReviewMoveCategoryV1 =
@@ -148,6 +182,7 @@ export type ProductReviewMoveV1 = {
   evidence: ProductEventEvidenceV1;
   conceptTagsV1?: ProductConceptTagEvidenceV1[];
   forbiddenConceptClaims?: ProductForbiddenConceptClaimV1[];
+  candidateComparisonV1?: ProductCandidateComparisonV1;
 };
 
 export const PRODUCT_REVIEW_MOVE_CATEGORY_LABELS_V1: Record<ProductReviewMoveCategoryV1, string> = {
@@ -227,6 +262,25 @@ const CONCEPT_TAGS_V1 = new Set<ProductConceptTagV1>([
   "weak_group_attack",
   "weak_group_save",
 ]);
+
+const CANDIDATE_COMPARISON_TYPES_V1 = new Set<ProductCandidateComparisonTypeV1>([
+  "move_difference",
+  "no_recommendation",
+  "same_move",
+  "insufficient_data",
+]);
+
+const CANDIDATE_COMPARISON_DELTA_TYPES_V1 = new Set<ProductCandidateComparisonDeltaTypeV1>([
+  "score_loss",
+  "winrate_loss",
+  "concept_difference",
+  "pv_direction",
+  "local_shape",
+  "timing",
+  "uncertain",
+]);
+
+const CANDIDATE_COMPARISON_SEVERITIES_V1 = new Set<ProductCandidateComparisonSeverityV1>(["low", "medium", "high"]);
 
 const REVIEW_CATEGORIES = new Set<ProductReviewMoveCategoryV1>([
   "learning_candidate",
@@ -382,6 +436,35 @@ function isForbiddenConceptClaimArrayV1(v: unknown): v is ProductForbiddenConcep
         CONCEPT_TAGS_V1.has(x.concept as ProductConceptTagV1) &&
         isSafeConceptStringV1(x.reason)
     )
+  );
+}
+
+function isCandidateComparisonDeltaArrayV1(v: unknown): v is ProductCandidateComparisonDeltaV1[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (x) =>
+        isPlainObject(x) &&
+        typeof x.type === "string" &&
+        CANDIDATE_COMPARISON_DELTA_TYPES_V1.has(x.type as ProductCandidateComparisonDeltaTypeV1) &&
+        typeof x.severity === "string" &&
+        CANDIDATE_COMPARISON_SEVERITIES_V1.has(x.severity as ProductCandidateComparisonSeverityV1) &&
+        isSafeConceptStringArrayV1(x.evidence) &&
+        isSafeConceptStringArrayV1(x.caveats)
+    )
+  );
+}
+
+function isCandidateComparisonV1(v: unknown): v is ProductCandidateComparisonV1 {
+  return (
+    isPlainObject(v) &&
+    isNonNegativeInteger(v.turnIndex) &&
+    isStringOrNull(v.playedMove) &&
+    isStringOrNull(v.recommendedMove) &&
+    typeof v.comparisonType === "string" &&
+    CANDIDATE_COMPARISON_TYPES_V1.has(v.comparisonType as ProductCandidateComparisonTypeV1) &&
+    isCandidateComparisonDeltaArrayV1(v.deltas) &&
+    isSafeConceptStringArrayV1(v.forbiddenClaims)
   );
 }
 
@@ -564,7 +647,8 @@ function hasProductMoveFields(v: Record<string, unknown>): boolean {
     isStringOrNull(v.sourceEventId) &&
     isProductEventEvidenceV1(v.evidence) &&
     (v.conceptTagsV1 === undefined || isConceptTagEvidenceArrayV1(v.conceptTagsV1)) &&
-    (v.forbiddenConceptClaims === undefined || isForbiddenConceptClaimArrayV1(v.forbiddenConceptClaims))
+    (v.forbiddenConceptClaims === undefined || isForbiddenConceptClaimArrayV1(v.forbiddenConceptClaims)) &&
+    (v.candidateComparisonV1 === undefined || isCandidateComparisonV1(v.candidateComparisonV1))
   );
 }
 
