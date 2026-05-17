@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildExplanationPlanV2ForDecisiveMove,
   buildExplanationPlanV2ForReviewMove,
+  isExplanationPlanBulletV2,
   isExplanationPlanV2,
 } from "@shared/explanationPlannerV2";
 import type { ProductDecisiveMoveV1, ProductReviewMoveV1 } from "@shared/analysisProductEventsV1";
@@ -119,6 +120,39 @@ describe("explanation planner v2", () => {
     expect(isExplanationPlanV2({ ...plan, forbiddenClaims: [fakeSecret] })).toBe(false);
     expect(isExplanationPlanV2({ ...plan, caveats: [envLike] })).toBe(false);
     expect(isExplanationPlanV2({ ...plan, summaryKey: pathLike })).toBe(false);
+  });
+
+  it("enforces bullet type value and unit invariants", () => {
+    const validScoreLoss = { type: "score_loss", textKey: "ep2_text_score_loss", value: 3.5, unit: "points", evidence: ["scoreLoss=3.5"] };
+    const validWinrateLoss = { type: "winrate_loss", textKey: "ep2_text_winrate_loss", value: 0.12, unit: "ratio", evidence: ["winrateLoss=0.12"] };
+    const validContext = { type: "volatility_context", textKey: "ep2_text_volatility_context", unit: "none", evidence: ["volatility_context_available"] };
+    const validPvReference = { type: "pv_reference", textKey: "ep2_text_pv_reference", value: 2, unit: "none", evidence: ["pvLength=2"] };
+
+    expect(isExplanationPlanBulletV2({ ...validScoreLoss, value: -5 })).toBe(false);
+    expect(isExplanationPlanBulletV2({ ...validScoreLoss, unit: "none" })).toBe(false);
+    expect(isExplanationPlanBulletV2({ ...validWinrateLoss, value: 2 })).toBe(false);
+    expect(isExplanationPlanBulletV2({ ...validWinrateLoss, unit: "points" })).toBe(false);
+    expect(isExplanationPlanBulletV2({ ...validContext, value: 0.2 })).toBe(false);
+    expect(isExplanationPlanBulletV2({ ...validContext, unit: "ratio" })).toBe(false);
+    expect(isExplanationPlanBulletV2({ type: "concept_hint", textKey: "ep2_text_concept_hint", value: 1, unit: "none", evidence: ["concept=connection:medium"] })).toBe(false);
+    expect(isExplanationPlanBulletV2({ type: "candidate_comparison", textKey: "ep2_text_candidate_comparison", unit: "points", evidence: ["comparisonType=move_difference"] })).toBe(false);
+    expect(isExplanationPlanBulletV2(validScoreLoss)).toBe(true);
+    expect(isExplanationPlanBulletV2(validWinrateLoss)).toBe(true);
+    expect(isExplanationPlanBulletV2(validContext)).toBe(true);
+    expect(isExplanationPlanBulletV2(validPvReference)).toBe(true);
+  });
+
+  it("keeps builder output valid under strict bullet invariants", () => {
+    const plans = [
+      buildExplanationPlanV2ForDecisiveMove(decisiveBase, "beginner"),
+      buildExplanationPlanV2ForDecisiveMove(decisiveBase, "intermediate"),
+      buildExplanationPlanV2ForDecisiveMove(decisiveBase, "dan"),
+      buildExplanationPlanV2ForDecisiveMove(decisiveBase, "high_dan"),
+      buildExplanationPlanV2ForReviewMove(reviewBase, "dan"),
+    ];
+
+    expect(plans.every(isExplanationPlanV2)).toBe(true);
+    expect(plans.flatMap((plan) => plan.bullets).every(isExplanationPlanBulletV2)).toBe(true);
   });
 
   it("keeps planner v2 output free from assertive forbidden terms", () => {

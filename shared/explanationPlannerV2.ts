@@ -93,6 +93,18 @@ function positiveRatio(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 1 ? v : null;
 }
 
+function hasNoBulletValue(v: ExplanationPlanBulletV2): boolean {
+  return v.value === undefined || v.value === null;
+}
+
+function hasPositiveFiniteValue(v: ExplanationPlanBulletV2): boolean {
+  return typeof v.value === "number" && Number.isFinite(v.value) && v.value > 0;
+}
+
+function hasPositiveRatioValue(v: ExplanationPlanBulletV2): boolean {
+  return typeof v.value === "number" && Number.isFinite(v.value) && v.value > 0 && v.value <= 1;
+}
+
 function audienceOrDefault(audience: ExplanationAudienceV2 | null | undefined): ExplanationAudienceV2 {
   return audience != null && AUDIENCES.has(audience) ? audience : "dan";
 }
@@ -210,16 +222,34 @@ export function buildExplanationPlanV2ForReviewMove(move: ProductReviewMoveV1, a
 }
 
 export function isExplanationPlanBulletV2(v: unknown): v is ExplanationPlanBulletV2 {
-  return (
-    isPlainObject(v) &&
-    typeof v.type === "string" &&
-    BULLET_TYPES.has(v.type as ExplanationPlanBulletTypeV2) &&
-    typeof v.textKey === "string" &&
-    isSafeExplanationStringV2(v.textKey) &&
-    (v.value === undefined || v.value === null || (typeof v.value === "number" && Number.isFinite(v.value))) &&
-    (v.unit === undefined || (typeof v.unit === "string" && UNITS.has(v.unit as ExplanationPlanBulletUnitV2))) &&
-    isSafeStringArray(v.evidence)
-  );
+  if (
+    !isPlainObject(v) ||
+    typeof v.type !== "string" ||
+    !BULLET_TYPES.has(v.type as ExplanationPlanBulletTypeV2) ||
+    typeof v.textKey !== "string" ||
+    !isSafeExplanationStringV2(v.textKey) ||
+    typeof v.unit !== "string" ||
+    !UNITS.has(v.unit as ExplanationPlanBulletUnitV2) ||
+    !isSafeStringArray(v.evidence)
+  ) {
+    return false;
+  }
+
+  const bullet = v as ExplanationPlanBulletV2;
+  switch (bullet.type) {
+    case "score_loss":
+      return hasPositiveFiniteValue(bullet) && bullet.unit === "points";
+    case "winrate_loss":
+      return hasPositiveRatioValue(bullet) && bullet.unit === "ratio";
+    case "pv_reference":
+      return hasPositiveFiniteValue(bullet) && bullet.unit === "none";
+    case "concept_hint":
+    case "candidate_comparison":
+    case "volatility_context":
+    case "deep_search_context":
+    case "caveat":
+      return hasNoBulletValue(bullet) && bullet.unit === "none";
+  }
 }
 
 export function isExplanationPlanV2(v: unknown): v is ExplanationPlanV2 {
