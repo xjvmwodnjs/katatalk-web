@@ -67,6 +67,8 @@ ANALYSIS_WORKER_HEARTBEAT_SECONDS=60
 KATAGO_BINARY_PATH=<placeholder>
 KATAGO_CONFIG_PATH=<placeholder>
 KATAGO_MODEL_PATH=<placeholder>
+KATAGO_REQUIRE_GPU_BACKEND=false
+KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 KATAGO_MAX_VISITS=200
 KATAGO_ANALYSIS_TIMEOUT_MS=120000
 KATAGO_MULTI_TURN_MAX=6
@@ -114,6 +116,7 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 8. 완료 후 `result.source` — `katago-worker-v1`
 9. `GET /api/analyze/:id` → `meta.mock` — `false`
 10. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
+11. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda` 확인
 
 PowerShell 예시:
 
@@ -187,6 +190,8 @@ ANALYSIS_WORKER_HEARTBEAT_SECONDS=60
 KATAGO_BINARY_PATH=<placeholder>
 KATAGO_CONFIG_PATH=<placeholder>
 KATAGO_MODEL_PATH=<placeholder>
+KATAGO_REQUIRE_GPU_BACKEND=false
+KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 KATAGO_MAX_VISITS=200
 KATAGO_ANALYSIS_TIMEOUT_MS=120000
 KATAGO_MULTI_TURN_MAX=6

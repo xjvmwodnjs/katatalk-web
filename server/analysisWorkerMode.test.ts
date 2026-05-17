@@ -62,6 +62,7 @@ describe("buildAnalysisWorkerStartupEnvSnapshot", () => {
       hasKATAGO_BINARY_PATH: true,
       hasKATAGO_CONFIG_PATH: true,
       hasKATAGO_MODEL_PATH: true,
+      KATAGO_REQUIRE_GPU_BACKEND: false,
     });
   });
 });

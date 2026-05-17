@@ -12,6 +12,12 @@ import { getResolvedAnalysisWorkerId } from "./analysisWorkerId";
 import { processClaimedAnalysisJob } from "./processClaimedAnalysisJob";
 import { readDeepSearchExecutionEnabledFromEnv } from "../deepSearchResultsV1";
 import { readWinrateTimelineEnabledFrom } from "./analysisEngines/winrateTimelineConfig";
+import {
+  assertKatagoGpuBackendRequirementV1,
+  buildKatagoBackendLogLineV1,
+  detectKatagoBackendV1,
+  readKatagoRequireGpuBackendFrom,
+} from "./katagoBackendDetectionV1";
 
 function readClaimStaleSeconds(): number {
   const n = parseInt(process.env.ANALYSIS_CLAIM_STALE_SECONDS ?? "900", 10);
@@ -46,6 +52,7 @@ export function buildAnalysisWorkerStartupEnvSnapshot(env: NodeJS.ProcessEnv): R
     hasKATAGO_BINARY_PATH: Boolean(env.KATAGO_BINARY_PATH?.trim()),
     hasKATAGO_CONFIG_PATH: Boolean(env.KATAGO_CONFIG_PATH?.trim()),
     hasKATAGO_MODEL_PATH: Boolean(env.KATAGO_MODEL_PATH?.trim()),
+    KATAGO_REQUIRE_GPU_BACKEND: readKatagoRequireGpuBackendFrom(env),
   };
 }
 
@@ -105,6 +112,9 @@ export async function startAnalysisWorkerMain(): Promise<void> {
   console.log(buildAnalysisConfigLogLine(process.env));
   if (getAnalysisEngineName() === "katago") {
     assertKatagoPathsConfiguredOrThrow();
+    const backendResult = await detectKatagoBackendV1({ env: process.env });
+    console.log(buildKatagoBackendLogLineV1(backendResult, process.env));
+    assertKatagoGpuBackendRequirementV1(backendResult, process.env);
   }
   const ac = new AbortController();
   const onStop = (): void => {
