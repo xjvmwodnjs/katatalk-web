@@ -40,6 +40,7 @@ import {
 } from "@shared/analysisResultI18n";
 import { mapReasonPhraseForUi, uiTextContainsForbiddenLabel } from "@shared/analysisResultUiHelpers";
 import type { ExplanationPlanBulletV2 } from "@shared/explanationPlannerV2";
+import { mapExplanationEvidenceLabelsV1, type ExplanationEvidenceLabelKeyV1 } from "@shared/explanationEvidenceLabelsV1";
 
 type Props = {
   data: unknown;
@@ -103,6 +104,29 @@ function productPlanV2BulletText(type: ExplanationPlanBulletV2["type"], t: Analy
       return t.productV2DeepSearchContext;
     case "caveat":
       return t.productV2Caveat;
+  }
+}
+
+function productEvidenceLabelText(label: ExplanationEvidenceLabelKeyV1, t: AnalysisResultUiStrings): string {
+  switch (label) {
+    case "score_loss":
+      return t.productV2ScoreLoss;
+    case "winrate_loss":
+      return t.productV2WinrateLoss;
+    case "concept_hint":
+      return t.productV2ConceptHint;
+    case "candidate_comparison":
+      return t.productV2CandidateComparison;
+    case "pv_reference":
+      return t.productV2PvReference;
+    case "volatility_context":
+      return t.productV2VolatilityContext;
+    case "deep_search_context":
+      return t.productV2DeepSearchContext;
+    case "caveat":
+      return t.productV2Caveat;
+    case "additional_evidence":
+      return t.productV2EvidenceAdditional;
   }
 }
 
@@ -595,6 +619,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                   <div className="grid gap-2 sm:grid-cols-2">
                     {selectedProductPlanV2.bullets.map((bullet, index) => {
                       const value = productPlanV2BulletValue(bullet, t);
+                      const labels = mapExplanationEvidenceLabelsV1(bullet);
                       return (
                         <div key={`${bullet.type}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-2">
                           <div className="flex min-w-0 items-center justify-between gap-2">
@@ -604,7 +629,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                             {value ? <span className="shrink-0 font-mono text-[11px] text-slate-200">{value}</span> : null}
                           </div>
                           <div className="mt-1 truncate text-[10px] text-slate-500">
-                            {bullet.evidence.slice(0, 2).join(" · ")}
+                            {labels.slice(0, 2).map((label) => productEvidenceLabelText(label, t)).join(" · ")}
                           </div>
                         </div>
                       );

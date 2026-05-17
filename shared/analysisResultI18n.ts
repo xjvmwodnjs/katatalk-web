@@ -622,6 +622,7 @@ type UiBlock = {
   productV2Caveat: string;
   productV2ScoreUnit: string;
   productV2RatioSource: string;
+  productV2EvidenceAdditional: string;
   learningEventConfidence: string;
   learningEventScore: string;
   learningEventWinrateDelta: string;
@@ -755,6 +756,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productV2Caveat: "주의",
     productV2ScoreUnit: "집",
     productV2RatioSource: "원본 ratio",
+    productV2EvidenceAdditional: "추가 근거 있음",
     learningEventConfidence: "신뢰도",
     learningEventScore: "선정 점수",
     learningEventWinrateDelta: "승률 변화",
@@ -885,6 +887,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productV2Caveat: "Caveat",
     productV2ScoreUnit: "points",
     productV2RatioSource: "source ratio",
+    productV2EvidenceAdditional: "Additional evidence available",
     learningEventConfidence: "Confidence",
     learningEventScore: "Selection score",
     learningEventWinrateDelta: "Winrate shift",
@@ -1015,6 +1018,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productV2Caveat: "注意",
     productV2ScoreUnit: "目",
     productV2RatioSource: "元の ratio",
+    productV2EvidenceAdditional: "追加根拠あり",
     learningEventConfidence: "信頼度",
     learningEventScore: "選定スコア",
     learningEventWinrateDelta: "勝率変化",
@@ -1145,6 +1149,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productV2Caveat: "注意",
     productV2ScoreUnit: "目",
     productV2RatioSource: "原始 ratio",
+    productV2EvidenceAdditional: "有追加依据",
     learningEventConfidence: "置信度",
     learningEventScore: "选择分数",
     learningEventWinrateDelta: "胜率变化",

@@ -51,18 +51,21 @@ test.describe("Product Review result smoke", () => {
       await expect(page.getByRole("heading", { name: "AI 분석 메모" })).toBeVisible();
       await expect(page.getByText("패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.")).toBeVisible();
       await expect(page.getByText("결정론적 메모")).toBeVisible();
-      await expect(page.getByText("집 차이 변화")).toBeVisible();
-      await expect(page.getByText(/8\.0% \(원본 ratio\)/)).toBeVisible();
-      await expect(page.getByText("실전수와 추천 후보수의 차이")).toBeVisible();
-      await expect(page.getByText("참고 수순")).toBeVisible();
+      const memo = page.getByTestId("explanation-plan-v2-memo");
+      await expect(memo.getByText("집 차이 변화").first()).toBeVisible();
+      await expect(memo.getByText(/8\.0% \(원본 ratio\)/)).toBeVisible();
+      await expect(memo.getByText("실전수와 추천 후보수의 차이").first()).toBeVisible();
+      await expect(memo.getByText("참고 수순").first()).toBeVisible();
       await expect(page.getByText("흐름 변화 참고")).toHaveCount(0);
+      await expect(page.getByText(/scoreLoss=|winrateLoss=|comparisonType=|delta=|adjacency_heuristic_only|B\[pd\]/)).toHaveCount(0);
       await expect(page.getByText("참고도 표시 중")).toHaveCount(0);
 
       await page.getByRole("button", { name: "수 18" }).click();
       await expect(page.getByText(/검토 #18/)).toBeVisible();
       await expect(page.getByText("PV 있음")).toBeVisible();
-      await expect(page.getByText("보수적 개념 힌트")).toBeVisible();
-      await expect(page.getByText("실전수와 추천 후보수의 차이")).toBeVisible();
+      await expect(page.getByTestId("explanation-plan-v2-memo").getByText("보수적 개념 힌트").first()).toBeVisible();
+      await expect(page.getByTestId("explanation-plan-v2-memo").getByText("실전수와 추천 후보수의 차이").first()).toBeVisible();
+      await expect(page.getByText(/concept=|scoreLoss=|winrateLoss=|comparisonType=|delta=|adjacency_heuristic_only|B\[pd\]/)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "참고도 보기" })).toBeEnabled();
 
       await page.getByRole("button", { name: "참고도 보기" }).click();
