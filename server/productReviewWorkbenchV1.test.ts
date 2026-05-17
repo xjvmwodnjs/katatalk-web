@@ -3,6 +3,7 @@ import {
   buildProductReviewWorkbenchV1,
   redactWorkbenchTextV1,
   renderProductReviewWorkbenchMarkdownV1,
+  unwrapProductReviewWorkbenchInputV1,
 } from "../shared/productReviewWorkbenchV1";
 
 function completedResultFixture() {
@@ -177,13 +178,27 @@ describe("productReviewWorkbenchV1", () => {
   it("safely skips mock or unknown results", () => {
     expect(buildProductReviewWorkbenchV1({ source: "mock", meta: { mock: true } }).status).toBe("unsupported");
     expect(buildProductReviewWorkbenchV1({ source: "katago-worker-v1", meta: { mock: true } }).unsupportedReason).toBe("mock_result_unsupported");
+    expect(buildProductReviewWorkbenchV1({ source: "katago-worker-v1", isMock: true }).unsupportedReason).toBe("mock_result_unsupported");
   });
 
-  it("redacts SGF, secrets, and path-like strings from rendered output", () => {
+  it("unwraps GET analyze response wrappers", () => {
+    const inner = completedResultFixture();
+    const wrapper = { status: "completed", data: inner, meta: { requestId: "req-1" } };
+
+    expect(unwrapProductReviewWorkbenchInputV1(wrapper)).toBe(inner);
+    expect(buildProductReviewWorkbenchV1(wrapper).status).toBe("ok");
+    expect(buildProductReviewWorkbenchV1(inner).status).toBe("ok");
+  });
+
+  it("redacts SGF-like payloads, secrets, and path-like strings from rendered output", () => {
     const rendered = renderProductReviewWorkbenchMarkdownV1(buildProductReviewWorkbenchV1(completedResultFixture()));
-    const redacted = redactWorkbenchTextV1(`${rendered}\n(;FF[4]GM[1];B[pd])\nC:\\KataGo\\katago.exe\nsk_live_abcdefghijklmnopqrstuvwxyz123456`);
+    const redacted = redactWorkbenchTextV1(
+      `${rendered}\n(;FF[4]GM[1];B[pd])\n(;GM[1]SZ[19];B[pd];W[dd])\n(;B[pd];W[dd])\nC:\\KataGo\\katago.exe\nsk_live_abcdefghijklmnopqrstuvwxyz123456`
+    );
 
     expect(redacted).not.toContain("B[pd]");
+    expect(redacted).not.toContain("W[dd]");
+    expect(redacted).not.toContain("GM[1]");
     expect(redacted).not.toContain("C:\\KataGo\\katago.exe");
     expect(redacted).not.toContain("sk_live_abcdefghijklmnopqrstuvwxyz123456");
     expect(redacted).toContain("[REDACTED_SGF]");

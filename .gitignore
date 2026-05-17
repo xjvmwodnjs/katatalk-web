@@ -54,6 +54,12 @@ coverage/
 test-results/
 playwright-report/
 
+# Local algorithm workbench reports
+local-workbench-report*.md
+local-workbench-report*.json
+product-review-workbench*.md
+product-review-workbench*.json
+
 # nyc test coverage
 .nyc_output
 

@@ -145,6 +145,20 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
+export function unwrapProductReviewWorkbenchInputV1(data: unknown): unknown {
+  if (!isPlainObject(data)) {
+    return data;
+  }
+  if (data.source === "katago-worker-v1") {
+    return data;
+  }
+  const inner = data.data;
+  if (isPlainObject(inner) && inner.source === "katago-worker-v1") {
+    return inner;
+  }
+  return data;
+}
+
 function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
@@ -419,7 +433,7 @@ function buildUiSummary(decisive: ProductDecisiveMoveV1 | null, reviews: Product
 
 export function redactWorkbenchTextV1(input: string): string {
   return input
-    .replace(/(;FF\[[\s\S]*?\)\s*)/g, "[REDACTED_SGF]")
+    .replace(/\(;\s*(?=[\s\S]{0,200}(?:FF\[|GM\[|B\[|W\[))[\s\S]*?\)\s*/g, "[REDACTED_SGF]")
     .replace(/[A-Za-z]:\\(?:[^\\\r\n]+\\)+[^\s\r\n]+/g, "[REDACTED_PATH]")
     .replace(/\/(?:Users|home|opt|usr|var)\/[^\s"'`]+/g, "[REDACTED_PATH]")
     .replace(/(?:sk|pk|rk|key|token|secret)_[A-Za-z0-9_-]{12,}/gi, "[REDACTED_SECRET]")
@@ -432,14 +446,15 @@ function assertNoForbiddenLabels(text: string): string[] {
 }
 
 export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkbenchV1 {
-  if (!isPlainObject(data) || data.source !== "katago-worker-v1") {
+  const payload = unwrapProductReviewWorkbenchInputV1(data);
+  if (!isPlainObject(payload) || payload.source !== "katago-worker-v1") {
     return unsupportedWorkbench("unsupported_source");
   }
-  if (isPlainObject(data.meta) && data.meta.mock === true) {
+  if ((isPlainObject(payload.meta) && payload.meta.mock === true) || payload.isMock === true) {
     return unsupportedWorkbench("mock_result_unsupported");
   }
 
-  const result = data;
+  const result = payload;
   const totalMoves = readTotalMoves(result);
   const gameResult = makeGameResult(result);
   const learningEvents = buildLearningEvents(result);

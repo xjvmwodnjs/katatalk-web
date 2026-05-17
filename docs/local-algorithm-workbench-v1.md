@@ -9,7 +9,9 @@ corepack pnpm exec tsx scripts/localAlgorithmWorkbenchV1.ts ./completed-result.j
 corepack pnpm exec tsx scripts/localAlgorithmWorkbenchV1.ts ./completed-result.json --format json --out ./local-workbench-report.json
 ```
 
-입력은 로컬 JSON 파일 경로만 받는다. script는 production path에서 자동 실행되지 않으며, 명시적으로 실행할 때만 report를 만든다.
+입력은 로컬 JSON 파일 경로만 받는다. inner `data.source === "katago-worker-v1"` payload와 `GET /api/analyze/:jobId` 전체 응답 형태인 `{ status, data, meta }` wrapper를 모두 지원한다. script는 production path에서 자동 실행되지 않으며, 명시적으로 실행할 때만 report를 만든다.
+
+생성된 local workbench report는 디버깅 산출물이므로 커밋하지 않는다. 기본 예시 파일명(`local-workbench-report*.md/json`, `product-review-workbench*.md/json`)은 `.gitignore` 대상이다.
 
 ## Report 구조
 
