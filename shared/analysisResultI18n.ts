@@ -596,6 +596,21 @@ type UiBlock = {
   analysisMemoPvCaution: string;
   analysisMemoSignalCaution: string;
   analysisMemoNoLlM: string;
+  productPrefixDecisive: string;
+  productPrefixReview: string;
+  productSummaryDecisive: string;
+  productSummaryTimeline: string;
+  productSummaryLearning: string;
+  productSummaryDefault: string;
+  productBulletScoreLoss: string;
+  productBulletWinrateLoss: string;
+  productBulletBsi: string;
+  productBulletAdi: string;
+  productBulletDeepSearch: string;
+  productBulletTimelineContext: string;
+  productBulletPv: string;
+  productBulletLearningEvent: string;
+  productBulletDefault: string;
   learningEventConfidence: string;
   learningEventScore: string;
   learningEventWinrateDelta: string;
@@ -703,6 +718,21 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoPvCaution: "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
     analysisMemoSignalCaution: "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
     analysisMemoNoLlM: "LLM 자연어 해설은 아직 실행하지 않습니다.",
+    productPrefixDecisive: "결정",
+    productPrefixReview: "검토",
+    productSummaryDecisive: "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.",
+    productSummaryTimeline: "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.",
+    productSummaryLearning: "여러 분석 신호가 겹쳐 검토 후보로 선택되었습니다.",
+    productSummaryDefault: "결정론적 분석 근거로 만든 복기 참고 메모입니다.",
+    productBulletScoreLoss: "집 차이 변화 후보",
+    productBulletWinrateLoss: "승률 변화 후보",
+    productBulletBsi: "BSI 참고 신호",
+    productBulletAdi: "ADI 참고 신호",
+    productBulletDeepSearch: "Deep Search 참고 근거",
+    productBulletTimelineContext: "승률 타임라인 참고 신호",
+    productBulletPv: "참고도 사용 가능",
+    productBulletLearningEvent: "학습 이벤트 기반 후보",
+    productBulletDefault: "내부 참고 신호",
     learningEventConfidence: "신뢰도",
     learningEventScore: "선정 점수",
     learningEventWinrateDelta: "승률 변화",
@@ -807,6 +837,21 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoPvCaution: "The reference line is one possible continuation, not a single answer.",
     analysisMemoSignalCaution: "BSI/ADI are internal reference signals, not final judgments.",
     analysisMemoNoLlM: "LLM commentary is not running yet.",
+    productPrefixDecisive: "Key",
+    productPrefixReview: "Review",
+    productSummaryDecisive: "This key review candidate is supported by deterministic numeric signals.",
+    productSummaryTimeline: "This learning scene candidate was selected with winrate-flow context.",
+    productSummaryLearning: "This position was selected because several analysis signals overlapped.",
+    productSummaryDefault: "This deterministic memo is a review aid, not a final judgment.",
+    productBulletScoreLoss: "Score shift candidate",
+    productBulletWinrateLoss: "Winrate shift candidate",
+    productBulletBsi: "BSI reference signal",
+    productBulletAdi: "ADI reference signal",
+    productBulletDeepSearch: "Deep Search reference evidence",
+    productBulletTimelineContext: "Winrate timeline context",
+    productBulletPv: "Reference line available",
+    productBulletLearningEvent: "Learning-event candidate",
+    productBulletDefault: "Internal reference signal",
     learningEventConfidence: "Confidence",
     learningEventScore: "Selection score",
     learningEventWinrateDelta: "Winrate shift",
@@ -911,6 +956,21 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoPvCaution: "参考図は一つの可能性であり、単一の進行とは見なしません。",
     analysisMemoSignalCaution: "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
     analysisMemoNoLlM: "LLM の自然言語解説はまだ実行しません。",
+    productPrefixDecisive: "重要",
+    productPrefixReview: "検討",
+    productSummaryDecisive: "決定的場面の候補として、数値シグナルで確認された場面です。",
+    productSummaryTimeline: "勝率の流れも参考にした学習場面の候補です。",
+    productSummaryLearning: "複数の分析シグナルが重なったため検討候補に選ばれました。",
+    productSummaryDefault: "決定的な判定ではなく、復習用の参考メモです。",
+    productBulletScoreLoss: "地合い差の変化候補",
+    productBulletWinrateLoss: "勝率変化の候補",
+    productBulletBsi: "BSI 参考シグナル",
+    productBulletAdi: "ADI 参考シグナル",
+    productBulletDeepSearch: "Deep Search 参考根拠",
+    productBulletTimelineContext: "勝率タイムライン参考",
+    productBulletPv: "参考図あり",
+    productBulletLearningEvent: "学習イベント由来の候補",
+    productBulletDefault: "内部参考シグナル",
     learningEventConfidence: "信頼度",
     learningEventScore: "選定スコア",
     learningEventWinrateDelta: "勝率変化",
@@ -1015,6 +1075,21 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoPvCaution: "参考图只是一种可能，不应视为唯一进程。",
     analysisMemoSignalCaution: "BSI/ADI 是内部参考信号，并非最终判断。",
     analysisMemoNoLlM: "尚未运行 LLM 自然语言解说。",
+    productPrefixDecisive: "关键",
+    productPrefixReview: "复核",
+    productSummaryDecisive: "这是由确定性数值信号支持的关键场面候选。",
+    productSummaryTimeline: "这是结合胜率走势参考选出的学习场面候选。",
+    productSummaryLearning: "该局面因多个分析信号重合而被选为复核候选。",
+    productSummaryDefault: "这是确定性复盘参考备忘，并非最终判断。",
+    productBulletScoreLoss: "目差变化候选",
+    productBulletWinrateLoss: "胜率变化候选",
+    productBulletBsi: "BSI 参考信号",
+    productBulletAdi: "ADI 参考信号",
+    productBulletDeepSearch: "Deep Search 参考依据",
+    productBulletTimelineContext: "胜率时间线参考",
+    productBulletPv: "有参考图",
+    productBulletLearningEvent: "学习事件候选",
+    productBulletDefault: "内部参考信号",
     learningEventConfidence: "置信度",
     learningEventScore: "选择分数",
     learningEventWinrateDelta: "胜率变化",

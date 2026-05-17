@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   getAnalysisResultUiStrings,
   mapReasonPhraseForUi,
@@ -88,6 +90,54 @@ describe("analysisResultI18n", () => {
       expect(translateLearningEventSourceLabel("best move", lang).toLowerCase()).not.toContain("best move");
       expect(uiTextContainsForbiddenLabel(t.analysisMemoLearningEvent, lang)).toBe(false);
       expect(uiTextContainsForbiddenLabel(t.analysisMemoDeepSearchEvidence, lang)).toBe(false);
+    }
+  });
+
+  it("has product review i18n without forbidden verdict words", () => {
+    const keys = [
+      "productPrefixDecisive",
+      "productPrefixReview",
+      "productSummaryDecisive",
+      "productSummaryTimeline",
+      "productSummaryLearning",
+      "productSummaryDefault",
+      "productBulletScoreLoss",
+      "productBulletWinrateLoss",
+      "productBulletBsi",
+      "productBulletAdi",
+      "productBulletDeepSearch",
+      "productBulletTimelineContext",
+      "productBulletPv",
+      "productBulletLearningEvent",
+      "productBulletDefault",
+    ] as const;
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const t = getAnalysisResultUiStrings(lang);
+      for (const key of keys) {
+        expect(t[key].length).toBeGreaterThan(0);
+        expect(uiTextContainsForbiddenLabel(t[key], lang)).toBe(false);
+        expect(t[key].toLowerCase()).not.toContain("best move");
+        expect(t[key].toLowerCase()).not.toContain("blunder");
+      }
+    }
+  });
+
+  it("keeps product review component text routed through i18n", () => {
+    const root = process.cwd();
+    const resultView = readFileSync(resolve(root, "client/src/components/AnalysisResultView.tsx"), "utf8");
+    const candidateList = readFileSync(resolve(root, "client/src/components/AnalysisCandidateList.tsx"), "utf8");
+    for (const text of [
+      "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.",
+      "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.",
+      "여러 내부 신호가 겹쳐 검토할 만한 학습 장면 후보입니다.",
+      "결정론적 분석 근거로 만든 검토 메모입니다.",
+      "집 차이 변화 후보",
+      "승률 변화 후보",
+      "결정",
+      "검토",
+    ]) {
+      expect(resultView).not.toContain(text);
+      expect(candidateList).not.toContain(text);
     }
   });
 });
