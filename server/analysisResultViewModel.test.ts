@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMockAnalysisReport } from "./mockAnalysisResult";
 import { buildAnalysisResultViewModel } from "@shared/analysisResultViewModel";
+import { isExplanationPlanV2 } from "@shared/explanationPlannerV2";
 import type { DeepSearchPlanV1Result } from "@shared/deepSearchPlanV1";
 import type { DeepSearchResultsV1Result } from "@shared/deepSearchResultsV1";
 import type { AdiV1Result } from "@shared/adiV1";
@@ -312,6 +313,8 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.productReviewV1?.explanationPlans.length).toBe(
       (vm.productReviewV1?.decisiveMove ? 1 : 0) + (vm.productReviewV1?.reviewMoves.length ?? 0)
     );
+    expect(vm.productReviewV1?.explanationPlansV2.length).toBe(vm.productReviewV1?.explanationPlans.length);
+    expect(vm.productReviewV1?.explanationPlansV2.every(isExplanationPlanV2)).toBe(true);
     expect(vm.keyMoveCandidates[0]?.productRole).toBe("decisive");
     expect(vm.keyMoveCandidates[0]?.labelKey).toBe("ar_label_decisive_scene_candidate");
   });
