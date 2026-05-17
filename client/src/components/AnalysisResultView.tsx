@@ -46,40 +46,41 @@ type Props = {
 };
 
 type TryPlayStone = { x: number; y: number; color: "B" | "W"; gtp: string; kind: "try"; order: number };
+type AnalysisResultUiStrings = ReturnType<typeof getAnalysisResultUiStrings>;
 
-function productPlanSummaryText(summaryKey: string): string {
+function productPlanSummaryText(summaryKey: string, t: AnalysisResultUiStrings): string {
   switch (summaryKey) {
     case "ep_summary_decisive_loser_perspective_candidate":
-      return "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.";
+      return t.productSummaryDecisive;
     case "ep_summary_review_timeline_context_candidate":
-      return "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.";
+      return t.productSummaryTimeline;
     case "ep_summary_review_learning_candidate":
-      return "여러 내부 신호가 겹쳐 검토할 만한 학습 장면 후보입니다.";
+      return t.productSummaryLearning;
     default:
-      return "결정론적 분석 근거로 만든 검토 메모입니다.";
+      return t.productSummaryDefault;
   }
 }
 
-function productPlanBulletText(type: string): string {
+function productPlanBulletText(type: string, t: AnalysisResultUiStrings): string {
   switch (type) {
     case "score_loss":
-      return "집 차이 변화 후보";
+      return t.productBulletScoreLoss;
     case "winrate_loss":
-      return "승률 변화 후보";
+      return t.productBulletWinrateLoss;
     case "bsi":
-      return "BSI 참고 신호";
+      return t.productBulletBsi;
     case "adi":
-      return "ADI 참고 신호";
+      return t.productBulletAdi;
     case "deep_search":
-      return "Deep Search 참고 근거";
+      return t.productBulletDeepSearch;
     case "timeline_context":
-      return "승률 타임라인 참고 신호";
+      return t.productBulletTimelineContext;
     case "pv":
-      return "참고도 사용 가능";
+      return t.productBulletPv;
     case "learning_event":
-      return "학습 이벤트 기반 후보";
+      return t.productBulletLearningEvent;
     default:
-      return "내부 참고 신호";
+      return t.productBulletDefault;
   }
 }
 
@@ -533,7 +534,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 {reviewMode === "try-play"
                   ? t.tryPlayNotice
                   : selectedProductPlan
-                    ? productPlanSummaryText(selectedProductPlan.summaryKey)
+                    ? productPlanSummaryText(selectedProductPlan.summaryKey, t)
                     : selectedLearningEvent
                     ? t.analysisMemoLearningEvent
                     : selectedCandidate
@@ -544,7 +545,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
                 <ul className="list-disc space-y-1 pl-4 text-xs text-slate-400">
                   {selectedProductPlan.evidenceBullets.slice(0, 4).map((bullet, index) => (
                     <li key={`${bullet.type}-${index}`}>
-                      {productPlanBulletText(bullet.type)}
+                      {productPlanBulletText(bullet.type, t)}
                       {typeof bullet.value === "number" ? `: ${bullet.value.toFixed(bullet.unit === "ratio" ? 3 : 1)}` : ""}
                     </li>
                   ))}
