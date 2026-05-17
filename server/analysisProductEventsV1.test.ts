@@ -207,6 +207,11 @@ describe("analysis product events v1", () => {
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25 } })).toBe(true);
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: [] } } })).toBe(false);
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: ["unknown_context"] } } })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: ["adjacent_own_groups"], caveats: [] }] })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "decisive_candidate", confidence: "medium", evidence: [], caveats: [] }] })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "certain", evidence: [], caveats: [] }] })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: "ladder_reading_unavailable" }] })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: "" }] })).toBe(false);
 
     const review = {
       ...decisive,
