@@ -88,6 +88,17 @@ KATAGO_DEEP_SEARCH_VISITS=800
 
 권장 SGF fixture는 `docs/smoke-checklist.md`의 "LearningEvents Smoke SGF Fixture"를 우선 사용한다. 너무 짧은 SGF는 후보가 final position만 남을 수 있어 Product Review chip 확인에 부적합하다.
 
+### 2.1 Product Review Mobile E2E
+
+CI 또는 로컬에서 실제 KataGo 없이 Product Review 결과 화면 기본 smoke를 확인할 수 있다.
+
+```bash
+corepack pnpm exec playwright install chromium
+corepack pnpm e2e
+```
+
+이 E2E는 synthetic `katago-worker-v1` completed result fixture를 사용하며 실제 LLM, 결제, KataGo, DB schema/migration을 호출하지 않는다. 검증 viewport는 `390x844`, `430x932`, `1440x900`이다.
+
 ## 3. Product Review UI Deep Link Smoke
 
 대상: completed job의 결과 화면.
