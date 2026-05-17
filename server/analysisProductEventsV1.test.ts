@@ -207,6 +207,41 @@ describe("analysis product events v1", () => {
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25 } })).toBe(true);
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: [] } } })).toBe(false);
     expect(isProductDecisiveMoveV1({ ...decisive, evidence: { source: ["turnAnalyses"], v25: { ...v25, evidenceTypes: ["unknown_context"] } } })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: ["adjacent_own_groups"], caveats: [] }] })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "decisive_candidate", confidence: "medium", evidence: [], caveats: [] }] })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "certain", evidence: [], caveats: [] }] })).toBe(false);
+    expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: "ladder_reading_unavailable" }] })).toBe(true);
+    expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: "" }] })).toBe(false);
+    expect(isProductDecisiveMoveV1({
+      ...decisive,
+      conceptTagsV1: [{
+        tag: "connection",
+        confidence: "medium",
+        evidence: ["targetMove=C3", "ownAdjacentGroups=2", "adjacency_heuristic_only"],
+        caveats: ["phase_only"],
+      }],
+      forbiddenConceptClaims: [{ concept: "invasion", reason: "ownership_evidence_unavailable" }],
+    })).toBe(true);
+    const sgfLike = ["(;GM[1]", "B[pd]", ")"].join(";");
+    const fakeSecret = ["sk", "test", "abcdefghijklmnopqrstuvwxyz123456"].join("_");
+    const envLike = ["SECRET", "TOKEN"].join("_") + "=value";
+    const localPath = ["C:", "Users", "me", "file.txt"].join("\\");
+    const longText = "x".repeat(161);
+    for (const unsafe of [sgfLike, fakeSecret, envLike, localPath, longText]) {
+      expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: [unsafe], caveats: [] }] })).toBe(false);
+      expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: ["targetMove=C3"], caveats: [unsafe] }] })).toBe(false);
+      expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "invasion", reason: unsafe }] })).toBe(false);
+    }
+    const sgfFragments = ["B[pd]", "W[dd]", "C[comment]", "SZ[19]", "KM[6.5]", "RE[B+R]", "AB[pd]", "AW[dd]", "candidate B[pd]"];
+    for (const unsafe of sgfFragments) {
+      expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: [unsafe], caveats: [] }] })).toBe(false);
+      expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: ["targetMove=C3"], caveats: [unsafe] }] })).toBe(false);
+      expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "invasion", reason: unsafe }] })).toBe(false);
+    }
+    for (const safe of ["targetMove=C3", "ownAdjacentGroups=2", "adjacency_heuristic_only", "ownership_unavailable", "ladder_evidence_missing"]) {
+      expect(isProductDecisiveMoveV1({ ...decisive, conceptTagsV1: [{ tag: "connection", confidence: "medium", evidence: [safe], caveats: [safe] }] })).toBe(true);
+      expect(isProductDecisiveMoveV1({ ...decisive, forbiddenConceptClaims: [{ concept: "ladder_risk", reason: safe }] })).toBe(true);
+    }
 
     const review = {
       ...decisive,

@@ -29,6 +29,7 @@ import {
   buildExplanationPlanForReviewMoveV1,
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
+import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
 import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
 import {
   buildSgfPlaybackStateV1,
@@ -712,8 +713,13 @@ function buildProductReviewV1(args: {
   deepSearchResults: DeepSearchResultsV1Result | undefined;
   winrateTimeline: WinrateTimelineV1 | undefined;
   totalMoves: number;
+  sgfText?: string | null;
 }): AnalysisProductReviewV1 | null {
-  const decisiveMove =
+  const ownershipForMove = (turnIndex: number): ConceptTaggerOwnershipSummaryV1 | null => {
+    const row = args.turnAnalyses?.find((turn) => turn.turnIndex === turnIndex);
+    return row?.status === "ok" ? { available: row.katago?.hasOwnership === true } : null;
+  };
+  const rawDecisiveMove =
     args.gameResult.loserColor == null
       ? null
       : buildProductDecisiveMoveV1({
@@ -726,6 +732,15 @@ function buildProductReviewV1(args: {
           winrateTimeline: args.winrateTimeline,
           totalMoves: args.totalMoves,
         });
+  const decisiveMove =
+    rawDecisiveMove == null
+      ? null
+      : attachConceptTagsToProductMoveV1(rawDecisiveMove, {
+          sgfText: args.sgfText,
+          totalMoves: args.totalMoves,
+          ownershipSummary: ownershipForMove(rawDecisiveMove.turnIndex),
+          ladderEvidence: false,
+        });
   const reviewMoves = buildProductReviewMovesV1({
     gameResult: args.gameResult,
     decisiveMove,
@@ -737,7 +752,14 @@ function buildProductReviewV1(args: {
     winrateTimeline: args.winrateTimeline,
     totalMoves: args.totalMoves,
     maxMoves: 5,
-  });
+  }).map((move) =>
+    attachConceptTagsToProductMoveV1(move, {
+      sgfText: args.sgfText,
+      totalMoves: args.totalMoves,
+      ownershipSummary: ownershipForMove(move.turnIndex),
+      ladderEvidence: false,
+    })
+  );
   if (decisiveMove == null && reviewMoves.length === 0) {
     return null;
   }
@@ -865,6 +887,7 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       deepSearchResults: deep,
       winrateTimeline,
       totalMoves,
+      sgfText,
     });
     const acc = buildCandidateAccumulator(analysisPlan, turnAnalyses, plan, adi, bsi, 5);
     const keyMoveCandidates =

@@ -65,6 +65,40 @@ export type ProductEvidenceBreakdownV25 = {
   };
 };
 
+export type ProductConceptTagV1 =
+  | "reduction"
+  | "invasion"
+  | "territory_defense"
+  | "connection"
+  | "cut"
+  | "atari"
+  | "capture"
+  | "life_and_death_context"
+  | "ladder_risk"
+  | "sente_context"
+  | "gote_context"
+  | "tenuki_context"
+  | "shape"
+  | "thickness"
+  | "endgame"
+  | "weak_group_attack"
+  | "weak_group_save";
+
+export type ProductConceptTagEvidenceV1 = {
+  tag: ProductConceptTagV1;
+  confidence: ProductEventConfidenceV1;
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
+  evidence: string[];
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
+  caveats: string[];
+};
+
+export type ProductForbiddenConceptClaimV1 = {
+  concept: ProductConceptTagV1;
+  /** May be passed to future LLM prompts; schema guard only accepts safe, short strings. */
+  reason: string;
+};
+
 export type ProductEventEvidenceV1 = {
   source: ProductEventEvidenceSourceV1[];
   notes?: string[];
@@ -84,6 +118,8 @@ export type ProductDecisiveMoveV1 = {
   confidence: ProductEventConfidenceV1;
   sourceEventId: string | null;
   evidence: ProductEventEvidenceV1;
+  conceptTagsV1?: ProductConceptTagEvidenceV1[];
+  forbiddenConceptClaims?: ProductForbiddenConceptClaimV1[];
 };
 
 export type ProductReviewMoveCategoryV1 =
@@ -110,6 +146,8 @@ export type ProductReviewMoveV1 = {
   confidence: ProductEventConfidenceV1;
   sourceEventId: string | null;
   evidence: ProductEventEvidenceV1;
+  conceptTagsV1?: ProductConceptTagEvidenceV1[];
+  forbiddenConceptClaims?: ProductForbiddenConceptClaimV1[];
 };
 
 export const PRODUCT_REVIEW_MOVE_CATEGORY_LABELS_V1: Record<ProductReviewMoveCategoryV1, string> = {
@@ -170,6 +208,26 @@ const EVIDENCE_TYPES_V25 = new Set<ProductEvidenceTypeV25>([
   "deep_search_context",
 ]);
 
+const CONCEPT_TAGS_V1 = new Set<ProductConceptTagV1>([
+  "reduction",
+  "invasion",
+  "territory_defense",
+  "connection",
+  "cut",
+  "atari",
+  "capture",
+  "life_and_death_context",
+  "ladder_risk",
+  "sente_context",
+  "gote_context",
+  "tenuki_context",
+  "shape",
+  "thickness",
+  "endgame",
+  "weak_group_attack",
+  "weak_group_save",
+]);
+
 const REVIEW_CATEGORIES = new Set<ProductReviewMoveCategoryV1>([
   "learning_candidate",
   "flow_shift_candidate",
@@ -222,6 +280,39 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
 
+function isSafeConceptStringV1(v: unknown): v is string {
+  if (typeof v !== "string") {
+    return false;
+  }
+  const s = v.trim();
+  if (s.length === 0 || s.length > 160) {
+    return false;
+  }
+  if (/\(;\s*(?=[\s\S]{0,200}(?:FF\[|GM\[|B\[|W\[))[\s\S]*?\)\s*/i.test(s)) {
+    return false;
+  }
+  if (/(^|[^A-Za-z])(?:B|W|C|SZ|FF|GM|AB|AW|AE|RE|KM)\[[^\]\r\n]{0,80}\]/.test(s)) {
+    return false;
+  }
+  if (/[A-Za-z]:\\(?:[^\\\r\n]+\\)+[^\s\r\n]+/.test(s) || /\/(?:Users|home|opt|usr|var)\/[^\s"'`]+/.test(s)) {
+    return false;
+  }
+  if (/(?:sk|pk|rk|key|token|secret)_[A-Za-z0-9_-]{12,}/i.test(s)) {
+    return false;
+  }
+  if (/[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/.test(s)) {
+    return false;
+  }
+  if (/\b[A-Z][A-Z0-9_]{2,}\s*=\s*\S+/.test(s)) {
+    return false;
+  }
+  return true;
+}
+
+function isSafeConceptStringArrayV1(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every(isSafeConceptStringV1);
+}
+
 function isEvidenceSourceArray(v: unknown): v is ProductEventEvidenceSourceV1[] {
   return (
     Array.isArray(v) &&
@@ -262,6 +353,35 @@ function isProductEvidenceBreakdownV25(v: unknown): v is ProductEvidenceBreakdow
     isEvidenceTypeArrayV25(v.evidenceTypes) &&
     isFiniteNumber(v.rankingScore) &&
     isRankingBreakdownV25(v.ranking)
+  );
+}
+
+function isConceptTagEvidenceArrayV1(v: unknown): v is ProductConceptTagEvidenceV1[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (x) =>
+        isPlainObject(x) &&
+        typeof x.tag === "string" &&
+        CONCEPT_TAGS_V1.has(x.tag as ProductConceptTagV1) &&
+        typeof x.confidence === "string" &&
+        CONFIDENCE.has(x.confidence as ProductEventConfidenceV1) &&
+        isSafeConceptStringArrayV1(x.evidence) &&
+        isSafeConceptStringArrayV1(x.caveats)
+    )
+  );
+}
+
+function isForbiddenConceptClaimArrayV1(v: unknown): v is ProductForbiddenConceptClaimV1[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (x) =>
+        isPlainObject(x) &&
+        typeof x.concept === "string" &&
+        CONCEPT_TAGS_V1.has(x.concept as ProductConceptTagV1) &&
+        isSafeConceptStringV1(x.reason)
+    )
   );
 }
 
@@ -442,7 +562,9 @@ function hasProductMoveFields(v: Record<string, unknown>): boolean {
     typeof v.confidence === "string" &&
     CONFIDENCE.has(v.confidence as ProductEventConfidenceV1) &&
     isStringOrNull(v.sourceEventId) &&
-    isProductEventEvidenceV1(v.evidence)
+    isProductEventEvidenceV1(v.evidence) &&
+    (v.conceptTagsV1 === undefined || isConceptTagEvidenceArrayV1(v.conceptTagsV1)) &&
+    (v.forbiddenConceptClaims === undefined || isForbiddenConceptClaimArrayV1(v.forbiddenConceptClaims))
   );
 }
 

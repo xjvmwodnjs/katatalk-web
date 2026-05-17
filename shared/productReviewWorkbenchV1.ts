@@ -23,6 +23,7 @@ import {
   buildExplanationPlanForReviewMoveV1,
   type ExplanationPlanV1,
 } from "./explanationPlannerV1";
+import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
 import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTurnKatagoAnalysisV1";
 import { buildProductReviewMovesV1 } from "./reviewMovesSelectorV1";
 import { readSgfContentFromResultPayload } from "./sgfPlaybackV1";
@@ -89,6 +90,8 @@ export type ProductReviewWorkbenchV1 = {
     selected: ProductDecisiveMoveV1 | null;
     selectedReason: string | null;
     v25EvidenceBreakdown: ProductDecisiveMoveV1["evidence"]["v25"] | null;
+    conceptTagsV1: ProductDecisiveMoveV1["conceptTagsV1"];
+    forbiddenConceptClaims: ProductDecisiveMoveV1["forbiddenConceptClaims"];
     loserColorRequired: boolean;
     positiveLossEvidenceRequired: boolean;
     rejectedCandidates: WorkbenchRejectedCandidateV1[];
@@ -102,6 +105,8 @@ export type ProductReviewWorkbenchV1 = {
       v25Taxonomy: string | null;
       v25EvidenceTypes: string[];
       v25Ranking: Record<string, number> | null;
+      conceptTagsV1: ProductReviewMoveV1["conceptTagsV1"];
+      forbiddenConceptClaims: ProductReviewMoveV1["forbiddenConceptClaims"];
       decisiveDuplicateExcluded: boolean;
     }>;
     playerDiversityApplied: boolean;
@@ -418,6 +423,11 @@ function selectedReason(move: ProductDecisiveMoveV1 | null): string | null {
   return `loser_color=${move.player}; ${losses}; evidence=${evidence}`;
 }
 
+function ownershipForTurn(turnAnalyses: TurnAnalysisEntryV1[], turnIndex: number): ConceptTaggerOwnershipSummaryV1 | null {
+  const row = turnAnalyses.find((turn) => turn.turnIndex === turnIndex);
+  return row?.status === "ok" ? { available: row.katago?.hasOwnership === true } : null;
+}
+
 function buildUiSummary(decisive: ProductDecisiveMoveV1 | null, reviews: ProductReviewMoveV1[], plans: ExplanationPlanV1[]): ProductReviewWorkbenchV1["uiSummary"] {
   const moves: Array<{ role: "decisive" | "review"; turnIndex: number; pv: string[] }> = [
     ...(decisive == null ? [] : [{ role: "decisive" as const, turnIndex: decisive.turnIndex, pv: decisive.evidence.pv ?? [] }]),
@@ -464,12 +474,29 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
   const learningEvents = buildLearningEvents(result);
   const learningEventsForSummary = isAnalysisLearningEventsV1(result.learningEventsV1) ? result.learningEventsV1.events : learningEvents.events;
   const turnAnalyses = asArray(result.turnAnalyses) as TurnAnalysisEntryV1[];
+  const sgfText = readSgfContentFromResultPayload(result);
   const bsi = isPlainObject(result.bsiV1) ? (result.bsiV1 as BsiV1Result) : undefined;
   const adi = isPlainObject(result.adiV1) ? (result.adiV1 as AdiV1Result) : undefined;
   const deep = isPlainObject(result.deepSearchResults) ? (result.deepSearchResults as DeepSearchResultsV1Result) : undefined;
   const timeline = isWinrateTimelineV1(result.winrateTimelineV1) ? (result.winrateTimelineV1 as WinrateTimelineV1) : undefined;
-  const decisive = buildProductDecisiveMoveV1({ gameResult, learningEvents, turnAnalyses, bsi, adi, deepSearchResults: deep, winrateTimeline: timeline, totalMoves });
-  const reviewMoves = buildProductReviewMovesV1({ gameResult, decisiveMove: decisive, learningEvents, turnAnalyses, bsi, adi, deepSearchResults: deep, winrateTimeline: timeline, totalMoves, maxMoves: 5 });
+  const rawDecisive = buildProductDecisiveMoveV1({ gameResult, learningEvents, turnAnalyses, bsi, adi, deepSearchResults: deep, winrateTimeline: timeline, totalMoves });
+  const decisive =
+    rawDecisive == null
+      ? null
+      : attachConceptTagsToProductMoveV1(rawDecisive, {
+          sgfText,
+          totalMoves,
+          ownershipSummary: ownershipForTurn(turnAnalyses, rawDecisive.turnIndex),
+          ladderEvidence: false,
+        });
+  const reviewMoves = buildProductReviewMovesV1({ gameResult, decisiveMove: decisive, learningEvents, turnAnalyses, bsi, adi, deepSearchResults: deep, winrateTimeline: timeline, totalMoves, maxMoves: 5 }).map((move) =>
+    attachConceptTagsToProductMoveV1(move, {
+      sgfText,
+      totalMoves,
+      ownershipSummary: ownershipForTurn(turnAnalyses, move.turnIndex),
+      ladderEvidence: false,
+    })
+  );
   const plans = [
     ...(decisive == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisive)]),
     ...reviewMoves.map((move) => buildExplanationPlanForReviewMoveV1(move)),
@@ -525,6 +552,8 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
       selected: decisive,
       selectedReason: selectedReason(decisive),
       v25EvidenceBreakdown: decisive?.evidence.v25 ?? null,
+      conceptTagsV1: decisive?.conceptTagsV1 ?? [],
+      forbiddenConceptClaims: decisive?.forbiddenConceptClaims ?? [],
       loserColorRequired: gameResult.loserColor != null,
       positiveLossEvidenceRequired: true,
       rejectedCandidates: decisiveRejected,
@@ -538,6 +567,8 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
         v25Taxonomy: move.evidence.v25?.taxonomy ?? null,
         v25EvidenceTypes: move.evidence.v25?.evidenceTypes ?? [],
         v25Ranking: move.evidence.v25?.ranking ?? null,
+        conceptTagsV1: move.conceptTagsV1 ?? [],
+        forbiddenConceptClaims: move.forbiddenConceptClaims ?? [],
         decisiveDuplicateExcluded: decisive?.turnIndex === move.turnIndex,
       })),
       playerDiversityApplied: new Set(reviewMoves.map((move) => move.player)).size > 1,
@@ -573,7 +604,7 @@ function unsupportedWorkbench(reason: string): ProductReviewWorkbenchV1 {
     sourceSummary: { source: null, metaMock: null, timelineEnabled: null, timelineCompleted: null, deepSearchEnabled: null, deepSearchCompleted: null },
     learningEventsSummary: [],
     candidatePoolSummary: [],
-    decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
+    decisiveMoveTrace: { selected: null, selectedReason: null, v25EvidenceBreakdown: null, conceptTagsV1: [], forbiddenConceptClaims: [], loserColorRequired: false, positiveLossEvidenceRequired: true, rejectedCandidates: [] },
     reviewMovesTrace: { selected: [], playerDiversityApplied: false, rejectedCandidates: [] },
     explanationPlanTrace: [],
     uiSummary: [],
@@ -619,10 +650,12 @@ export function renderProductReviewWorkbenchMarkdownV1(report: ProductReviewWork
   lines.push(`- v25Taxonomy: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy ?? null)}\``);
   lines.push(`- v25EvidenceTypes: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes ?? [])}\``);
   lines.push(`- v25RankingScore: \`${mdValue(report.decisiveMoveTrace.v25EvidenceBreakdown?.rankingScore ?? null)}\``);
+  lines.push(`- conceptTagsV1: \`${mdValue(report.decisiveMoveTrace.conceptTagsV1?.map((tag) => `${tag.tag}:${tag.confidence}`) ?? [])}\``);
+  lines.push(`- forbiddenConceptClaims: \`${mdValue(report.decisiveMoveTrace.forbiddenConceptClaims?.map((claim) => `${claim.concept}:${claim.reason}`) ?? [])}\``);
   for (const r of report.decisiveMoveTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push("");
   lines.push("## ReviewMoves Trace");
-  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}, reservedDuplicatePenalty=${mdValue(s.v25Ranking?.duplicatePenalty ?? 0)}`);
+  for (const s of report.reviewMovesTrace.selected) lines.push(`- selected #${s.turnIndex}: category=${s.category}, taxonomy=${mdValue(s.v25Taxonomy)}, rankingScore=${Math.round(s.rankingScore * 100) / 100}, evidence=${s.evidence.join(",")}, evidenceTypes=${s.v25EvidenceTypes.join(",")}, conceptTagsV1=${mdValue(s.conceptTagsV1?.map((tag) => `${tag.tag}:${tag.confidence}`) ?? [])}, forbiddenConceptClaims=${mdValue(s.forbiddenConceptClaims?.map((claim) => `${claim.concept}:${claim.reason}`) ?? [])}, reservedDuplicatePenalty=${mdValue(s.v25Ranking?.duplicatePenalty ?? 0)}`);
   if (report.reviewMovesTrace.selected.length === 0) lines.push("- selected: none");
   for (const r of report.reviewMovesTrace.rejectedCandidates) lines.push(`- rejected #${r.turnIndex}: ${r.reasons.join(", ")}`);
   lines.push(`- playerDiversityApplied: \`${report.reviewMovesTrace.playerDiversityApplied}\``);
