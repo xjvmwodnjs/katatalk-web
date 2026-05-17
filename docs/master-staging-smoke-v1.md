@@ -49,6 +49,8 @@ KATAGO_DEEP_SEARCH_ENABLED=false
 
 목적: winrate timeline, Deep Search 1개 후보, PV overlay를 더 깊게 확인한다.
 
+주의: 이 profile은 GPU 또는 충분한 timeout을 확보한 환경에서만 실행한다. Railway CPU Worker에서는 기본 금지이며, timeline/Deep Search ON은 비용과 시간이 크게 증가할 수 있다.
+
 ```env
 ANALYSIS_ENGINE=katago
 ANALYSIS_WORKER_MODE=external
@@ -138,9 +140,11 @@ KATAGO_DEEP_SEARCH_VISITS=800
 2. migration history에서 006/007이 적용됐는지 확인한다.
 3. `claim_next_analysis_job` RPC가 존재하는지 확인한다.
 4. lease 관련 컬럼과 retry 관련 컬럼이 `analysis_jobs`에 존재하는지 확인한다.
-5. service-role 권한으로 Worker가 claim/heartbeat/completed/failed update를 수행할 수 있는지 확인한다.
+5. service-role 권한으로 Worker가 claim/lease 갱신/completed/failed update를 수행할 수 있는지 확인한다.
 6. anon/client 권한에서 보안상 불필요한 RPC 실행이 차단되는지 확인한다.
 7. schema를 수정하지 않는다. 누락이 있으면 smoke를 중단하고 migration 적용 절차를 별도로 진행한다.
+
+007 기준 heartbeat는 별도 `heartbeat_at` 컬럼이 아니라 `locked_at` 갱신으로 동작한다. smoke 중 running job의 `locked_at`이 Worker lease 갱신 주기에 맞춰 갱신되는지 확인한다.
 
 예시 확인 SQL은 staging 콘솔에서만 실행한다. 결과에는 secret이 포함되지 않아야 한다.
 
@@ -155,10 +159,10 @@ where table_schema = 'public'
   and table_name = 'analysis_jobs'
   and column_name in (
     'status',
-    'claimed_by',
-    'claimed_at',
-    'heartbeat_at',
+    'locked_at',
+    'locked_by',
     'attempt_count',
+    'max_attempts',
     'next_retry_at',
     'last_error_code'
   )

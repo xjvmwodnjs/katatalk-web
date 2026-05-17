@@ -34,8 +34,10 @@
 | migration 006 | 적용됨 |  |
 | migration 007 | 적용됨 |  |
 | `claim_next_analysis_job` RPC | 존재 및 Worker 권한 OK |  |
-| lease/heartbeat 컬럼 | 존재 |  |
-| retry/error 컬럼 | 존재 |  |
+| lease 컬럼 | `locked_at`, `locked_by` 존재 |  |
+| heartbeat 확인 | 별도 `heartbeat_at` 없음, `locked_at` 갱신으로 확인 |  |
+| attempt 컬럼 | `attempt_count`, `max_attempts` 존재 |  |
+| retry/error 컬럼 | `next_retry_at`, `last_error_code` 존재 |  |
 | anon/client RPC 제한 | 불필요 권한 차단 |  |
 
 ## Job Flow
