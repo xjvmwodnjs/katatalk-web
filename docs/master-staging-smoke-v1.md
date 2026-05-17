@@ -92,9 +92,24 @@ KATAGO_DEEP_SEARCH_VISITS=800
 
 CI 또는 로컬에서 실제 KataGo 없이 Product Review 결과 화면 기본 smoke를 확인할 수 있다.
 
+실행 전 기존 `3200` 포트 개발 서버를 종료한다. stale server가 남아 있으면 Playwright가 현재 브랜치가 아닌 이전 서버를 재사용할 수 있다.
+
 ```bash
 corepack pnpm exec playwright install chromium
 corepack pnpm e2e
+```
+
+동일한 설치 절차는 보조 script로도 실행할 수 있다.
+
+```bash
+corepack pnpm e2e:install
+corepack pnpm e2e
+```
+
+CI/Linux runner에서 브라우저 OS dependency가 없으면 아래 명령을 먼저 사용한다.
+
+```bash
+corepack pnpm exec playwright install --with-deps chromium
 ```
 
 이 E2E는 synthetic `katago-worker-v1` completed result fixture를 사용하며 실제 LLM, 결제, KataGo, DB schema/migration을 호출하지 않는다. 검증 viewport는 `390x844`, `430x932`, `1440x900`이다.

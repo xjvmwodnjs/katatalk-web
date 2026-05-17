@@ -11,6 +11,7 @@
     "worker:analysis": "node scripts/run-server.mjs production node dist/worker/analysisWorker.js",
     "check": "tsc --noEmit",
     "e2e": "playwright test",
+    "e2e:install": "playwright install chromium",
     "format": "prettier --write .",
     "test": "vitest run",
     "katago:smoke": "tsx scripts/katago-smoke.ts",
