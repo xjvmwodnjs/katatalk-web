@@ -49,12 +49,53 @@ describe("katago backend detection v1", () => {
     expect(result).toMatchObject({ backend: "unknown", gpuBackend: false, ok: false, timedOut: true });
   });
 
+  it("rejects non-zero OpenCL detection when GPU backend is required", async () => {
+    const result = await detectKatagoBackendV1({
+      env,
+      runner: async () => ({ stdout: "", stderr: "OpenCL initialization failed", code: 1 }),
+    });
+    expect(result).toMatchObject({ backend: "opencl", gpuBackend: true, ok: false, timedOut: false });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("rejects non-zero CUDA detection when GPU backend is required", async () => {
+    const result = await detectKatagoBackendV1({
+      env,
+      runner: async () => ({ stdout: "CUDA backend", stderr: "", code: 1 }),
+    });
+    expect(result).toMatchObject({ backend: "cuda", gpuBackend: true, ok: false, timedOut: false });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("allows zero-code OpenCL detection when GPU backend is required", async () => {
+    const result = await detectKatagoBackendV1({
+      env,
+      runner: async () => ({ stdout: "OpenCL backend", stderr: "", code: 0 }),
+    });
+    expect(result).toMatchObject({ backend: "opencl", gpuBackend: true, ok: true, timedOut: false });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).not.toThrow();
+  });
+
   it("rejects Eigen when GPU backend is required", () => {
     expect(() =>
       assertKatagoGpuBackendRequirementV1(
         { backend: "eigen", gpuBackend: false, ok: true, timedOut: false },
         { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" }
       )
+    ).toThrow(/KATAGO_GPU_BACKEND_REQUIRED/);
+  });
+
+  it("rejects unknown, timeout, and command failure results when GPU backend is required", () => {
+    const requireEnv = { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" };
+    expect(() =>
+      assertKatagoGpuBackendRequirementV1({ backend: "unknown", gpuBackend: false, ok: false, timedOut: false }, requireEnv)
+    ).toThrow(/KATAGO_GPU_BACKEND_REQUIRED/);
+    expect(() =>
+      assertKatagoGpuBackendRequirementV1({ backend: "unknown", gpuBackend: false, ok: false, timedOut: true }, requireEnv)
     ).toThrow(/KATAGO_GPU_BACKEND_REQUIRED/);
   });
 
@@ -65,6 +106,16 @@ describe("katago backend detection v1", () => {
         { backend: "eigen", gpuBackend: false, ok: true, timedOut: false },
         { ...env, KATAGO_REQUIRE_GPU_BACKEND: "false" }
       )
+    ).not.toThrow();
+  });
+
+  it("allows non-zero GPU detection and unknown as warning-only when GPU backend is not required", () => {
+    const optionalEnv = { ...env, KATAGO_REQUIRE_GPU_BACKEND: "false" };
+    expect(() =>
+      assertKatagoGpuBackendRequirementV1({ backend: "opencl", gpuBackend: true, ok: false, timedOut: false }, optionalEnv)
+    ).not.toThrow();
+    expect(() =>
+      assertKatagoGpuBackendRequirementV1({ backend: "unknown", gpuBackend: false, ok: false, timedOut: false }, optionalEnv)
     ).not.toThrow();
   });
 

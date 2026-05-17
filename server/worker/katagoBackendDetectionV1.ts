@@ -118,7 +118,7 @@ export function buildKatagoBackendLogLineV1(result: KatagoBackendDetectionResult
 }
 
 export function assertKatagoGpuBackendRequirementV1(result: KatagoBackendDetectionResultV1, env: NodeJS.ProcessEnv): void {
-  if (!readKatagoRequireGpuBackendFrom(env) || result.gpuBackend) {
+  if (!readKatagoRequireGpuBackendFrom(env) || (result.ok && result.gpuBackend)) {
     return;
   }
   throw new Error(`KATAGO_GPU_BACKEND_REQUIRED: katagoBackend=${result.backend}`);
