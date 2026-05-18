@@ -19,6 +19,7 @@ import {
   summarizeWinrateTimelineV1,
   timelineMetaForTurnNumber,
   WINRATE_TIMELINE_V1_VERSION,
+  type WinrateTimelineProgressEventV1,
   type WinrateTimelineV1,
 } from "@shared/winrateTimelineV1";
 import { appendWinrateTimelineProgressEventV1 } from "../../winrateTimelineProgressV1";
@@ -69,7 +70,23 @@ export type RunKatagoWinrateTimelineV1Opts = {
   jobId: string;
   env?: NodeJS.ProcessEnv;
   spawnFn?: SpawnFn;
+  progressAppendFn?: (event: WinrateTimelineProgressEventV1) => Promise<void>;
 };
+
+async function appendProgressEventSafelyV1(
+  event: WinrateTimelineProgressEventV1,
+  appendFn: (event: WinrateTimelineProgressEventV1) => Promise<void>
+): Promise<void> {
+  try {
+    await appendFn(event);
+  } catch {
+    console.warn("[katago-timeline] progress append failed", {
+      jobId: event.jobId,
+      turnIndex: event.turnIndex,
+      isDuringSearch: event.isDuringSearch,
+    });
+  }
+}
 
 /**
  * Runs optional full-game timeline query. Never throws — failures become timeline metadata only.
@@ -84,6 +101,7 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
   const includeFinal = readWinrateTimelineIncludeFinalFrom(env);
   const reportDuringSearchEverySeconds = readWinrateTimelineReportEverySecondsFrom(env);
   const localProgressEnabled = readWinrateTimelineLocalProgressEnabledFrom(env);
+  const progressAppendFn = opts.progressAppendFn ?? appendWinrateTimelineProgressEventV1;
   const analyzeTurns = buildAnalyzeTurnNumbers(totalMoves, maxTurns, includeFinal);
 
   const basePolicy = {
@@ -148,7 +166,7 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
             opts.jobId
           );
           if (event) {
-            void appendWinrateTimelineProgressEventV1(event);
+            void appendProgressEventSafelyV1(event, progressAppendFn);
           }
         }
       }
@@ -178,7 +196,7 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
         opts.jobId
       );
       if (event) {
-        await appendWinrateTimelineProgressEventV1(event);
+        await appendProgressEventSafelyV1(event, progressAppendFn);
       }
       progressBuffer = "";
     }

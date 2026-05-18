@@ -115,11 +115,41 @@ export function mergeWinrateTimelineProgressEventsV1(
   const byTurn = new Map<number, WinrateTimelineProgressEventV1>();
   for (const event of events) {
     const prev = byTurn.get(event.turnIndex);
-    if (!prev || (!event.isDuringSearch && prev.isDuringSearch) || event.receivedAt >= prev.receivedAt) {
+    if (!prev || shouldReplaceProgressEventV1(prev, event)) {
       byTurn.set(event.turnIndex, event);
     }
   }
   return Array.from(byTurn.values()).sort((a, b) => a.turnIndex - b.turnIndex);
+}
+
+function progressEventTimeMs(receivedAt: string): number | null {
+  const t = Date.parse(receivedAt);
+  return Number.isFinite(t) ? t : null;
+}
+
+function isNewerProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+  const prevMs = progressEventTimeMs(prev.receivedAt);
+  const nextMs = progressEventTimeMs(next.receivedAt);
+  if (prevMs == null && nextMs == null) {
+    return false;
+  }
+  if (prevMs == null) {
+    return true;
+  }
+  if (nextMs == null) {
+    return false;
+  }
+  return nextMs >= prevMs;
+}
+
+function shouldReplaceProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+  if (!prev.isDuringSearch && next.isDuringSearch) {
+    return false;
+  }
+  if (prev.isDuringSearch && !next.isDuringSearch) {
+    return true;
+  }
+  return isNewerProgressEventV1(prev, next);
 }
 
 export function isWinrateTimelineV1(v: unknown): v is WinrateTimelineV1 {

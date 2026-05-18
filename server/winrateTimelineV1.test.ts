@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { PassThrough, Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildAnalysisResultViewModel, buildWinrateSeriesPreferTimeline } from "@shared/analysisResultViewModel";
 import {
   buildAnalyzeTurnNumbers,
@@ -58,6 +58,25 @@ function makeKatagoSpawn(stdout: string, exitCode = 0): SpawnFn {
     proc.stderr = err;
     proc.kill = (() => true) as ChildProcess["kill"];
     return proc;
+  };
+}
+
+function progressEvent(overrides: {
+  turnIndex?: number;
+  isDuringSearch?: boolean;
+  visits?: number | null;
+  winrate?: number | null;
+  receivedAt?: string;
+}) {
+  return {
+    jobId: "progress-merge",
+    turnIndex: overrides.turnIndex ?? 2,
+    isDuringSearch: overrides.isDuringSearch ?? true,
+    visits: overrides.visits ?? 10,
+    winrate: overrides.winrate ?? 0.4,
+    scoreLead: -1,
+    currentPlayer: "B" as const,
+    receivedAt: overrides.receivedAt ?? "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -164,29 +183,57 @@ describe("katagoAnalyzeTurnsCollector", () => {
 
   it("merges partial progress into final progress by turnNumber", () => {
     const merged = mergeWinrateTimelineProgressEventsV1([
-      {
-        jobId: "progress-merge",
-        turnIndex: 2,
-        isDuringSearch: true,
-        visits: 10,
-        winrate: 0.4,
-        scoreLead: -1,
-        currentPlayer: "B",
-        receivedAt: "2026-01-01T00:00:00.000Z",
-      },
-      {
-        jobId: "progress-merge",
-        turnIndex: 2,
-        isDuringSearch: false,
-        visits: 50,
-        winrate: 0.45,
-        scoreLead: -0.5,
-        currentPlayer: "B",
-        receivedAt: "2026-01-01T00:00:01.000Z",
-      },
+      progressEvent({ isDuringSearch: true, visits: 10, receivedAt: "2026-01-01T00:00:00.000Z" }),
+      progressEvent({ isDuringSearch: false, visits: 50, receivedAt: "2026-01-01T00:00:01.000Z" }),
     ]);
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({ turnIndex: 2, isDuringSearch: false, visits: 50 });
+  });
+
+  it("keeps final when a later partial arrives", () => {
+    const merged = mergeWinrateTimelineProgressEventsV1([
+      progressEvent({ isDuringSearch: false, visits: 50, receivedAt: "2026-01-01T00:00:00.000Z" }),
+      progressEvent({ isDuringSearch: true, visits: 99, receivedAt: "2026-01-01T00:00:10.000Z" }),
+    ]);
+    expect(merged[0]).toMatchObject({ isDuringSearch: false, visits: 50 });
+  });
+
+  it("uses the latest partial for partial-only events", () => {
+    const merged = mergeWinrateTimelineProgressEventsV1([
+      progressEvent({ isDuringSearch: true, visits: 10, receivedAt: "2026-01-01T00:00:00.000Z" }),
+      progressEvent({ isDuringSearch: true, visits: 20, receivedAt: "2026-01-01T00:00:01.000Z" }),
+    ]);
+    expect(merged[0]).toMatchObject({ isDuringSearch: true, visits: 20 });
+  });
+
+  it("uses the latest final for final-only events", () => {
+    const merged = mergeWinrateTimelineProgressEventsV1([
+      progressEvent({ isDuringSearch: false, visits: 50, receivedAt: "2026-01-01T00:00:00.000Z" }),
+      progressEvent({ isDuringSearch: false, visits: 60, receivedAt: "2026-01-01T00:00:01.000Z" }),
+    ]);
+    expect(merged[0]).toMatchObject({ isDuringSearch: false, visits: 60 });
+  });
+
+  it("keeps final precedence for out-of-order and invalid receivedAt events", () => {
+    const merged = mergeWinrateTimelineProgressEventsV1([
+      progressEvent({ turnIndex: 2, isDuringSearch: true, visits: 5, receivedAt: "not-a-date" }),
+      progressEvent({ turnIndex: 1, isDuringSearch: true, visits: 10, receivedAt: "2026-01-01T00:00:02.000Z" }),
+      progressEvent({ turnIndex: 1, isDuringSearch: false, visits: 50, receivedAt: "not-a-date" }),
+      progressEvent({ turnIndex: 1, isDuringSearch: true, visits: 99, receivedAt: "2026-01-01T00:00:03.000Z" }),
+    ]);
+    expect(merged.map((p) => p.turnIndex)).toEqual([1, 2]);
+    expect(merged[0]).toMatchObject({ turnIndex: 1, isDuringSearch: false, visits: 50 });
+    expect(merged[1]).toMatchObject({ turnIndex: 2, isDuringSearch: true, visits: 5 });
+  });
+
+  it("merges repeated same-turn events deterministically", () => {
+    const events = [
+      progressEvent({ isDuringSearch: true, visits: 1, receivedAt: "2026-01-01T00:00:00.000Z" }),
+      progressEvent({ isDuringSearch: false, visits: 3, receivedAt: "2026-01-01T00:00:02.000Z" }),
+      progressEvent({ isDuringSearch: true, visits: 2, receivedAt: "2026-01-01T00:00:03.000Z" }),
+    ];
+    expect(mergeWinrateTimelineProgressEventsV1(events)).toEqual(mergeWinrateTimelineProgressEventsV1(events));
+    expect(mergeWinrateTimelineProgressEventsV1(events)[0]).toMatchObject({ isDuringSearch: false, visits: 3 });
   });
 
   it("orders timeline points by turnIndex after shuffled responses", async () => {
@@ -309,6 +356,66 @@ describe("runKatagoWinrateTimelineV1", () => {
     expect(tl.points.every((p) => p.perspectiveStatus === "katago_output_only" || p.status === "failed")).toBe(
       true
     );
+  });
+
+  it("isolates local progress append failures with sanitized warning", async () => {
+    const parsed = parseMinimalSgfForSmoke(MINI_SGF);
+    const stdout = makeTimelineStdout([
+      { turnNumber: 0, isDuringSearch: true, rootInfo: { winrate: 0.5, visits: 5, currentPlayer: "B" } },
+      { turnNumber: 0, isDuringSearch: false, rootInfo: { winrate: 0.51, scoreLead: 0.2, visits: 50, currentPlayer: "B" } },
+    ]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      runKatagoWinrateTimelineV1({
+        parsed,
+        jobId: "appendfail",
+        env: {
+          NODE_ENV: "development",
+          KATAGO_WINRATE_TIMELINE_ENABLED: "true",
+          KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS: "true",
+          KATAGO_BINARY_PATH: "SENSITIVE_BINARY_PATH_VALUE",
+          KATAGO_CONFIG_PATH: "SENSITIVE_CONFIG_PATH_VALUE",
+          KATAGO_MODEL_PATH: "SENSITIVE_MODEL_PATH_VALUE",
+        },
+        spawnFn: makeKatagoSpawn(stdout),
+        progressAppendFn: async () => {
+          throw new Error("SENSITIVE_TOKEN_VALUE SGF_RAW_FRAGMENT SENSITIVE_BINARY_PATH_VALUE");
+        },
+      })
+    ).resolves.toMatchObject({ enabled: true });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const warningText = JSON.stringify(warnSpy.mock.calls);
+    expect(warningText).toContain("progress append failed");
+    expect(warningText).not.toContain("SENSITIVE_TOKEN_VALUE");
+    expect(warningText).not.toContain("SGF_RAW_FRAGMENT");
+    expect(warningText).not.toContain("SENSITIVE_BINARY_PATH_VALUE");
+    warnSpy.mockRestore();
+  });
+
+  it("does not append progress when local progress is disabled", async () => {
+    const parsed = parseMinimalSgfForSmoke(MINI_SGF);
+    const stdout = makeTimelineStdout([
+      { turnNumber: 0, isDuringSearch: true, rootInfo: { winrate: 0.5, visits: 5, currentPlayer: "B" } },
+      { turnNumber: 0, isDuringSearch: false, rootInfo: { winrate: 0.51, scoreLead: 0.2, visits: 50, currentPlayer: "B" } },
+    ]);
+    let appendCalls = 0;
+    await runKatagoWinrateTimelineV1({
+      parsed,
+      jobId: "appenddisabled",
+      env: {
+        NODE_ENV: "development",
+        KATAGO_WINRATE_TIMELINE_ENABLED: "true",
+        KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS: "false",
+        KATAGO_BINARY_PATH: "/k",
+        KATAGO_CONFIG_PATH: "/c",
+        KATAGO_MODEL_PATH: "/m",
+      },
+      spawnFn: makeKatagoSpawn(stdout),
+      progressAppendFn: async () => {
+        appendCalls += 1;
+      },
+    });
+    expect(appendCalls).toBe(0);
   });
 });
 
