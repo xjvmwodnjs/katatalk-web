@@ -1,6 +1,6 @@
 # KataGo GPU Runtime Integration v1
 
-로컬 RTX GPU에서 KataGo Analysis Engine이 실제 GPU backend로 실행되는지 검증하는 절차다. 코드가 CPU(Eigen) KataGo binary를 GPU binary로 바꿀 수는 없으므로 OpenCL/CUDA/TensorRT build와 model/config는 사용자가 로컬에 직접 준비해야 한다.
+로컬 RTX GPU에서 KataGo Analysis Engine이 실제 GPU backend로 실행되는지 검증하는 절차다. 코드가 CPU(Eigen) KataGo binary를 GPU binary로 바꿀 수는 없으므로 CUDA/OpenCL/TensorRT build와 model/config는 사용자가 로컬에 직접 준비해야 한다. TensorRT도 지원 backend 중 하나지만 자동 설치/다운로드하지 않는다.
 
 ## Backend Check Modes
 
@@ -78,7 +78,7 @@ NVIDIA 환경에서는 Worker 실행 후 별도 PowerShell에서 확인한다.
 nvidia-smi
 ```
 
-분석 중 `katago.exe`가 process 목록에 보이고 GPU utilization 또는 memory 사용량이 증가하는지 확인한다. CUDA/TensorRT가 가능하면 NVIDIA 환경에서 유리할 수 있지만, 로컬 개발은 OpenCL/CUDA부터 먼저 확인한다.
+분석 중 `katago.exe`가 process 목록에 보이고 GPU utilization 또는 memory 사용량이 증가하는지 확인한다. CUDA/TensorRT가 가능하면 NVIDIA 환경에서 유리할 수 있지만, 로컬 개발은 CUDA/OpenCL부터 먼저 확인한다.
 
 ## Realtime Timeline Smoke
 

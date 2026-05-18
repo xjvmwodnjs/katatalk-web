@@ -8,6 +8,8 @@ export type KatagoBackendCheckModeV1 = "version" | "analysis_smoke" | "version_t
 
 export type KatagoBackendDetectionResultV1 = {
   backend: KatagoBackendV1;
+  versionBackend?: KatagoBackendV1;
+  smokeBackend?: KatagoBackendV1;
   gpuBackend: boolean;
   ok: boolean;
   timedOut: boolean;
@@ -33,6 +35,7 @@ export type KatagoBackendDetectionRunnerV1 = (
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_SMOKE_VISITS = 10;
+const KATAGO_BACKEND_CHECK_KILL_GRACE_MS = 1000;
 
 function isGpuBackendV1(backend: KatagoBackendV1): boolean {
   return backend === "cuda" || backend === "opencl" || backend === "tensorrt";
@@ -53,6 +56,14 @@ export function detectKatagoBackendFromTextV1(text: string): KatagoBackendV1 {
     return "eigen";
   }
   return "unknown";
+}
+
+function detectKatagoSmokeBackendFromTextV1(text: string): KatagoBackendV1 {
+  const t = text.toLowerCase();
+  if (/\beigen\b|cpu backend|using cpu|backend[^\n\r]*cpu/.test(t)) {
+    return "eigen";
+  }
+  return detectKatagoBackendFromTextV1(text);
 }
 
 function parsePositiveInt(raw: string | undefined): number | null {
@@ -98,7 +109,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   }) as Promise<T>;
 }
 
-function runKatagoCommand(
+export function runKatagoBackendCheckCommandV1(
   binaryPath: string,
   args: readonly string[],
   opts?: { stdinPayload?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number }
@@ -110,6 +121,15 @@ function runKatagoCommand(
       env: opts?.env != null ? { ...process.env, ...opts.env } : process.env,
     });
     let settled = false;
+    let killFallbackId: ReturnType<typeof setTimeout> | undefined;
+    const clearTimers = () => {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+      if (killFallbackId != null) {
+        clearTimeout(killFallbackId);
+      }
+    };
     const timeoutId =
       opts?.timeoutMs != null
         ? setTimeout(() => {
@@ -122,6 +142,13 @@ function runKatagoCommand(
             } catch {
               // ignore kill failures; startup guard still fails closed.
             }
+            killFallbackId = setTimeout(() => {
+              try {
+                proc.kill("SIGKILL");
+              } catch {
+                // Windows and already-exited processes can reject kill; ignore safely.
+              }
+            }, KATAGO_BACKEND_CHECK_KILL_GRACE_MS);
             reject(new Error("KATAGO_BACKEND_CHECK_TIMEOUT"));
           }, opts.timeoutMs)
         : undefined;
@@ -130,9 +157,7 @@ function runKatagoCommand(
         return;
       }
       settled = true;
-      if (timeoutId != null) {
-        clearTimeout(timeoutId);
-      }
+      clearTimers();
       fn();
     };
     const out: Buffer[] = [];
@@ -141,6 +166,7 @@ function runKatagoCommand(
     proc.stderr?.on("data", (chunk: Buffer | string) => err.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     proc.on("error", (e) => finish(() => reject(e)));
     proc.on("close", (code) => {
+      clearTimers();
       finish(() =>
         resolve({
           stdout: Buffer.concat(out).toString("utf8"),
@@ -227,6 +253,8 @@ function emptyDetectionResult(
 ): KatagoBackendDetectionResultV1 {
   return {
     backend,
+    versionBackend: "unknown",
+    smokeBackend: "unknown",
     gpuBackend: isGpuBackendV1(backend),
     ok: false,
     timedOut: false,
@@ -249,7 +277,7 @@ export async function detectKatagoBackendV1(opts: {
   if (!binaryPath) {
     return emptyDetectionResult("unknown", mode, configSanity);
   }
-  const runner = opts.runner ?? runKatagoCommand;
+  const runner = opts.runner ?? runKatagoBackendCheckCommandV1;
   const timeoutMs = opts.timeoutMs ?? readKatagoBackendCheckTimeoutMsFrom(env);
   try {
     let versionOutput: CommandOutput | null = null;
@@ -262,8 +290,10 @@ export async function detectKatagoBackendV1(opts: {
     if (mode === "analysis_smoke" || mode === "version_then_smoke") {
       const args = buildKatagoAnalysisArgs(env);
       if (!args) {
-        return emptyDetectionResult(detectKatagoBackendFromTextV1(`${versionOutput?.stdout ?? ""}\n${versionOutput?.stderr ?? ""}`), mode, {
+        const versionBackend = detectKatagoBackendFromTextV1(`${versionOutput?.stdout ?? ""}\n${versionOutput?.stderr ?? ""}`);
+        return emptyDetectionResult(versionBackend, mode, {
           ...configSanity,
+          versionBackend,
           versionOk: versionOutput?.code === 0,
         });
       }
@@ -277,9 +307,13 @@ export async function detectKatagoBackendV1(opts: {
       );
     }
 
-    const backend = detectKatagoBackendFromTextV1(
-      `${versionOutput?.stdout ?? ""}\n${versionOutput?.stderr ?? ""}\n${smokeOutput?.stdout ?? ""}\n${smokeOutput?.stderr ?? ""}`
-    );
+    const versionBackend =
+      versionOutput == null
+        ? "unknown"
+        : detectKatagoBackendFromTextV1(`${versionOutput.stdout}\n${versionOutput.stderr}`);
+    const smokeBackend =
+      smokeOutput == null ? "unknown" : detectKatagoSmokeBackendFromTextV1(`${smokeOutput.stdout}\n${smokeOutput.stderr}`);
+    const backend = smokeBackend !== "unknown" ? smokeBackend : versionBackend;
     const versionOk = versionOutput == null ? undefined : versionOutput.code === 0;
     const smokeOk = smokeOutput == null ? undefined : smokeOutput.code === 0 && hasSmokeResponseV1(smokeOutput.stdout);
     const ok =
@@ -290,6 +324,8 @@ export async function detectKatagoBackendV1(opts: {
           : versionOk === true && smokeOk === true;
     return {
       backend,
+      versionBackend,
+      smokeBackend,
       gpuBackend: isGpuBackendV1(backend),
       ok,
       timedOut: false,
@@ -308,6 +344,8 @@ export function buildKatagoBackendLogLineV1(result: KatagoBackendDetectionResult
   return [
     "[analysis-worker] katago backend",
     `katagoBackend=${result.backend}`,
+    `katagoVersionBackend=${result.versionBackend ?? "unknown"}`,
+    `katagoSmokeBackend=${result.smokeBackend ?? "unknown"}`,
     `katagoGpuBackend=${String(result.gpuBackend)}`,
     `katagoBackendCheckOk=${String(result.ok)}`,
     `katagoBackendCheckMode=${result.checkMode ?? readKatagoBackendCheckModeFrom(env)}`,

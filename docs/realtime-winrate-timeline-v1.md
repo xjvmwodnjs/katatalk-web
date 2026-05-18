@@ -30,7 +30,7 @@
 
 ## Local GPU timeline smoke
 
-1. OpenCL/CUDA KataGo binary를 사용한다.
+1. CUDA/OpenCL/TensorRT KataGo binary를 사용한다.
 2. `KATAGO_REQUIRE_GPU_BACKEND=true`를 설정한다.
 3. `KATAGO_WINRATE_TIMELINE_ENABLED=true`를 설정한다.
 4. `KATAGO_WINRATE_TIMELINE_MAX_VISITS=50`을 설정한다.

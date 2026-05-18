@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertKatagoGpuBackendRequirementV1,
   buildKatagoBackendLogLineV1,
+  runKatagoBackendCheckCommandV1,
   detectKatagoBackendFromTextV1,
   detectKatagoBackendV1,
   readKatagoBackendCheckModeFrom,
@@ -157,6 +158,27 @@ describe("katago backend detection v1", () => {
     );
   });
 
+  it("rejects version GPU when smoke explicitly reports Eigen CPU in require mode", async () => {
+    const result = await detectKatagoBackendV1({
+      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
+      runner: async (_binary, args) =>
+        args[0] === "version"
+          ? { stdout: "CUDA backend", stderr: "", code: 0 }
+          : { stdout: "{\"rootInfo\":{\"winrate\":0.5}}\n", stderr: "Eigen backend", code: 0 },
+    });
+    expect(result).toMatchObject({
+      backend: "eigen",
+      versionBackend: "cuda",
+      smokeBackend: "eigen",
+      gpuBackend: false,
+      ok: true,
+      smokeOk: true,
+    });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
   it("rejects analysis smoke timeout when GPU backend is required", async () => {
     const result = await detectKatagoBackendV1({
       env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "analysis_smoke" },
@@ -222,10 +244,21 @@ describe("katago backend detection v1", () => {
 
   it("does not include path or secret values in log line", () => {
     const line = buildKatagoBackendLogLineV1(
-      { backend: "cuda", gpuBackend: true, ok: true, timedOut: false, smokeOk: true, checkMode: "version_then_smoke" },
+      {
+        backend: "cuda",
+        versionBackend: "cuda",
+        smokeBackend: "cuda",
+        gpuBackend: true,
+        ok: true,
+        timedOut: false,
+        smokeOk: true,
+        checkMode: "version_then_smoke",
+      },
       { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", SECRET_TOKEN: "hidden" }
     );
     expect(line).toContain("katagoBackend=cuda");
+    expect(line).toContain("katagoVersionBackend=cuda");
+    expect(line).toContain("katagoSmokeBackend=cuda");
     expect(line).toContain("katagoGpuBackend=true");
     expect(line).toContain("katagoBackendCheckMode=version_then_smoke");
     expect(line).toContain("katagoSmokeOk=true");
@@ -239,6 +272,14 @@ describe("katago backend detection v1", () => {
     expect(readKatagoBackendCheckModeFrom({})).toBe("version");
     expect(readKatagoBackendCheckModeFrom({ KATAGO_BACKEND_CHECK_MODE: "analysis_smoke" })).toBe("analysis_smoke");
     expect(readKatagoBackendCheckModeFrom({ KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" })).toBe("version_then_smoke");
+  });
+
+  it("cleans up a timed-out backend check child process", async () => {
+    const started = Date.now();
+    await expect(
+      runKatagoBackendCheckCommandV1(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 50 })
+    ).rejects.toThrow(/KATAGO_BACKEND_CHECK_TIMEOUT/);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("config sanity check is warning-only and does not expose config content or path", async () => {
