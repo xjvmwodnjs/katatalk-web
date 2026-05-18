@@ -303,14 +303,19 @@ KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true
 | `KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS` | 자동 산출 | strict integer, 무효값 → 자동 산출, clamp 30000–900000 |
 | `KATAGO_DEEP_SEARCH_ENABLED` | `false` | `true` 시 plan 후보에 추가 고 visits KataGo |
 | `KATAGO_DEEP_SEARCH_VISITS` | `800` | 후보별 순차 실행 |
+| `KATAGO_REQUIRE_GPU_BACKEND` | `false` | `true` 시 GPU backend + check ok 아니면 Worker startup fail-fast |
+| `KATAGO_BACKEND_CHECK_MODE` | `version` | `version` / `analysis_smoke` / `version_then_smoke`; 로컬 GPU smoke 권장값은 `version_then_smoke` |
+| `KATAGO_BACKEND_CHECK_SMOKE_VISITS` | `10` | backend analysis smoke query용 low visits |
+| `KATAGO_BACKEND_CHECK_TIMEOUT_MS` | `10000` | backend version/smoke check timeout |
 | `KATAGO_WINRATE_TIMELINE_ENABLED` | `false` | `true` 시 `analyzeTurns` 0..N 단일 쿼리 |
 | `KATAGO_WINRATE_TIMELINE_MAX_VISITS` | `50` | **clamp 1–2000** (무효값 → 50). legacy `KATAGO_WINRATE_TIMELINE_VISITS`도 읽음 |
 | `KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS` | `0.5` | KataGo partial result interval |
-| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS` | `false` | local/dev progress file + polling API opt-in; production에서는 비활성 |
+| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS` | `false` | local/dev progress file + polling API opt-in; Web/Worker 양쪽에 설정 필요, production에서는 비활성 |
 | `KATAGO_WINRATE_TIMELINE_MAX_TURNS` | `300` | clamp 1–500; `totalMoves > maxTurns` 시 `TIMELINE_TURNS_CAPPED` |
 | `KATAGO_WINRATE_TIMELINE_TIMEOUT_MS` | `600000` | clamp 30s–30m |
 
 Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 메타만).
+Local progress를 쓰려면 Web과 Worker 프로세스 모두 `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`여야 한다. Worker만 true이면 파일은 생겨도 Web endpoint는 progress unavailable로 응답할 수 있다.
 
 ---
 

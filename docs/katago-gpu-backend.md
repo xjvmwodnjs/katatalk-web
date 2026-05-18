@@ -5,7 +5,7 @@
 ## 전제
 
 - 코드만으로 CPU(Eigen) build KataGo를 GPU build로 바꿀 수 없다.
-- `KATAGO_BINARY_PATH`는 OpenCL 또는 CUDA backend가 포함된 KataGo 실행 파일을 가리켜야 한다.
+- `KATAGO_BINARY_PATH`는 OpenCL, CUDA 또는 TensorRT backend가 포함된 KataGo 실행 파일을 가리켜야 한다.
 - `KATAGO_CONFIG_PATH`는 analysis용 config를 가리켜야 한다.
 - `KATAGO_MODEL_PATH`는 사용할 model 파일을 가리켜야 한다.
 - repository에는 실제 경로, secret, API key를 커밋하지 않는다.
@@ -16,6 +16,7 @@ Worker startup에서 backend check 결과를 다음 enum으로 기록한다.
 
 - `cuda`: CUDA backend로 감지됨
 - `opencl`: OpenCL backend로 감지됨
+- `tensorrt`: TensorRT backend로 감지됨
 - `eigen`: Eigen/CPU backend로 감지됨
 - `unknown`: 출력, 실패, timeout 등으로 backend를 확정하지 못함
 
@@ -25,11 +26,14 @@ Worker startup에서 backend check 결과를 다음 enum으로 기록한다.
 
 ```env
 KATAGO_REQUIRE_GPU_BACKEND=false
+KATAGO_BACKEND_CHECK_MODE=version
+KATAGO_BACKEND_CHECK_SMOKE_VISITS=10
 KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 ```
 
 - `KATAGO_REQUIRE_GPU_BACKEND=false`: 기본값. `eigen` 또는 `unknown`이어도 경고성 startup log만 남기고 계속 진행한다.
-- `KATAGO_REQUIRE_GPU_BACKEND=true`: `cuda` 또는 `opencl`이 아니면 Worker startup에서 실패한다.
+- `KATAGO_REQUIRE_GPU_BACKEND=true`: `cuda`, `opencl`, `tensorrt` 감지와 backend check ok가 아니면 Worker startup에서 실패한다.
+- `KATAGO_BACKEND_CHECK_MODE=version_then_smoke`: 로컬 GPU runtime 확인 권장값. 자세한 절차는 `docs/katago-gpu-runtime-v1.md`.
 - `KATAGO_BACKEND_CHECK_TIMEOUT_MS`: backend check timeout. 기본값은 `10000`ms다.
 
 ## Local GPU Smoke
