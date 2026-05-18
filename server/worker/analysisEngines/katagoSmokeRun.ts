@@ -65,12 +65,17 @@ export function resolveSgfPathFromArgv(argv: string[]): string | null {
   return tail.length > 0 ? tail[tail.length - 1]! : null;
 }
 
-function collectSpawnOutput(proc: ChildProcess): Promise<{ stdout: string; stderr: string; code: number | null }> {
+function collectSpawnOutput(
+  proc: ChildProcess,
+  onStdoutChunk?: (chunk: string) => void
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     const chunksOut: Buffer[] = [];
     const chunksErr: Buffer[] = [];
     proc.stdout?.on("data", (c: Buffer | string) => {
-      chunksOut.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+      const b = Buffer.isBuffer(c) ? c : Buffer.from(c);
+      chunksOut.push(b);
+      onStdoutChunk?.(b.toString("utf8"));
     });
     proc.stderr?.on("data", (c: Buffer | string) => {
       chunksErr.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
@@ -205,6 +210,7 @@ export async function runKatagoWorkerAnalysisQueryLines(opts: {
   env?: NodeJS.ProcessEnv;
   spawnFn?: SpawnFn;
   timeoutMs: number;
+  onStdoutChunk?: (chunk: string) => void;
 }): Promise<{ stdout: string; stderr: string; code: number | null; commandPreview: string }> {
   const env = opts.env != null ? { ...process.env, ...opts.env } : process.env;
   const paths = assertKatagoSmokePathsFromEnv(env);
@@ -218,7 +224,7 @@ export async function runKatagoWorkerAnalysisQueryLines(opts: {
     stdio: ["pipe", "pipe", "pipe"] as StdioOptions,
   });
 
-  const outputPromise = collectSpawnOutput(proc);
+  const outputPromise = collectSpawnOutput(proc, opts.onStdoutChunk);
   let killFallbackTimer: ReturnType<typeof setTimeout> | undefined;
   const cancelKillFallback = () => {
     if (killFallbackTimer !== undefined) {

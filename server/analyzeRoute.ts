@@ -45,6 +45,8 @@ import {
   spendCreditForAnalysisJob,
   walletSubjectFromAuthUser,
 } from "./creditService";
+import { readWinrateTimelineLocalProgressEnabledFrom } from "./worker/analysisEngines/winrateTimelineConfig";
+import { readWinrateTimelineProgressV1 } from "./winrateTimelineProgressV1";
 
 function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetResponse {
   const status = normalizeAnalysisJobStatus(row.status);
@@ -145,6 +147,57 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
     sendUploadError(res, 400, "Invalid file upload.");
   });
 }
+
+analyzeRouter.get(
+  "/api/analyze/:jobId/timeline-progress",
+  requireAnalyzeAuth,
+  analyzeGetUserLimit,
+  (req: Request, res: Response) => {
+    void (async () => {
+      if (!readWinrateTimelineLocalProgressEnabledFrom(process.env)) {
+        res.status(404).json({ success: false, message: "Timeline progress is not enabled." });
+        return;
+      }
+      const user = req.katatalkUser;
+      if (!user) {
+        sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
+        return;
+      }
+      const jobId = req.params.jobId;
+      if (!jobId || typeof jobId !== "string") {
+        sendUploadError(res, 400, "Missing job ID.");
+        return;
+      }
+      const viewer = walletSubjectFromAuthUser(user);
+      let row: AnalysisJobDbRow | null = null;
+      try {
+        row = await getAnalysisJobRow(jobId);
+      } catch (e) {
+        if (e instanceof SupabaseAdminUnavailableError) {
+          sendUploadError(res, 503, "크레딧·작업 조회를 위해 Supabase 서버 설정이 필요합니다.");
+          return;
+        }
+        console.error("[analyze] timeline-progress getAnalysisJobRow", e);
+        sendUploadError(res, 500, "작업을 불러오지 못했습니다.");
+        return;
+      }
+      if (row == null) {
+        res.status(404).json({ success: false, message: "Job not found." });
+        return;
+      }
+      if (row.user_id !== viewer) {
+        res.status(403).json({ success: false, message: "이 분석 결과에 접근할 권한이 없습니다." });
+        return;
+      }
+      const progress = await readWinrateTimelineProgressV1(jobId);
+      if (progress == null) {
+        res.status(404).json({ success: false, message: "Timeline progress not found." });
+        return;
+      }
+      res.json(progress);
+    })();
+  }
+);
 
 analyzeRouter.get(
   "/api/analyze/:jobId",

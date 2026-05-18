@@ -16,7 +16,7 @@ import { ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
-import type { AnalysisJobGetResponse } from "@shared/analysisJob";
+import type { AnalysisJobGetResponse, WinrateTimelineProgressResponseV1 } from "@shared/analysisJob";
 import {
   isKatagoWorkerV1ResultPayload,
   normalizeAnalysisJobStatus,
@@ -28,7 +28,10 @@ import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import type { KatagoWorkerV1ResultData } from "@/components/KatagoWorkerV1ResultPanel";
 import AnalysisResultView from "@/components/AnalysisResultView";
+import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import UploadHero from "@/components/UploadHero";
+import { normalizeWinratePerspectiveV1 } from "@shared/winratePerspectiveV1";
+import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewModel";
 
 type View = "upload" | "loading" | "result";
 
@@ -48,6 +51,11 @@ export default function Home() {
   const [katagoWorkerV1Result, setKatagoWorkerV1Result] = useState<KatagoWorkerV1ResultData | null>(null);
   const [jobProgress, setJobProgress] = useState(0);
   const [jobStatus, setJobStatus] = useState<AnalysisJobGetResponse["status"] | "idle">("idle");
+  const [timelineProgressSeries, setTimelineProgressSeries] = useState<AnalysisResultWinratePointV1[]>([]);
+  const [timelineProgressStats, setTimelineProgressStats] = useState<{ completedCount: number; totalPoints: number | null }>({
+    completedCount: 0,
+    totalPoints: null,
+  });
   const pollAbortRef = useRef(false);
   const t = TRANSLATIONS[lang];
 
@@ -65,6 +73,48 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
+  async function pollTimelineProgress(jobId: string): Promise<void> {
+    const res = await fetch(`/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`, {
+      credentials: "include",
+      headers: { ...(await getAnalyzeAuthHeaders()) },
+    });
+    if (!res.ok) {
+      return;
+    }
+    const body = (await res.json().catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
+    if (!body?.success || !Array.isArray(body.points)) {
+      return;
+    }
+    const series: AnalysisResultWinratePointV1[] = [];
+    for (const p of body.points) {
+      if (typeof p.winrate !== "number" || !Number.isFinite(p.winrate)) {
+        continue;
+      }
+      const perspective = normalizeWinratePerspectiveV1({
+        rawWinrate: p.winrate,
+        turnIndex: p.turnIndex,
+        player: null,
+        currentPlayer: p.currentPlayer,
+        playerToMove: p.currentPlayer,
+      });
+      series.push({
+        turnIndex: p.turnIndex,
+        player: null,
+        rawWinrate: perspective.rawWinrate,
+        displayWinrate: perspective.normalized.displayWinrate,
+        displayPerspective: "katago_output",
+        currentPlayer: p.currentPlayer,
+        playerToMove: p.currentPlayer,
+        confidence: "provisional",
+        timelineStatus: p.isDuringSearch ? "partial" : "final",
+        perspective,
+      });
+    }
+    series.sort((a, b) => a.turnIndex - b.turnIndex);
+    setTimelineProgressSeries(series);
+    setTimelineProgressStats({ completedCount: body.completedCount, totalPoints: body.totalPoints });
+  }
+
   useEffect(() => {
     if (authLoading) return;
     const jobId = readAnalysisJobIdFromSearch(window.location.search);
@@ -73,6 +123,8 @@ export default function Home() {
     let cancelled = false;
     pollAbortRef.current = false;
     setKatagoWorkerV1Result(null);
+    setTimelineProgressSeries([]);
+    setTimelineProgressStats({ completedCount: 0, totalPoints: null });
     setJobProgress(0);
     setJobStatus("queued");
     setView("loading");
@@ -109,6 +161,9 @@ export default function Home() {
           const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
           setJobStatus(normalizedStatus);
           setJobProgress(typeof job.progress === "number" ? job.progress : 0);
+          if (normalizedStatus === "queued" || normalizedStatus === "running") {
+            await pollTimelineProgress(jobId);
+          }
 
           if (normalizedStatus === "completed") {
             const parsed = parseStoredAnalysisJobResult(job.data);
@@ -375,6 +430,8 @@ export default function Home() {
 
     pollAbortRef.current = false;
     setKatagoWorkerV1Result(null);
+    setTimelineProgressSeries([]);
+    setTimelineProgressStats({ completedCount: 0, totalPoints: null });
     setJobProgress(0);
     setJobStatus("queued");
     setView("loading");
@@ -452,6 +509,9 @@ export default function Home() {
         const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
         setJobStatus(normalizedStatus);
         setJobProgress(typeof job.progress === "number" ? job.progress : 0);
+        if (normalizedStatus === "queued" || normalizedStatus === "running") {
+          await pollTimelineProgress(jobId);
+        }
 
         if (normalizedStatus === "completed") {
           const parsed = parseStoredAnalysisJobResult(job.data);
@@ -829,6 +889,21 @@ export default function Home() {
             >
               {jobStatus !== "idle" ? `${jobStatus} · ${Math.round(jobProgress)}%` : ""}
             </p>
+            <div className="mt-6 w-full max-w-3xl">
+              <AnalysisWinratePanel
+                series={timelineProgressSeries}
+                selectedTurnIndex={null}
+                onSelectTurnIndex={() => undefined}
+                lang={lang}
+                fullTimeline
+                collapsed={false}
+                progressStatus={{
+                  isRunning: jobStatus === "queued" || jobStatus === "running",
+                  completedCount: timelineProgressStats.completedCount,
+                  totalPoints: timelineProgressStats.totalPoints,
+                }}
+              />
+            </div>
             <div className="mt-6 flex gap-1.5">
               {[0, 1, 2, 3, 4].map((i) => (
                 <div

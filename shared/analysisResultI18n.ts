@@ -558,6 +558,7 @@ type UiBlock = {
   winrateExpand: string;
   winratePerspectiveNote: string;
   winrateFullTimelineNote: string;
+  winrateProgressLabel: string;
   winrateClickHint: string;
   chartAriaTurn: string;
   candidatesTitle: string;
@@ -692,6 +693,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateExpand: "그래프 펼치기",
     winratePerspectiveNote: "KataGo 출력 관점이며 흑/백 고정 해석이 아닙니다.",
     winrateFullTimelineNote: "메인라인 전체 수순 흐름(KataGo timeline 분석 출력).",
+    winrateProgressLabel: "승률 그래프 분석 중",
     winrateClickHint: "점을 눌러 해당 수순을 선택할 수 있습니다.",
     chartAriaTurn: "수",
     candidatesTitle: "핵심 검토 후보",
@@ -823,6 +825,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateExpand: "Expand graph",
     winratePerspectiveNote: "Shown as KataGo output; not fixed as black-only or white-only winrate.",
     winrateFullTimelineNote: "Full mainline flow (KataGo timeline analysis output).",
+    winrateProgressLabel: "Winrate graph analyzing",
     winrateClickHint: "Click a point to select that move index.",
     chartAriaTurn: "Move",
     candidatesTitle: "Key review candidates",
@@ -954,6 +957,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateExpand: "グラフを開く",
     winratePerspectiveNote: "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
     winrateFullTimelineNote: "メインライン全手の推移（KataGo timeline 分析出力）。",
+    winrateProgressLabel: "勝率グラフ解析中",
     winrateClickHint: "点をクリックして手数を選べます。",
     chartAriaTurn: "手",
     candidatesTitle: "主要な検討候補",
@@ -1085,6 +1089,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateExpand: "展开图表",
     winratePerspectiveNote: "为 KataGo 输出视角，不作黑方或白方固定解读。",
     winrateFullTimelineNote: "主线全盘走势（KataGo timeline 分析输出）。",
+    winrateProgressLabel: "胜率图分析中",
     winrateClickHint: "点击节点可选择对应手数。",
     chartAriaTurn: "手",
     candidatesTitle: "重点复核候选",

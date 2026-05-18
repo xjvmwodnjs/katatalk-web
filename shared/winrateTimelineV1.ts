@@ -12,6 +12,7 @@ import {
 export const WINRATE_TIMELINE_V1_VERSION = "winrate-timeline-v1" as const;
 
 export type WinrateTimelinePointStatusV1 = "ok" | "failed";
+export type WinrateTimelineGraphPointStatusV1 = "pending" | "partial" | "final";
 
 export type WinrateTimelinePointV1 = {
   turnIndex: number;
@@ -59,12 +60,96 @@ export type WinrateTimelineV1 = {
 
 export type WinrateTimelineMoveV1 = { color: "B" | "W"; sgfPoint: string };
 
+export type WinrateTimelineProgressEventV1 = {
+  jobId: string;
+  turnIndex: number;
+  isDuringSearch: boolean;
+  visits: number | null;
+  winrate: number | null;
+  scoreLead: number | null;
+  currentPlayer: "B" | "W" | null;
+  receivedAt: string;
+};
+
+export type WinrateTimelineProgressResponseV1 = {
+  success: true;
+  jobId: string;
+  enabled: boolean;
+  events: WinrateTimelineProgressEventV1[];
+  points: WinrateTimelineProgressEventV1[];
+  completedCount: number;
+  partialCount: number;
+  totalPoints: number | null;
+};
+
 function parseBw(v: unknown): "B" | "W" | null {
   return v === "B" || v === "W" ? v : null;
 }
 
 function finiteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+export function isWinrateTimelineProgressEventV1(v: unknown): v is WinrateTimelineProgressEventV1 {
+  if (v == null || typeof v !== "object" || Array.isArray(v)) {
+    return false;
+  }
+  const o = v as WinrateTimelineProgressEventV1;
+  return (
+    typeof o.jobId === "string" &&
+    typeof o.turnIndex === "number" &&
+    Number.isSafeInteger(o.turnIndex) &&
+    o.turnIndex >= 0 &&
+    typeof o.isDuringSearch === "boolean" &&
+    (typeof o.visits === "number" || o.visits === null) &&
+    (typeof o.winrate === "number" || o.winrate === null) &&
+    (typeof o.scoreLead === "number" || o.scoreLead === null) &&
+    (o.currentPlayer === "B" || o.currentPlayer === "W" || o.currentPlayer === null) &&
+    typeof o.receivedAt === "string"
+  );
+}
+
+export function mergeWinrateTimelineProgressEventsV1(
+  events: readonly WinrateTimelineProgressEventV1[]
+): WinrateTimelineProgressEventV1[] {
+  const byTurn = new Map<number, WinrateTimelineProgressEventV1>();
+  for (const event of events) {
+    const prev = byTurn.get(event.turnIndex);
+    if (!prev || shouldReplaceProgressEventV1(prev, event)) {
+      byTurn.set(event.turnIndex, event);
+    }
+  }
+  return Array.from(byTurn.values()).sort((a, b) => a.turnIndex - b.turnIndex);
+}
+
+function progressEventTimeMs(receivedAt: string): number | null {
+  const t = Date.parse(receivedAt);
+  return Number.isFinite(t) ? t : null;
+}
+
+function isNewerProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+  const prevMs = progressEventTimeMs(prev.receivedAt);
+  const nextMs = progressEventTimeMs(next.receivedAt);
+  if (prevMs == null && nextMs == null) {
+    return false;
+  }
+  if (prevMs == null) {
+    return true;
+  }
+  if (nextMs == null) {
+    return false;
+  }
+  return nextMs >= prevMs;
+}
+
+function shouldReplaceProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+  if (!prev.isDuringSearch && next.isDuringSearch) {
+    return false;
+  }
+  if (prev.isDuringSearch && !next.isDuringSearch) {
+    return true;
+  }
+  return isNewerProgressEventV1(prev, next);
 }
 
 export function isWinrateTimelineV1(v: unknown): v is WinrateTimelineV1 {

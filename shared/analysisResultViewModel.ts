@@ -44,7 +44,12 @@ import {
   type SgfPlaybackViewModelV1,
 } from "./sgfPlaybackV1";
 import { normalizeWinratePerspectiveV1, type WinratePerspectivePointV1 } from "./winratePerspectiveV1";
-import { isWinrateTimelineV1, type WinrateTimelinePointV1, type WinrateTimelineV1 } from "./winrateTimelineV1";
+import {
+  isWinrateTimelineV1,
+  type WinrateTimelineGraphPointStatusV1,
+  type WinrateTimelinePointV1,
+  type WinrateTimelineV1,
+} from "./winrateTimelineV1";
 
 export type AnalysisResultVmWarningCodeV1 =
   | "beta_numeric_reference"
@@ -183,6 +188,7 @@ export type AnalysisResultWinratePointV1 = {
   currentPlayer: "B" | "W" | null;
   playerToMove: "B" | "W" | null;
   confidence: "provisional" | "verified";
+  timelineStatus?: WinrateTimelineGraphPointStatusV1;
   /** Normalized perspective (black/white null until verified) */
   perspective: WinratePerspectivePointV1;
 };
@@ -322,6 +328,7 @@ function timelinePointToWinrateSeriesPoint(pt: WinrateTimelinePointV1): Analysis
     currentPlayer: pt.currentPlayer,
     playerToMove: pt.currentPlayer,
     confidence: "provisional",
+    timelineStatus: "final",
     perspective,
   };
 }

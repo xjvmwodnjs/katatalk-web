@@ -1,4 +1,5 @@
 import { extractJsonObjectsFromKatagoStdout } from "./katagoRawParser";
+import type { WinrateTimelineProgressEventV1 } from "@shared/winrateTimelineV1";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
@@ -53,4 +54,40 @@ export function hasAllExpectedTurnNumbers(
     }
   }
   return true;
+}
+
+function finiteNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function parseBw(v: unknown): "B" | "W" | null {
+  return v === "B" || v === "W" ? v : null;
+}
+
+export function katagoAnalyzeTurnResponseToProgressEventV1(
+  obj: unknown,
+  jobId: string,
+  receivedAt = new Date().toISOString()
+): WinrateTimelineProgressEventV1 | null {
+  if (!isPlainObject(obj)) {
+    return null;
+  }
+  const turnNumber = parseTurnNumber(obj.turnNumber);
+  if (turnNumber == null || typeof obj.isDuringSearch !== "boolean") {
+    return null;
+  }
+  const root = obj.rootInfo;
+  if (!isPlainObject(root)) {
+    return null;
+  }
+  return {
+    jobId,
+    turnIndex: turnNumber,
+    isDuringSearch: obj.isDuringSearch,
+    visits: finiteNumber(root.visits),
+    winrate: finiteNumber(root.winrate),
+    scoreLead: finiteNumber(root.scoreLead) ?? finiteNumber(root.scoreMean),
+    currentPlayer: parseBw(root.currentPlayer),
+    receivedAt,
+  };
 }
