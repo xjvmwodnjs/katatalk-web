@@ -114,6 +114,7 @@ jspm_packages/
 .tmp/katago/raw-*.txt
 .tmp/katago/normalized-*.json
 .tmp/katago/stderr-*.log
+.tmp/katatalk-progress/
 
 # 로컬 KataGo 바이너리·모델·cfg (`katago` 전역 패턴은 docs/katago 등과 충돌하므로 루트 바이너리만 `/katago`)
 .local/katago/

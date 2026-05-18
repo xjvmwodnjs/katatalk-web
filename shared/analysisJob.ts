@@ -123,6 +123,12 @@ export {
 } from "./analysisResultViewModel";
 
 export type {
+  WinrateTimelineProgressEventV1,
+  WinrateTimelineProgressResponseV1,
+  WinrateTimelineGraphPointStatusV1,
+} from "./winrateTimelineV1";
+
+export type {
   SgfPlaybackViewModelV1,
   SgfPlaybackActiveV1,
   SgfPlaybackPlaceholderV1,

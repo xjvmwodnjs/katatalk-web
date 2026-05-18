@@ -42,3 +42,15 @@ KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 6. NVIDIA GPU 환경에서는 분석 중 `nvidia-smi`에서 KataGo 프로세스와 GPU 사용률을 확인한다.
 
 `katagoBackend=eigen`이면 CPU 실행이다. 이 경우 GPU build KataGo binary와 GPU runtime/driver 설치 상태를 별도로 확인해야 한다.
+
+## Realtime Timeline Smoke
+
+1. OpenCL/CUDA KataGo binary를 사용한다.
+2. `KATAGO_REQUIRE_GPU_BACKEND=true`를 설정한다.
+3. `KATAGO_WINRATE_TIMELINE_ENABLED=true`를 설정한다.
+4. `KATAGO_WINRATE_TIMELINE_MAX_VISITS=50`을 설정한다.
+5. `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`를 설정한다.
+6. Worker를 실행한다.
+7. startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda`, `backendCheckOk=true`를 확인한다.
+8. SGF 업로드 후 승률 그래프가 pending → partial → final로 채워지는지 확인한다.
+9. NVIDIA GPU 환경에서는 분석 중 `nvidia-smi`로 KataGo 프로세스/GPU 사용률을 확인한다.

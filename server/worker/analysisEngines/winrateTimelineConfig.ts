@@ -20,11 +20,11 @@ export function readWinrateTimelineEnabledFrom(env: NodeJS.ProcessEnv): boolean 
   return parseBool(env.KATAGO_WINRATE_TIMELINE_ENABLED, false);
 }
 
-/** Default 200; invalid → 200; clamped to [1, 2000]. */
+/** Default 50; invalid → 50; clamped to [1, 2000]. */
 export function readWinrateTimelineVisitsFrom(env: NodeJS.ProcessEnv): number {
-  const raw = env.KATAGO_WINRATE_TIMELINE_VISITS?.trim();
+  const raw = (env.KATAGO_WINRATE_TIMELINE_MAX_VISITS ?? env.KATAGO_WINRATE_TIMELINE_VISITS)?.trim();
   const n = raw != null && raw !== "" ? Number.parseInt(raw, 10) : NaN;
-  const v = Number.isFinite(n) && n > 0 ? n : 200;
+  const v = Number.isFinite(n) && n > 0 ? n : 50;
   return clampInt(v, 1, 2000);
 }
 
@@ -52,6 +52,22 @@ export function readWinrateTimelineIncludeFinalFrom(env: NodeJS.ProcessEnv): boo
   return parseBool(env.KATAGO_WINRATE_TIMELINE_INCLUDE_FINAL, true);
 }
 
+export function readWinrateTimelineReportEverySecondsFrom(env: NodeJS.ProcessEnv): number {
+  const raw = env.KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS?.trim();
+  const n = raw != null && raw !== "" ? Number.parseFloat(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0) {
+    return 0.5;
+  }
+  return Math.min(10, Math.max(0.1, n));
+}
+
+export function readWinrateTimelineLocalProgressEnabledFrom(env: NodeJS.ProcessEnv): boolean {
+  if (env.NODE_ENV?.trim().toLowerCase() === "production") {
+    return false;
+  }
+  return parseBool(env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS, false);
+}
+
 /** Which turnNumbers to request via analyzeTurns (0..cap, optional final). */
 export function buildAnalyzeTurnNumbers(totalMoves: number, maxTurns: number, includeFinal: boolean): number[] {
   const cap = Math.min(Math.max(0, totalMoves), maxTurns);
@@ -63,4 +79,8 @@ export function buildAnalyzeTurnNumbers(totalMoves: number, maxTurns: number, in
     turns.push(totalMoves);
   }
   return turns;
+}
+
+export function buildAnalyzeTurnsAllMoves(totalMoves: number, maxTurns: number): number[] {
+  return buildAnalyzeTurnNumbers(totalMoves, maxTurns, false);
 }

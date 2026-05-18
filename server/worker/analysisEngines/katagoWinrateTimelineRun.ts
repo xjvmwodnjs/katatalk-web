@@ -1,13 +1,15 @@
 import type { ParsedMinimalSgf } from "./katagoSgfQuery";
 import { sgfPointToGtp } from "./katagoSgfQuery";
 import { runKatagoWorkerAnalysisQueryLines, summarizeKatagoStderrForDb, type SpawnFn } from "./katagoSmokeRun";
-import { collectFinalResponsesByTurnNumber } from "./katagoAnalyzeTurnsCollector";
+import { collectFinalResponsesByTurnNumber, katagoAnalyzeTurnResponseToProgressEventV1 } from "./katagoAnalyzeTurnsCollector";
 import {
   buildAnalyzeTurnNumbers,
   readWinrateTimelineAnalysisPvLenFrom,
   readWinrateTimelineEnabledFrom,
   readWinrateTimelineIncludeFinalFrom,
+  readWinrateTimelineLocalProgressEnabledFrom,
   readWinrateTimelineMaxTurnsFrom,
+  readWinrateTimelineReportEverySecondsFrom,
   readWinrateTimelineTimeoutMsFrom,
   readWinrateTimelineVisitsFrom,
 } from "./winrateTimelineConfig";
@@ -19,6 +21,9 @@ import {
   WINRATE_TIMELINE_V1_VERSION,
   type WinrateTimelineV1,
 } from "@shared/winrateTimelineV1";
+import { appendWinrateTimelineProgressEventV1 } from "../../winrateTimelineProgressV1";
+import { extractJsonObjectsFromKatagoStdout } from "./katagoRawParser";
+import { detectKatagoBackendV1 } from "../katagoBackendDetectionV1";
 
 function timestampSuffix(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -30,6 +35,7 @@ export function buildKatagoAnalyzeTurnsQueryLine(params: {
   analyzeTurns: number[];
   maxVisits: number;
   analysisPVLen: number;
+  reportDuringSearchEverySeconds: number;
 }): string {
   const pairs: [string, string][] = params.parsed.moves.map(({ color, sgfPoint }) => [
     color,
@@ -49,8 +55,10 @@ export function buildKatagoAnalyzeTurnsQueryLine(params: {
     boardYSize: params.parsed.boardSize,
     analyzeTurns: params.analyzeTurns,
     maxVisits: params.maxVisits,
+    reportDuringSearchEvery: params.reportDuringSearchEverySeconds,
     analysisPVLen: params.analysisPVLen,
     includeOwnership: false,
+    includeMovesOwnership: false,
     includePolicy: false,
   };
   return `${JSON.stringify(body)}\n`;
@@ -74,6 +82,8 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
   const timeoutMs = readWinrateTimelineTimeoutMsFrom(env);
   const analysisPVLen = readWinrateTimelineAnalysisPvLenFrom(env);
   const includeFinal = readWinrateTimelineIncludeFinalFrom(env);
+  const reportDuringSearchEverySeconds = readWinrateTimelineReportEverySecondsFrom(env);
+  const localProgressEnabled = readWinrateTimelineLocalProgressEnabledFrom(env);
   const analyzeTurns = buildAnalyzeTurnNumbers(totalMoves, maxTurns, includeFinal);
 
   const basePolicy = {
@@ -109,7 +119,40 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
     analyzeTurns,
     maxVisits: visits,
     analysisPVLen,
+    reportDuringSearchEverySeconds,
   });
+
+  const backend = await detectKatagoBackendV1({ env });
+  console.log(
+    [
+      "[katago-timeline]",
+      "start",
+      `katagoBackend=${backend.backend}`,
+      `backendCheckOk=${String(backend.ok)}`,
+      `timelineMaxVisits=${String(visits)}`,
+      `analyzeTurnsCount=${String(analyzeTurns.length)}`,
+      `reportEverySeconds=${String(reportDuringSearchEverySeconds)}`,
+      `localProgress=${String(localProgressEnabled)}`,
+    ].join(" ")
+  );
+
+  let progressBuffer = "";
+  const onStdoutChunk = localProgressEnabled
+    ? (chunk: string) => {
+        progressBuffer += chunk;
+        const lines = progressBuffer.split(/\r?\n/);
+        progressBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const event = katagoAnalyzeTurnResponseToProgressEventV1(
+            extractJsonObjectsFromKatagoStdout(line)[0],
+            opts.jobId
+          );
+          if (event) {
+            void appendWinrateTimelineProgressEventV1(event);
+          }
+        }
+      }
+    : undefined;
 
   let stdout = "";
   let stderr = "";
@@ -124,10 +167,21 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
       env,
       spawnFn: opts.spawnFn,
       timeoutMs,
+      onStdoutChunk,
     });
     stdout = ran.stdout;
     stderr = ran.stderr;
     exitCode = ran.code;
+    if (localProgressEnabled && progressBuffer.trim()) {
+      const event = katagoAnalyzeTurnResponseToProgressEventV1(
+        extractJsonObjectsFromKatagoStdout(progressBuffer)[0],
+        opts.jobId
+      );
+      if (event) {
+        await appendWinrateTimelineProgressEventV1(event);
+      }
+      progressBuffer = "";
+    }
     if (exitCode !== 0 && exitCode != null) {
       runErrorCode = "KATAGO_EXIT_NONZERO";
       runErrorMessage = summarizeKatagoStderrForDb(stderr) || `exit ${String(exitCode)}`;

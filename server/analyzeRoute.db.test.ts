@@ -7,6 +7,7 @@ import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import type { AuthenticatedUser } from "./_core/sdk";
 import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
+import { appendWinrateTimelineProgressEventV1 } from "./winrateTimelineProgressV1";
 
 vi.mock("./_core/resolveRequestUser", () => ({
   tryResolveUserFromRequest: vi.fn(),
@@ -78,6 +79,8 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.useRealTimers();
     delete process.env.ANALYSIS_WORKER_MODE;
     delete process.env.ANALYSIS_ENGINE;
+    delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
+    process.env.NODE_ENV = "test";
   });
 
   it("GET /api/analyze/:jobId returns 404 when row is missing", async () => {
@@ -197,6 +200,56 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     const body = JSON.parse(raw) as { status: string; data?: unknown };
     expect(body.status).toBe("running");
     expect(body.data).toBeUndefined();
+  });
+
+  it("GET timeline-progress returns local progress only when enabled", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS = "true";
+    const jobId = `progressapi${Date.now()}`;
+    vitestSeedAnalysisJob({
+      id: jobId,
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa23",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: null,
+    });
+    await appendWinrateTimelineProgressEventV1({
+      jobId,
+      turnIndex: 1,
+      isDuringSearch: true,
+      visits: 7,
+      winrate: 0.53,
+      scoreLead: 0.2,
+      currentPlayer: "W",
+      receivedAt: "2026-01-01T00:00:00.000Z",
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    expect(raw).not.toContain(minimalSgf);
+    const body = JSON.parse(raw) as { success: boolean; points?: Array<{ turnIndex: number; visits: number }> };
+    expect(body.success).toBe(true);
+    expect(body.points?.[0]).toMatchObject({ turnIndex: 1, visits: 7 });
+  });
+
+  it("GET timeline-progress is disabled unless local progress opt-in is set", async () => {
+    delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(404);
   });
 
   it("GET failed does not return data with sgf_content even when DB row has it", async () => {

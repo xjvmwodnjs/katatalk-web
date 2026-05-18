@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildAnalysisResultViewModel, buildWinrateSeriesPreferTimeline } from "@shared/analysisResultViewModel";
 import {
   buildAnalyzeTurnNumbers,
+  buildAnalyzeTurnsAllMoves,
   readWinrateTimelineEnabledFrom,
   readWinrateTimelineVisitsFrom,
 } from "./worker/analysisEngines/winrateTimelineConfig";
@@ -20,7 +21,12 @@ import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery
 import type { SpawnFn } from "./worker/analysisEngines/katagoSmokeRun";
 import { analyzeSgfKatago } from "./worker/analysisEngines";
 import { getAnalysisResultUiStrings, uiTextContainsForbiddenLabel } from "@shared/analysisResultI18n";
-import { timelineMetaForTurnNumber } from "@shared/winrateTimelineV1";
+import { mergeWinrateTimelineProgressEventsV1, timelineMetaForTurnNumber } from "@shared/winrateTimelineV1";
+import {
+  appendWinrateTimelineProgressEventV1,
+  readWinrateTimelineProgressV1,
+  winrateTimelineProgressPathForJobV1,
+} from "./winrateTimelineProgressV1";
 
 const MINI_SGF = `(;SZ[19]KM[6.5];B[qd];W[dp];B[pq])`;
 
@@ -72,13 +78,13 @@ describe("winrateTimelineConfig", () => {
     expect(readWinrateTimelineEnabledFrom({ KATAGO_WINRATE_TIMELINE_ENABLED: "1" })).toBe(true);
   });
 
-  it("maxVisits defaults to 200", () => {
-    expect(readWinrateTimelineVisitsFrom({})).toBe(200);
+  it("maxVisits defaults to 50", () => {
+    expect(readWinrateTimelineVisitsFrom({})).toBe(50);
   });
 
   it("clamps visits to 1..2000", () => {
-    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "0" })).toBe(200);
-    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "-5" })).toBe(200);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "0" })).toBe(50);
+    expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "-5" })).toBe(50);
     expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "3000" })).toBe(2000);
     expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "200" })).toBe(200);
     expect(readWinrateTimelineVisitsFrom({ KATAGO_WINRATE_TIMELINE_VISITS: "1" })).toBe(1);
@@ -86,6 +92,17 @@ describe("winrateTimelineConfig", () => {
 
   it("buildAnalyzeTurnNumbers covers 0..N", () => {
     expect(buildAnalyzeTurnNumbers(3, 300, true)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("buildAnalyzeTurnNumbers handles empty game and maxTurns clamp", () => {
+    expect(buildAnalyzeTurnNumbers(0, 300, true)).toEqual([0]);
+    expect(buildAnalyzeTurnNumbers(5, 3, false)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("buildAnalyzeTurnsAllMoves covers 0..N with maxTurns clamp", () => {
+    expect(buildAnalyzeTurnsAllMoves(0, 300)).toEqual([0]);
+    expect(buildAnalyzeTurnsAllMoves(3, 300)).toEqual([0, 1, 2, 3]);
+    expect(buildAnalyzeTurnsAllMoves(5, 3)).toEqual([0, 1, 2, 3]);
   });
 });
 
@@ -145,6 +162,33 @@ describe("katagoAnalyzeTurnsCollector", () => {
     expect(map.get(0)?.rootInfo).toMatchObject({ winrate: 0.5 });
   });
 
+  it("merges partial progress into final progress by turnNumber", () => {
+    const merged = mergeWinrateTimelineProgressEventsV1([
+      {
+        jobId: "progress-merge",
+        turnIndex: 2,
+        isDuringSearch: true,
+        visits: 10,
+        winrate: 0.4,
+        scoreLead: -1,
+        currentPlayer: "B",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        jobId: "progress-merge",
+        turnIndex: 2,
+        isDuringSearch: false,
+        visits: 50,
+        winrate: 0.45,
+        scoreLead: -0.5,
+        currentPlayer: "B",
+        receivedAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ turnIndex: 2, isDuringSearch: false, visits: 50 });
+  });
+
   it("orders timeline points by turnIndex after shuffled responses", async () => {
     const stdout = makeTimelineStdout([
       { turnNumber: 2, isDuringSearch: false, rootInfo: { winrate: 0.4, currentPlayer: "B" } },
@@ -176,12 +220,15 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
       analyzeTurns: [0, 1, 2, 3],
       maxVisits: 200,
       analysisPVLen: 1,
+      reportDuringSearchEverySeconds: 0.5,
     });
     const q = JSON.parse(line.trim()) as Record<string, unknown>;
     expect(q.analyzeTurns).toEqual([0, 1, 2, 3]);
     expect(q.maxVisits).toBe(200);
     expect(q.analysisPVLen).toBe(1);
+    expect(q.reportDuringSearchEvery).toBe(0.5);
     expect(q.includeOwnership).toBe(false);
+    expect(q.includeMovesOwnership).toBe(false);
     expect(q.includePolicy).toBe(false);
   });
 
@@ -193,6 +240,7 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
       analyzeTurns: [0, 1],
       maxVisits: 200,
       analysisPVLen: 1,
+      reportDuringSearchEverySeconds: 0.5,
     });
     const q = JSON.parse(line.trim()) as Record<string, unknown>;
     expect(q.initialStones).toEqual([
@@ -261,6 +309,30 @@ describe("runKatagoWinrateTimelineV1", () => {
     expect(tl.points.every((p) => p.perspectiveStatus === "katago_output_only" || p.status === "failed")).toBe(
       true
     );
+  });
+});
+
+describe("winrate timeline local progress transport", () => {
+  it("writes safe progress events without SGF, path, or secret values", async () => {
+    const jobId = `progresssafe${Date.now()}`;
+    await appendWinrateTimelineProgressEventV1({
+      jobId,
+      turnIndex: 1,
+      isDuringSearch: true,
+      visits: 12,
+      winrate: 0.52,
+      scoreLead: 0.4,
+      currentPlayer: "W",
+      receivedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const response = await readWinrateTimelineProgressV1(jobId);
+    expect(response?.points[0]).toMatchObject({ turnIndex: 1, isDuringSearch: true, visits: 12 });
+    const filePath = winrateTimelineProgressPathForJobV1(jobId);
+    expect(filePath).not.toBeNull();
+    const raw = await import("node:fs/promises").then((fs) => fs.readFile(filePath!, "utf8"));
+    expect(raw).not.toContain("(;GM[1]");
+    expect(raw).not.toContain("PRIVATE_SECRET");
+    expect(raw).not.toContain("C:/private");
   });
 });
 

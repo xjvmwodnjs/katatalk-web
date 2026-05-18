@@ -17,6 +17,7 @@ type Props = {
   fullTimeline?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  progressStatus?: { isRunning: boolean; completedCount: number; totalPoints: number | null };
 };
 
 function clampWinratePct(n: number): number {
@@ -34,6 +35,7 @@ export default function AnalysisWinratePanel({
   fullTimeline = false,
   collapsed = false,
   onToggleCollapsed,
+  progressStatus,
 }: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
@@ -48,7 +50,7 @@ export default function AnalysisWinratePanel({
     return translateWinrateDisplayLabelKey(key, uiLang);
   }, [pts, uiLang]);
 
-  const { polyline, circles } = useMemo(() => {
+  const { polyline, circles, pendingCircles } = useMemo(() => {
     const w = 560;
     const h = 200;
     const padL = 44;
@@ -58,16 +60,33 @@ export default function AnalysisWinratePanel({
     const iw = w - padL - padR;
     const ih = h - padT - padB;
     if (pts.length === 0) {
-      return { polyline: "", circles: [] as { cx: number; cy: number; ti: number }[] };
+      const total = progressStatus?.totalPoints ?? 0;
+      const pending = progressStatus?.isRunning
+        ? Array.from({ length: total }, (_, ti) => ({
+            cx: padL + (total <= 1 ? iw / 2 : (ti / (total - 1)) * iw),
+            cy: padT + ih / 2,
+            ti,
+          }))
+        : [];
+      return { polyline: "", circles: [] as { cx: number; cy: number; ti: number; status: string }[], pendingCircles: pending };
     }
-    const xs = pts.map((_, i) => padL + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw));
+    const maxTurn = Math.max(progressStatus?.totalPoints != null ? progressStatus.totalPoints - 1 : 0, ...pts.map((p) => p.turnIndex));
+    const xForTurn = (turnIndex: number) => padL + (maxTurn <= 0 ? iw / 2 : (turnIndex / maxTurn) * iw);
+    const xs = pts.map((p) => xForTurn(p.turnIndex));
     const ys = pts.map(
       (p) => padT + (1 - clampWinratePct(p.perspective.normalized.displayWinrate ?? 0) / 100) * ih
     );
     const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i]!.toFixed(1)}`).join(" ");
-    const circ = pts.map((p, i) => ({ cx: xs[i]!, cy: ys[i]!, ti: p.turnIndex }));
-    return { polyline: d, circles: circ };
-  }, [pts]);
+    const circ = pts.map((p, i) => ({ cx: xs[i]!, cy: ys[i]!, ti: p.turnIndex, status: p.timelineStatus ?? "final" }));
+    const seen = new Set(pts.map((p) => p.turnIndex));
+    const total = progressStatus?.totalPoints ?? 0;
+    const pending = progressStatus?.isRunning
+      ? Array.from({ length: total }, (_, ti) => ti)
+          .filter((ti) => !seen.has(ti))
+          .map((ti) => ({ cx: xForTurn(ti), cy: padT + ih / 2, ti }))
+      : [];
+    return { polyline: d, circles: circ, pendingCircles: pending };
+  }, [pts, progressStatus]);
 
   if (pts.length === 0) {
     return (
@@ -94,6 +113,9 @@ export default function AnalysisWinratePanel({
           </div>
         </div>
         {!collapsed ? <p className="text-sm text-slate-500">{t.winrateEmpty}</p> : null}
+        {!collapsed && progressStatus?.isRunning ? (
+          <p className="text-xs text-slate-500">{`${t.winrateProgressLabel}: ${progressStatus.completedCount}/${progressStatus.totalPoints ?? "?"}`}</p>
+        ) : null}
       </section>
     );
   }
@@ -127,6 +149,9 @@ export default function AnalysisWinratePanel({
           {fullTimeline ? (
             <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
           ) : null}
+          {progressStatus?.isRunning ? (
+            <p className="text-xs text-slate-500 mb-1">{`${t.winrateProgressLabel}: ${progressStatus.completedCount}/${progressStatus.totalPoints ?? "?"}`}</p>
+          ) : null}
           <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
           <div className="min-w-0 overflow-hidden">
         <svg viewBox="0 0 560 200" className="h-36 w-full max-w-full select-none sm:h-48" role="img" aria-label={winrateYAxisLabel}>
@@ -148,16 +173,21 @@ export default function AnalysisWinratePanel({
           {polyline ? (
             <path d={polyline} fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
           ) : null}
+          {pendingCircles.map((c) => (
+            <circle key={`pending-${c.ti}`} cx={c.cx} cy={c.cy} r={3.5} fill="#1e293b" stroke="#475569" strokeWidth="1" opacity="0.45" />
+          ))}
           {circles.map((c) => {
             const sel = selectedTurnIndex === c.ti;
+            const partial = c.status === "partial";
             return (
               <circle
                 key={c.ti}
                 cx={c.cx}
                 cy={c.cy}
-                r={sel ? 7 : 5}
-                fill={sel ? "#E8D48B" : "#334155"}
-                stroke={sel ? "#fff" : "#94a3b8"}
+                r={sel ? 7 : partial ? 4 : 5}
+                fill={sel ? "#E8D48B" : partial ? "#475569" : "#334155"}
+                stroke={sel ? "#fff" : partial ? "#C9A84C" : "#94a3b8"}
+                strokeDasharray={partial ? "3 2" : undefined}
                 strokeWidth={sel ? 2 : 1}
                 className="cursor-pointer hover:opacity-90"
                 onClick={() => onSelectTurnIndex(c.ti)}
