@@ -306,11 +306,12 @@ KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true
 | `KATAGO_WINRATE_TIMELINE_ENABLED` | `false` | `true` 시 `analyzeTurns` 0..N 단일 쿼리 |
 | `KATAGO_WINRATE_TIMELINE_MAX_VISITS` | `50` | **clamp 1–2000** (무효값 → 50). legacy `KATAGO_WINRATE_TIMELINE_VISITS`도 읽음 |
 | `KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS` | `0.5` | KataGo partial result interval |
-| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS` | `false` | local/dev progress file + polling API opt-in; production에서는 비활성 |
+| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS` | `false` | local/dev progress file + polling API opt-in; Web/Worker 양쪽에 설정 필요, production에서는 비활성 |
 | `KATAGO_WINRATE_TIMELINE_MAX_TURNS` | `300` | clamp 1–500; `totalMoves > maxTurns` 시 `TIMELINE_TURNS_CAPPED` |
 | `KATAGO_WINRATE_TIMELINE_TIMEOUT_MS` | `600000` | clamp 30s–30m |
 
 Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 메타만).
+Local progress를 쓰려면 Web과 Worker 프로세스 모두 `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`여야 한다. Worker만 true이면 파일은 생겨도 Web endpoint는 progress unavailable로 응답할 수 있다.
 
 ---
 

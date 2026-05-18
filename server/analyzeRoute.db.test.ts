@@ -243,13 +243,58 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.points?.[0]).toMatchObject({ turnIndex: 1, visits: 7 });
   });
 
-  it("GET timeline-progress is disabled unless local progress opt-in is set", async () => {
+  it("GET timeline-progress returns empty enabled response before progress file exists", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS = "true";
+    const jobId = `progressmissing${Date.now()}`;
+    vitestSeedAnalysisJob({
+      id: jobId,
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa24",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: null,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    expect(body).toMatchObject({ success: true, enabled: true, points: [] });
+  });
+
+  it("GET timeline-progress returns enabled=false unless local progress opt-in is set", async () => {
     delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
+    vitestSeedAnalysisJob({
+      id: "disabled-progress",
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa25",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: null,
+    });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`, {
       headers: { Authorization: "Bearer fake" },
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    expect(body).toMatchObject({ success: true, enabled: false, points: [] });
   });
 
   it("GET failed does not return data with sgf_content even when DB row has it", async () => {

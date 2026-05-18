@@ -35,12 +35,18 @@ import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewMod
 
 type View = "upload" | "loading" | "result";
 
-const POLL_INTERVAL_MS = 450;
+const POLL_INTERVAL_MS = 1000;
 const POLL_MAX_MS = 120_000;
+const TIMELINE_PROGRESS_MAX_BACKOFF_MS = 8_000;
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
+
+type TimelineProgressPollResult =
+  | { status: "ok" }
+  | { status: "disabled" }
+  | { status: "backoff"; retryAfterMs: number };
 
 export default function Home() {
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
@@ -73,46 +79,69 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
-  async function pollTimelineProgress(jobId: string): Promise<void> {
-    const res = await fetch(`/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`, {
-      credentials: "include",
-      headers: { ...(await getAnalyzeAuthHeaders()) },
-    });
-    if (!res.ok) {
-      return;
-    }
-    const body = (await res.json().catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
-    if (!body?.success || !Array.isArray(body.points)) {
-      return;
-    }
-    const series: AnalysisResultWinratePointV1[] = [];
-    for (const p of body.points) {
-      if (typeof p.winrate !== "number" || !Number.isFinite(p.winrate)) {
-        continue;
+  async function pollTimelineProgress(jobId: string, failureCount: number): Promise<TimelineProgressPollResult> {
+    try {
+      const res = await fetch(`/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`, {
+        credentials: "include",
+        headers: { ...(await getAnalyzeAuthHeaders()) },
+      });
+      if (res.status === 404 || res.status === 204) {
+        return { status: "disabled" };
       }
-      const perspective = normalizeWinratePerspectiveV1({
-        rawWinrate: p.winrate,
-        turnIndex: p.turnIndex,
-        player: null,
-        currentPlayer: p.currentPlayer,
-        playerToMove: p.currentPlayer,
-      });
-      series.push({
-        turnIndex: p.turnIndex,
-        player: null,
-        rawWinrate: perspective.rawWinrate,
-        displayWinrate: perspective.normalized.displayWinrate,
-        displayPerspective: "katago_output",
-        currentPlayer: p.currentPlayer,
-        playerToMove: p.currentPlayer,
-        confidence: "provisional",
-        timelineStatus: p.isDuringSearch ? "partial" : "final",
-        perspective,
-      });
+      if (res.status === 429) {
+        return {
+          status: "backoff",
+          retryAfterMs: Math.min(TIMELINE_PROGRESS_MAX_BACKOFF_MS, POLL_INTERVAL_MS * 2 ** Math.min(failureCount, 4)),
+        };
+      }
+      if (!res.ok) {
+        return {
+          status: "backoff",
+          retryAfterMs: Math.min(TIMELINE_PROGRESS_MAX_BACKOFF_MS, POLL_INTERVAL_MS * 2 ** Math.min(failureCount, 4)),
+        };
+      }
+      const body = (await res.json().catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
+      if (!body?.success || body.enabled === false) {
+        return { status: "disabled" };
+      }
+      if (!Array.isArray(body.points)) {
+        return { status: "ok" };
+      }
+      const series: AnalysisResultWinratePointV1[] = [];
+      for (const p of body.points) {
+        if (typeof p.winrate !== "number" || !Number.isFinite(p.winrate)) {
+          continue;
+        }
+        const perspective = normalizeWinratePerspectiveV1({
+          rawWinrate: p.winrate,
+          turnIndex: p.turnIndex,
+          player: null,
+          currentPlayer: p.currentPlayer,
+          playerToMove: p.currentPlayer,
+        });
+        series.push({
+          turnIndex: p.turnIndex,
+          player: null,
+          rawWinrate: perspective.rawWinrate,
+          displayWinrate: perspective.normalized.displayWinrate,
+          displayPerspective: "katago_output",
+          currentPlayer: p.currentPlayer,
+          playerToMove: p.currentPlayer,
+          confidence: "provisional",
+          timelineStatus: p.isDuringSearch ? "partial" : "final",
+          perspective,
+        });
+      }
+      series.sort((a, b) => a.turnIndex - b.turnIndex);
+      setTimelineProgressSeries(series);
+      setTimelineProgressStats({ completedCount: body.completedCount, totalPoints: body.totalPoints });
+      return { status: "ok" };
+    } catch {
+      return {
+        status: "backoff",
+        retryAfterMs: Math.min(TIMELINE_PROGRESS_MAX_BACKOFF_MS, POLL_INTERVAL_MS * 2 ** Math.min(failureCount, 4)),
+      };
     }
-    series.sort((a, b) => a.turnIndex - b.turnIndex);
-    setTimelineProgressSeries(series);
-    setTimelineProgressStats({ completedCount: body.completedCount, totalPoints: body.totalPoints });
   }
 
   useEffect(() => {
@@ -140,6 +169,9 @@ export default function Home() {
         }
 
         const deadline = Date.now() + POLL_MAX_MS;
+        let timelineProgressStopped = false;
+        let timelineProgressFailureCount = 0;
+        let timelineProgressNextAt = 0;
         while (!cancelled && !pollAbortRef.current && Date.now() < deadline) {
           const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
             credentials: "include",
@@ -158,14 +190,13 @@ export default function Home() {
           }
 
           const job = pollBody as AnalysisJobGetResponse;
-          const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
+          const rawStatus = String(job.status).trim().toLowerCase();
+          const normalizedStatus = normalizeAnalysisJobStatus(rawStatus);
           setJobStatus(normalizedStatus);
           setJobProgress(typeof job.progress === "number" ? job.progress : 0);
-          if (normalizedStatus === "queued" || normalizedStatus === "running") {
-            await pollTimelineProgress(jobId);
-          }
 
           if (normalizedStatus === "completed") {
+            timelineProgressStopped = true;
             const parsed = parseStoredAnalysisJobResult(job.data);
             if (parsed == null) {
               throw new Error("Analysis finished but no data was returned.");
@@ -182,7 +213,30 @@ export default function Home() {
           }
 
           if (normalizedStatus === "failed") {
+            timelineProgressStopped = true;
             throw new Error(job.error?.message ?? "Analysis job failed.");
+          }
+
+          if (rawStatus === "canceled") {
+            timelineProgressStopped = true;
+            throw new Error("Analysis job canceled.");
+          }
+
+          if (
+            (normalizedStatus === "queued" || normalizedStatus === "running") &&
+            !timelineProgressStopped &&
+            Date.now() >= timelineProgressNextAt
+          ) {
+            const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount);
+            if (progressResult.status === "disabled") {
+              timelineProgressStopped = true;
+            } else if (progressResult.status === "backoff") {
+              timelineProgressFailureCount += 1;
+              timelineProgressNextAt = Date.now() + progressResult.retryAfterMs;
+            } else {
+              timelineProgressFailureCount = 0;
+              timelineProgressNextAt = 0;
+            }
           }
 
           await sleep(POLL_INTERVAL_MS);
@@ -486,6 +540,9 @@ export default function Home() {
 
       const jobId = createPayload.jobId;
       const deadline = Date.now() + POLL_MAX_MS;
+      let timelineProgressStopped = false;
+      let timelineProgressFailureCount = 0;
+      let timelineProgressNextAt = 0;
 
       while (!pollAbortRef.current && Date.now() < deadline) {
         const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
@@ -506,14 +563,13 @@ export default function Home() {
         }
 
         const job = pollBody as AnalysisJobGetResponse;
-        const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
+        const rawStatus = String(job.status).trim().toLowerCase();
+        const normalizedStatus = normalizeAnalysisJobStatus(rawStatus);
         setJobStatus(normalizedStatus);
         setJobProgress(typeof job.progress === "number" ? job.progress : 0);
-        if (normalizedStatus === "queued" || normalizedStatus === "running") {
-          await pollTimelineProgress(jobId);
-        }
 
         if (normalizedStatus === "completed") {
+          timelineProgressStopped = true;
           const parsed = parseStoredAnalysisJobResult(job.data);
           if (parsed == null) {
             throw new Error("Analysis finished but no data was returned.");
@@ -535,7 +591,30 @@ export default function Home() {
         }
 
         if (normalizedStatus === "failed") {
+          timelineProgressStopped = true;
           throw new Error(job.error?.message ?? "Analysis job failed.");
+        }
+
+        if (rawStatus === "canceled") {
+          timelineProgressStopped = true;
+          throw new Error("Analysis job canceled.");
+        }
+
+        if (
+          (normalizedStatus === "queued" || normalizedStatus === "running") &&
+          !timelineProgressStopped &&
+          Date.now() >= timelineProgressNextAt
+        ) {
+          const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount);
+          if (progressResult.status === "disabled") {
+            timelineProgressStopped = true;
+          } else if (progressResult.status === "backoff") {
+            timelineProgressFailureCount += 1;
+            timelineProgressNextAt = Date.now() + progressResult.retryAfterMs;
+          } else {
+            timelineProgressFailureCount = 0;
+            timelineProgressNextAt = 0;
+          }
         }
 
         await sleep(POLL_INTERVAL_MS);

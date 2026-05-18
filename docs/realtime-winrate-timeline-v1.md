@@ -15,6 +15,8 @@
 ## Local progress transport
 
 - `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`일 때만 local/dev에서 progress 파일을 쓴다.
+- Web process와 Worker process 양쪽에 `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`가 필요하다.
+- Worker만 true이면 progress 파일은 생성될 수 있지만 Web endpoint는 `enabled=false` 또는 unavailable로 응답할 수 있다.
 - production(`NODE_ENV=production`)에서는 local progress transport를 비활성화한다.
 - progress file 위치는 `.tmp/katatalk-progress/<jobId>.jsonl`이다.
 - progress event에는 `jobId`, `turnIndex`, `isDuringSearch`, `visits`, `winrate`, `scoreLead`, `currentPlayer`, `receivedAt`만 기록한다.
@@ -23,6 +25,9 @@
 ## UI 정책
 
 - 분석 중 client가 `/api/analyze/:jobId/timeline-progress`를 polling한다.
+- endpoint가 `404`, `204`, `enabled=false`를 반환하면 local progress unavailable로 보고 progress polling을 중단한다.
+- endpoint가 `429` 또는 일시 실패를 반환하면 main job polling과 분리해 progress polling만 backoff한다.
+- completed/failed/canceled 상태에서는 progress polling을 중단한다.
 - partial point는 `isDuringSearch=true`, final point는 `isDuringSearch=false`로 표시한다.
 - 아직 값이 없는 turn은 pending point로 흐리게 표시한다.
 - completed 후에는 기존 완료 result의 `winrateTimelineV1`과 Product Review / ExplanationPlanV2 흐름을 유지한다.
