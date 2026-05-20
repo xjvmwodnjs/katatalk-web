@@ -361,13 +361,17 @@ UI 확인 항목:
 
 ## 11. Current Branch Awareness
 
-현재 시점 (master 기준 분기) 의 사실관계를 정리한다. Codex 는 작업 전 이 절을 반드시 확인한다.
+현재 시점 (master 기준) 의 사실관계를 정리한다. Codex 는 작업 전 이 절을 반드시 확인한다.
 
-- `docs/cursor-personas/*` (11개 파일) 는 현재 브랜치 `feature/cursor-persona-skill-pack-v1` 에 commit 되어 있다. **master 에는 아직 머지되지 않음.**
-- `docs/codex-current-code-workflow-and-personas.md` 는 별도 브랜치 `feature/codex-workflow-persona-report-v1` 에만 존재한다. **master 와 본 브랜치 어디에도 없음.** Codex 가 이 문서를 읽으려면 해당 브랜치를 체크아웃하거나, 머지된 이후에 사용한다.
-- 두 브랜치 모두 머지되기 전까지는, persona 문서가 참조하는 "공통 보고서" 가 master 에서 누락된 상태다. Codex 는 그 동안 §3 라우팅과 persona 파일만으로도 일관성 있게 일할 수 있도록 이 setup 문서 (§2~§10) 를 정본으로 사용한다.
+문서 체계 (persona / setup / workflow 보고서) 는 **모두 master 에 머지 완료** 상태다.
 
-별도 브랜치 기능 / master 미머지 항목 (persona 문서에 "구현 완료" 로 쓰면 안 되는 것):
+- `docs/codex-current-code-workflow-and-personas.md` — master 반영 완료. KataTalk 현재 코드 / runtime / env / persona 시스템 종합 보고서.
+- `docs/cursor-personas/README.md` 및 10개 persona 파일 (`product-architect.md`, `katago-runtime-engineer.md`, `analysis-algorithm-engineer.md`, `baduk-concept-engineer.md`, `explanation-safety-engineer.md`, `ui-ux-engineer.md`, `qa-e2e-engineer.md`, `devops-smoke-engineer.md`, `security-privacy-guard.md`, `release-manager.md`) — master 반영 완료.
+- `docs/codex-agent-setup.md` (이 문서) — master 반영 완료. 이 §11 자체도 master 동기화를 위한 후속 commit 으로 갱신된다.
+
+따라서 Codex 는 별도 브랜치 체크아웃 없이 master 만으로 §2 Required Reading Order 의 1~3 항목을 모두 읽을 수 있다.
+
+별도 브랜치 기능 / master 미머지 / 미구현 항목 (persona 문서에 "구현 완료" 로 쓰면 안 되는 것):
 
 | 기능 | 상태 | 근거 |
 |---|---|---|
