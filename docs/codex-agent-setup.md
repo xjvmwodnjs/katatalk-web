@@ -393,33 +393,50 @@ UI 확인 항목:
 
 ## 12. Recommended First Tasks for Codex
 
-현재 master 와 본 브랜치 상태에서 Codex 가 바로 할 수 있는 현실적인 작업 후보다.
+현재 master 기준으로 Codex 가 바로 진행할 수 있는 현실적인 작업 후보다. 이전 판본의 "persona pack 리뷰" 와 "workflow 보고서 / persona pack consistency check" 두 항목은 양쪽 브랜치 모두 master 머지 완료라 본 목록에서 제외했다. §11 표의 "별도 브랜치 기능 / 미구현 항목" 과 일관되게 유지한다.
 
-1. **`feature/cursor-persona-skill-pack-v1` 리뷰**
-   - 11개 persona 파일 + README 의 일관성, forbidden label, 미구현 항목 표기, 라우팅 적합성 점검.
-   - 산출물: §7 review template 형식의 한국어 보고서.
-   - 머지 권장 여부 명시.
+1. **Dirty worktree 정리 계획** — Release Manager + Security/Privacy Guard
+   - 메인 worktree 에 11개 modified (`server/**`, `package.json`, `tsconfig.json`, `docs/master-staging-smoke-v1.md`) + 7개 untracked root `codex-*-ko.md` 가 누적되어 있다.
+   - 기존 `baduk-ai-report-master-merge` worktree 도 dirty 상태로 master tip 에서 stale.
+   - 임시 머지 worktree (`baduk-ai-report-doc-merge*`) 디렉토리가 OS 레벨에 남아 있을 수 있다.
+   - 산출물: (a) modified 파일을 어느 feature branch 로 분리할지 합의, (b) root `codex-*-ko.md` 처리 정책 (`.gitignore` 또는 별도 보관 디렉토리), (c) stale worktree 정리 명령 목록.
+   - 본 작업 자체는 어떤 코드도 수정하지 않는다.
 
-2. **`feature/codex-workflow-persona-report-v1` 와 본 브랜치 consistency check**
-   - 두 브랜치가 모두 master 에 머지될 때 충돌 / 중복 / 모순을 미리 식별.
-   - 산출물: 머지 순서 추천 (보통 workflow 보고서 → persona pack → setup) 과 머지 전 정리해야 할 사항.
+2. **GPU runtime integration branch 리뷰 / 병합** — KataGo Runtime Engineer + DevOps/Smoke + Release Manager
+   - 대상 브랜치 예: `feature/katago-gpu-runtime-integration-v1`.
+   - §11 표의 `KATAGO_BACKEND_CHECK_MODE` (`version` / `analysis_smoke` / `version_then_smoke`), `analysis_smoke` 기반 smoke query, TensorRT backend 감지 (`tensorrt`), `katagoSmokeOk` startup log 가 모두 master 미머지 항목이라는 전제로 진행한다.
+   - 산출물: §7 review template 한국어 보고서. 머지 가능 여부 + persona docs (`katago-runtime-engineer.md`, `devops-smoke-engineer.md`, `explanation-safety-engineer.md`, `release-manager.md`) 의 Required Context 갱신 필요 항목 정리.
+   - 머지 후에는 §11 표에서 해당 행을 "master 반영 완료" 로 옮기는 후속 sync commit 이 필요하다.
 
-3. **persona docs ↔ 현재 master 코드 consistency check**
-   - persona 파일의 "Required Context" 가 master 코드와 어긋나는 부분을 찾는다.
-   - 예: env clamp 범위, env 기본값, backend enum, KATAGO_WINRATE_TIMELINE_* clamp.
-   - 산출물: 불일치 목록과 한 줄 수정 제안 (실제 수정은 별도 task).
+3. **Timeline-progress polling hardening branch 상태 확인** — KataGo Runtime Engineer + UI/UX + QA/E2E
+   - 대상 브랜치 예: `feature/timeline-progress-polling-hardening-v1` (404/429 client backoff, `200 enabled:false`, rate-limit 분리 등).
+   - 현재 master 의 `client/src/pages/Home.tsx` polling 정책과의 diff scope 를 한 페이지로 정리.
+   - 산출물: master 반영 여부 진단 + 머지 readiness 평가 + 머지 시 §11 표에서 해당 행 정리 계획.
 
-4. **GPU runtime integration branch 머지 후 persona docs update 필요 여부 점검**
-   - `feature/katago-gpu-runtime-integration-v1` 같은 별도 브랜치가 master 에 들어오면, persona 의 KataGo Runtime Engineer / DevOps/Smoke Engineer / Explanation Safety Engineer / Release Manager 의 "Required Context" 가 갱신되어야 하는 항목을 정리.
+4. **Local GPU realtime timeline smoke** — DevOps/Smoke + KataGo Runtime Engineer
+   - §10 Smoke Report Template 으로 빈 양식을 마련하고 실제 환경에서 채운다 (placeholder 외 실제 값 금지).
+   - smoke 종류: `local-gpu-required` + `local-realtime-timeline` 두 단계로 분리.
+   - 산출물: Web/Worker env 분리 PowerShell 예시, 관찰할 enum/boolean (`katagoBackend`, `katagoGpuBackend`, `katagoBackendCheckOk`, timeline progress file 존재 여부), 실패 모드 (eigen / unknown / 429 / 404) 대응표.
+   - 실제 KataGo binary path / model 파일명 / SGF 원문 / API key 는 기록 금지.
 
-5. **local GPU realtime timeline smoke report 준비**
-   - §10 smoke report template 으로 빈 양식 마련.
-   - 실제 path / secret / SGF 원문 없이 enum / boolean / latency 만으로 채울 수 있도록 placeholder 정리.
+5. **Product Review quality sample evaluation** — Analysis Algorithm Engineer + Product Architect
+   - `scripts/localAlgorithmWorkbenchV1.ts` 로 실제 completed result fixture 의 `decisiveMoveV1` / `reviewMovesV1` / `conceptTagsV1` / `candidateComparisonV1` / `explanationPlanV2` trace 를 비교.
+   - 산출물: 후보 ranking 의 deterministic 성, forbidden label 신규 노출 0개 확인, candidate signal 톤 유지 여부, ADI-only / timeline-only / DeepSearch-only 가 loss bullet 으로 승격되지 않았는지 검증.
+   - 본 작업은 selector scoring 을 변경하지 않는다 (사용자 명시 요청 전까지).
 
-6. **`codex-*.md` 정리 정책 점검**
-   - 현재 working tree 에는 `codex-current-system-architecture-and-features-ko.md`, `codex-follow-up-code-review-report-ko.md`, `codex-full-architecture-review-after-i18n.md`, `codex-full-repository-review-ko.md`, `codex-full-system-review-ko.md`, `codex-katago-local-smoke-review-ko.md`, `codex-repository-review-report-ko.md` 등 7개 review 보고서가 untracked 로 남아 있다.
-   - `.gitignore` 추가 또는 별도 보관 위치 합의가 필요한지 점검.
-   - **commit 금지** 는 그대로 유지.
+6. **LLM 연결 전 guard integration check** — Explanation Safety Engineer
+   - `KATATALK_LLM_COMMENTARY_ENABLED=false` 유지 상태에서 guard / claim verifier / orchestrator / provider unit test 만 실행.
+   - legacy `KATALK_*` env prefix 가 현재 코드에서 인식되지 않는지 확인.
+   - 산출물: guard 가 plan invariant / forbidden claim / safe string 을 막아내는지, provider error 가 분석 job 으로 전파되지 않는지 확인 보고.
+   - 본 작업은 실제 LLM 호출을 활성화하지 않는다. §11 표의 "실제 LLM main path 연결" 행은 미연결 상태로 둔다.
+
+7. **Persona docs ↔ 현재 master 코드 consistency check** — Product Architect + 해당 영역 persona
+   - persona 파일의 "Required Context" 가 master 코드와 어긋나는 부분 (env clamp 범위, 기본값, backend enum, `KATAGO_WINRATE_TIMELINE_*` clamp 등) 을 식별.
+   - 산출물: 불일치 목록과 한 줄 수정 제안. 실제 docs 수정은 별도 task 로 분리.
+
+8. **`codex-*.md` 정리 정책 합의** — Security/Privacy Guard + Release Manager
+   - root 의 7개 review WIP 파일 (`codex-current-system-architecture-and-features-ko.md`, `codex-follow-up-code-review-report-ko.md`, `codex-full-architecture-review-after-i18n.md`, `codex-full-repository-review-ko.md`, `codex-full-system-review-ko.md`, `codex-katago-local-smoke-review-ko.md`, `codex-repository-review-report-ko.md`) 가 계속 untracked 로 누적되어 git status 가 어지러워진다.
+   - 산출물: `.gitignore` 에 `/codex-*-ko.md` 패턴 추가 또는 `tmp/codex-reviews/` 같은 정리 디렉토리 합의. commit 금지는 그대로 유지.
 
 각 task 는 별도 PR / 별도 보고로 진행하고, 본 setup 문서를 같이 머지/푸시 하지 않는다 (이번 setup 문서 자체도 사용자 명시 요청 전까지 commit 금지).
 
