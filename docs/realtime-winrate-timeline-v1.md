@@ -30,14 +30,14 @@
 
 ## Local GPU timeline smoke
 
-1. OpenCL/CUDA KataGo binary를 사용한다.
+1. CUDA/OpenCL/TensorRT KataGo binary를 사용한다.
 2. `KATAGO_REQUIRE_GPU_BACKEND=true`를 설정한다.
 3. `KATAGO_WINRATE_TIMELINE_ENABLED=true`를 설정한다.
 4. `KATAGO_WINRATE_TIMELINE_MAX_VISITS=50`을 설정한다.
 5. `KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS=0.5`를 설정한다.
 6. `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`를 설정한다.
 7. Worker를 실행한다.
-8. startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda`, `backendCheckOk=true`를 확인한다.
+8. startup log에서 `katagoBackend=cuda|opencl|tensorrt`, `katagoBackendCheckOk=true`, `katagoSmokeOk=true`를 확인한다.
 9. SGF를 업로드한다.
 10. 그래프가 pending → partial → final로 채워지는지 확인한다.
 11. NVIDIA 환경에서는 `nvidia-smi`로 KataGo 프로세스/GPU 사용률을 확인한다.
