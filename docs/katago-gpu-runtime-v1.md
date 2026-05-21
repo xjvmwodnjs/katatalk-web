@@ -6,7 +6,7 @@
 
 - `KATAGO_BACKEND_CHECK_MODE=version`: `katago version` 출력에서 backend를 감지한다. 기본값이다.
 - `KATAGO_BACKEND_CHECK_MODE=analysis_smoke`: `katago analysis -config <config> -model <model>`에 짧은 JSON query를 넣어 실제 analysis 응답을 확인한다.
-- `KATAGO_BACKEND_CHECK_MODE=version_then_smoke`: version check와 analysis smoke가 모두 통과해야 한다. 로컬 GPU smoke 권장값이다.
+- `KATAGO_BACKEND_CHECK_MODE=version_then_smoke`: version check와 analysis smoke가 모두 통과하고, 둘 다 같은 `cuda`, `opencl`, `tensorrt` backend여야 한다. 로컬 GPU smoke 권장값이다.
 
 GPU backend 판정은 `cuda`, `opencl`, `tensorrt`만 true다. `eigen`, `unknown`은 GPU로 보지 않는다.
 
@@ -53,6 +53,7 @@ katagoGpuBackend=true
 katagoBackendCheckOk=true
 katagoBackendCheckMode=version_then_smoke
 katagoSmokeOk=true
+katagoBackendConflict=false
 hasBinaryPath=true
 hasConfigPath=true
 hasModelPath=true
@@ -66,7 +67,7 @@ hasModelPath=true
 
 - config file exists
 - analysis config로 보이는 key 존재 여부
-- `cudaDeviceToUse` 또는 `openclDeviceToUse` 같은 GPU device key 존재 여부
+- `cudaDeviceToUse`, `openclDeviceToUse` 또는 TensorRT용 backend/device key 존재 여부
 
 이 sanity check는 warning 성격이다. 특정 key가 없다는 이유만으로 startup fail-fast하지 않는다. require mode의 핵심 fail 조건은 GPU backend 판정과 smoke ok 여부다.
 
@@ -78,7 +79,7 @@ NVIDIA 환경에서는 Worker 실행 후 별도 PowerShell에서 확인한다.
 nvidia-smi
 ```
 
-분석 중 `katago.exe`가 process 목록에 보이고 GPU utilization 또는 memory 사용량이 증가하는지 확인한다. CUDA/TensorRT가 가능하면 NVIDIA 환경에서 유리할 수 있지만, 로컬 개발은 CUDA/OpenCL부터 먼저 확인한다.
+분석 중 `katago.exe`가 process 목록에 보이고 GPU utilization 또는 memory 사용량이 증가하는지 확인한다. CUDA/TensorRT가 가능하면 NVIDIA 환경에서 유리할 수 있으며, 로컬 개발은 사용자가 준비한 CUDA/OpenCL/TensorRT build 중 하나로 확인한다.
 
 ## Realtime Timeline Smoke
 

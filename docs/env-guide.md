@@ -118,7 +118,7 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 8. 완료 후 `result.source` — `katago-worker-v1`
 9. `GET /api/analyze/:id` → `meta.mock` — `false`
 10. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
-11. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=cuda`, `katagoBackend=opencl`, 또는 `katagoBackend=tensorrt` 확인
+11. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=cuda|opencl|tensorrt`, `katagoBackendCheckOk=true`, `katagoSmokeOk=true` 확인
 
 PowerShell 예시:
 

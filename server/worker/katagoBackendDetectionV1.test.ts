@@ -18,6 +18,19 @@ const env = {
   KATAGO_MODEL_PATH: "PRIVATE_MODEL_PLACEHOLDER",
 } as NodeJS.ProcessEnv;
 
+const smokeJson = "{\"rootInfo\":{\"winrate\":0.5},\"moveInfos\":[]}\n";
+
+function versionThenSmokeEnv(requireGpuBackend = "true"): NodeJS.ProcessEnv {
+  return { ...env, KATAGO_REQUIRE_GPU_BACKEND: requireGpuBackend, KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" };
+}
+
+function versionThenSmokeRunner(versionText: string, smokeText: string) {
+  return async (_binary: string, args: readonly string[]) =>
+    args[0] === "version"
+      ? { stdout: versionText, stderr: "", code: 0 }
+      : { stdout: smokeJson, stderr: smokeText, code: 0 };
+}
+
 describe("katago backend detection v1", () => {
   it("detects CUDA output", () => {
     expect(detectKatagoBackendFromTextV1("KataGo version x\nUsing CUDA backend")).toBe("cuda");
@@ -120,7 +133,7 @@ describe("katago backend detection v1", () => {
 
   it("allows OpenCL version_then_smoke when version and smoke both pass", async () => {
     const result = await detectKatagoBackendV1({
-      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
+      env: versionThenSmokeEnv(),
       runner: async (_binary, args) =>
         args[0] === "version"
           ? { stdout: "OpenCL backend", stderr: "", code: 0 }
@@ -130,15 +143,29 @@ describe("katago backend detection v1", () => {
     expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).not.toThrow();
   });
 
-  it("rejects Eigen version_then_smoke even when smoke response exists", async () => {
+  it("allows TensorRT version_then_smoke when version and smoke both pass", async () => {
     const result = await detectKatagoBackendV1({
-      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
-      runner: async (_binary, args) =>
-        args[0] === "version"
-          ? { stdout: "Eigen backend", stderr: "", code: 0 }
-          : { stdout: "{\"rootInfo\":{\"winrate\":0.5}}\n", stderr: "Eigen CPU backend", code: 0 },
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("TensorRT backend", "TensorRT backend initialized"),
     });
-    expect(result).toMatchObject({ backend: "eigen", gpuBackend: false, ok: true, smokeOk: true });
+    expect(result).toMatchObject({ backend: "tensorrt", gpuBackend: true, ok: true, smokeOk: true });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).not.toThrow();
+  });
+
+  it("rejects Eigen version with CUDA smoke in require mode", async () => {
+    const result = await detectKatagoBackendV1({
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("Eigen backend", "CUDA initialized"),
+    });
+    expect(result).toMatchObject({
+      backend: "eigen",
+      versionBackend: "eigen",
+      smokeBackend: "cuda",
+      gpuBackend: false,
+      ok: false,
+      smokeOk: true,
+      backendConflict: false,
+    });
     expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
       /KATAGO_GPU_BACKEND_REQUIRED/
     );
@@ -146,7 +173,7 @@ describe("katago backend detection v1", () => {
 
   it("rejects CUDA detection when analysis smoke fails in require mode", async () => {
     const result = await detectKatagoBackendV1({
-      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
+      env: versionThenSmokeEnv(),
       runner: async (_binary, args) =>
         args[0] === "version"
           ? { stdout: "CUDA backend", stderr: "", code: 0 }
@@ -160,19 +187,53 @@ describe("katago backend detection v1", () => {
 
   it("rejects version GPU when smoke explicitly reports Eigen CPU in require mode", async () => {
     const result = await detectKatagoBackendV1({
-      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
-      runner: async (_binary, args) =>
-        args[0] === "version"
-          ? { stdout: "CUDA backend", stderr: "", code: 0 }
-          : { stdout: "{\"rootInfo\":{\"winrate\":0.5}}\n", stderr: "Eigen backend", code: 0 },
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("CUDA backend", "Eigen backend"),
     });
     expect(result).toMatchObject({
       backend: "eigen",
       versionBackend: "cuda",
       smokeBackend: "eigen",
       gpuBackend: false,
-      ok: true,
+      ok: false,
       smokeOk: true,
+      backendConflict: false,
+    });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("rejects CUDA version with OpenCL smoke as backend conflict in require mode", async () => {
+    const result = await detectKatagoBackendV1({
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("CUDA backend", "OpenCL backend"),
+    });
+    expect(result).toMatchObject({
+      backend: "unknown",
+      versionBackend: "cuda",
+      smokeBackend: "opencl",
+      gpuBackend: false,
+      ok: false,
+      backendConflict: true,
+    });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("rejects OpenCL version with TensorRT smoke as backend conflict in require mode", async () => {
+    const result = await detectKatagoBackendV1({
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("OpenCL backend", "TensorRT backend"),
+    });
+    expect(result).toMatchObject({
+      backend: "unknown",
+      versionBackend: "opencl",
+      smokeBackend: "tensorrt",
+      gpuBackend: false,
+      ok: false,
+      backendConflict: true,
     });
     expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
       /KATAGO_GPU_BACKEND_REQUIRED/
@@ -191,16 +252,53 @@ describe("katago backend detection v1", () => {
     );
   });
 
-  it("allows unknown version output when smoke detects GPU backend and passes", async () => {
+  it("rejects unknown version output even when smoke detects CUDA backend in require mode", async () => {
     const result = await detectKatagoBackendV1({
-      env: { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true", KATAGO_BACKEND_CHECK_MODE: "version_then_smoke" },
+      env: versionThenSmokeEnv(),
+      runner: versionThenSmokeRunner("KataGo version x", "CUDA backend initialized"),
+    });
+    expect(result).toMatchObject({
+      backend: "cuda",
+      versionBackend: "unknown",
+      smokeBackend: "cuda",
+      gpuBackend: true,
+      ok: false,
+      versionOk: true,
+      smokeOk: true,
+    });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("rejects CUDA version output when smoke backend is unknown in require mode", async () => {
+    const result = await detectKatagoBackendV1({
+      env: versionThenSmokeEnv(),
       runner: async (_binary, args) =>
         args[0] === "version"
-          ? { stdout: "KataGo version x", stderr: "", code: 0 }
-          : { stdout: "{\"rootInfo\":{\"winrate\":0.5}}\n", stderr: "TensorRT backend initialized", code: 0 },
+          ? { stdout: "CUDA backend", stderr: "", code: 0 }
+          : { stdout: smokeJson, stderr: "", code: 0 },
     });
-    expect(result).toMatchObject({ backend: "tensorrt", gpuBackend: true, ok: true, versionOk: true, smokeOk: true });
-    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).not.toThrow();
+    expect(result).toMatchObject({
+      backend: "cuda",
+      versionBackend: "cuda",
+      smokeBackend: "unknown",
+      gpuBackend: true,
+      ok: false,
+      smokeOk: true,
+    });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, { ...env, KATAGO_REQUIRE_GPU_BACKEND: "true" })).toThrow(
+      /KATAGO_GPU_BACKEND_REQUIRED/
+    );
+  });
+
+  it("does not propagate version_then_smoke conflict as startup throw when GPU backend is optional", async () => {
+    const result = await detectKatagoBackendV1({
+      env: versionThenSmokeEnv("false"),
+      runner: versionThenSmokeRunner("CUDA backend", "OpenCL backend"),
+    });
+    expect(result).toMatchObject({ backend: "unknown", ok: false, backendConflict: true });
+    expect(() => assertKatagoGpuBackendRequirementV1(result, versionThenSmokeEnv("false"))).not.toThrow();
   });
 
   it("rejects Eigen when GPU backend is required", () => {
@@ -259,6 +357,7 @@ describe("katago backend detection v1", () => {
     expect(line).toContain("katagoBackend=cuda");
     expect(line).toContain("katagoVersionBackend=cuda");
     expect(line).toContain("katagoSmokeBackend=cuda");
+    expect(line).toContain("katagoBackendConflict=false");
     expect(line).toContain("katagoGpuBackend=true");
     expect(line).toContain("katagoBackendCheckMode=version_then_smoke");
     expect(line).toContain("katagoSmokeOk=true");

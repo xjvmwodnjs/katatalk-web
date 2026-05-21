@@ -10,6 +10,7 @@ export type KatagoBackendDetectionResultV1 = {
   backend: KatagoBackendV1;
   versionBackend?: KatagoBackendV1;
   smokeBackend?: KatagoBackendV1;
+  backendConflict?: boolean;
   gpuBackend: boolean;
   ok: boolean;
   timedOut: boolean;
@@ -39,6 +40,23 @@ const KATAGO_BACKEND_CHECK_KILL_GRACE_MS = 1000;
 
 function isGpuBackendV1(backend: KatagoBackendV1): boolean {
   return backend === "cuda" || backend === "opencl" || backend === "tensorrt";
+}
+
+function resolveVersionThenSmokeBackendV1(
+  versionBackend: KatagoBackendV1,
+  smokeBackend: KatagoBackendV1
+): { backend: KatagoBackendV1; backendConflict: boolean } {
+  const backendConflict = isGpuBackendV1(versionBackend) && isGpuBackendV1(smokeBackend) && versionBackend !== smokeBackend;
+  if (versionBackend === "eigen" || smokeBackend === "eigen") {
+    return { backend: "eigen", backendConflict };
+  }
+  if (backendConflict) {
+    return { backend: "unknown", backendConflict };
+  }
+  if (isGpuBackendV1(versionBackend) && versionBackend === smokeBackend) {
+    return { backend: versionBackend, backendConflict: false };
+  }
+  return { backend: smokeBackend !== "unknown" ? smokeBackend : versionBackend, backendConflict: false };
 }
 
 export function detectKatagoBackendFromTextV1(text: string): KatagoBackendV1 {
@@ -313,7 +331,11 @@ export async function detectKatagoBackendV1(opts: {
         : detectKatagoBackendFromTextV1(`${versionOutput.stdout}\n${versionOutput.stderr}`);
     const smokeBackend =
       smokeOutput == null ? "unknown" : detectKatagoSmokeBackendFromTextV1(`${smokeOutput.stdout}\n${smokeOutput.stderr}`);
-    const backend = smokeBackend !== "unknown" ? smokeBackend : versionBackend;
+    const versionThenSmokeResolution =
+      mode === "version_then_smoke" ? resolveVersionThenSmokeBackendV1(versionBackend, smokeBackend) : null;
+    const backend =
+      versionThenSmokeResolution?.backend ?? (smokeBackend !== "unknown" ? smokeBackend : versionBackend);
+    const backendConflict = versionThenSmokeResolution?.backendConflict === true;
     const versionOk = versionOutput == null ? undefined : versionOutput.code === 0;
     const smokeOk = smokeOutput == null ? undefined : smokeOutput.code === 0 && hasSmokeResponseV1(smokeOutput.stdout);
     const ok =
@@ -321,11 +343,16 @@ export async function detectKatagoBackendV1(opts: {
         ? versionOk === true && backend !== "unknown"
         : mode === "analysis_smoke"
           ? smokeOk === true
-          : versionOk === true && smokeOk === true;
+          : versionOk === true &&
+            smokeOk === true &&
+            isGpuBackendV1(versionBackend) &&
+            isGpuBackendV1(smokeBackend) &&
+            versionBackend === smokeBackend;
     return {
       backend,
       versionBackend,
       smokeBackend,
+      backendConflict,
       gpuBackend: isGpuBackendV1(backend),
       ok,
       timedOut: false,
@@ -346,6 +373,7 @@ export function buildKatagoBackendLogLineV1(result: KatagoBackendDetectionResult
     `katagoBackend=${result.backend}`,
     `katagoVersionBackend=${result.versionBackend ?? "unknown"}`,
     `katagoSmokeBackend=${result.smokeBackend ?? "unknown"}`,
+    `katagoBackendConflict=${String(result.backendConflict === true)}`,
     `katagoGpuBackend=${String(result.gpuBackend)}`,
     `katagoBackendCheckOk=${String(result.ok)}`,
     `katagoBackendCheckMode=${result.checkMode ?? readKatagoBackendCheckModeFrom(env)}`,

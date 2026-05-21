@@ -33,7 +33,7 @@ KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 
 - `KATAGO_REQUIRE_GPU_BACKEND=false`: 기본값. `eigen` 또는 `unknown`이어도 경고성 startup log만 남기고 계속 진행한다.
 - `KATAGO_REQUIRE_GPU_BACKEND=true`: `cuda`, `opencl`, `tensorrt` 감지와 backend check ok가 아니면 Worker startup에서 실패한다.
-- `KATAGO_BACKEND_CHECK_MODE=version_then_smoke`: 로컬 GPU runtime 확인 권장값. 자세한 절차는 `docs/katago-gpu-runtime-v1.md`.
+- `KATAGO_BACKEND_CHECK_MODE=version_then_smoke`: 로컬 GPU runtime 확인 권장값. version/smoke가 같은 `cuda`, `opencl`, `tensorrt` backend일 때만 통과한다.
 - `KATAGO_BACKEND_CHECK_TIMEOUT_MS`: backend check timeout. 기본값은 `10000`ms다.
 
 ## Local GPU Smoke
@@ -55,6 +55,6 @@ KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 4. `KATAGO_WINRATE_TIMELINE_MAX_VISITS=50`을 설정한다.
 5. `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`를 설정한다.
 6. Worker를 실행한다.
-7. startup log에서 `katagoBackend=cuda|opencl|tensorrt`, `backendCheckOk=true`를 확인한다.
+7. startup log에서 `katagoBackend=cuda|opencl|tensorrt`, `katagoBackendCheckOk=true`, `katagoSmokeOk=true`를 확인한다.
 8. SGF 업로드 후 승률 그래프가 pending → partial → final로 채워지는지 확인한다.
 9. NVIDIA GPU 환경에서는 분석 중 `nvidia-smi`로 KataGo 프로세스/GPU 사용률을 확인한다.
