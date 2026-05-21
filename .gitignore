@@ -54,6 +54,9 @@ coverage/
 test-results/
 playwright-report/
 
+# Codex review WIP reports (repo root only)
+/codex-*.md
+
 # Local algorithm workbench reports
 local-workbench-report*.md
 local-workbench-report*.json
