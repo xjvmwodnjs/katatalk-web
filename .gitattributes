@@ -1,0 +1,56 @@
+* text=auto eol=lf
+
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.patch text eol=lf
+*.example text eol=lf
+
+.gitignore text eol=lf
+.gitkeep text eol=lf
+.prettierignore text eol=lf
+.prettierrc text eol=lf
+
+pnpm-lock.yaml text eol=lf
+package-lock.json text eol=lf
+
+*.sh text eol=lf
+*.bash text eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.sgf text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.gz binary
+*.bin binary
+*.bin.gz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.exe binary
+*.dll binary
+*.lockb binary
