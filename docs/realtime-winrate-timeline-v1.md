@@ -25,13 +25,21 @@
 ## UI 정책
 
 - 분석 중 client가 `/api/analyze/:jobId/timeline-progress`를 polling한다.
-- endpoint가 `404`, `204`, `enabled=false`를 반환하면 local progress unavailable로 보고 progress polling을 중단한다.
+- endpoint가 `404`, `204`, `enabled=false`를 한 번이라도 반환하면 해당 `jobId`의 local progress unavailable로 보고 progress polling을 영구 중단한다.
 - endpoint가 `429` 또는 일시 실패를 반환하면 main job polling과 분리해 progress polling만 backoff한다.
 - completed/failed/canceled 상태에서는 progress polling을 중단한다.
 - partial point는 `isDuringSearch=true`, final point는 `isDuringSearch=false`로 표시한다.
 - 아직 값이 없는 turn은 pending point로 흐리게 표시한다.
 - completed 후에는 기존 완료 result의 `winrateTimelineV1`과 Product Review / ExplanationPlanV2 흐름을 유지한다.
 - timeline 변화는 참고 흐름이며 손실 판정으로 표시하지 않는다.
+
+## Dev runtime diagnosis
+
+- Web dev server가 최신 `master` 또는 현재 작업 branch의 worktree에서 실행 중인지 확인한다.
+- timeline hardening merge 뒤에도 같은 line number에서 `timeline-progress` 404가 반복되면 dev server 재시작과 브라우저 hard reload를 먼저 수행한다.
+- Web process와 Worker process 중 하나만 `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true`이면 endpoint는 `enabled=false`로 응답할 수 있다.
+- `timeline-progress` 404/204/`enabled=false`가 1회 뒤에도 반복되면 client polling hardening 회귀로 간주한다.
+- `/api/analyze/:jobId`가 `429`가 되면 progress polling과 status polling의 rate limit 분리 또는 중복 polling cleanup 회귀로 간주한다.
 
 ## Local GPU timeline smoke
 

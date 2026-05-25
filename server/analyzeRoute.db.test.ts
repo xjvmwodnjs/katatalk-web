@@ -297,6 +297,44 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body).toMatchObject({ success: true, enabled: false, points: [] });
   });
 
+  it("GET timeline-progress keeps 404 for a missing job", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS = "true";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/missing-progress-job/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("GET timeline-progress keeps 403 for owner mismatch", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS = "true";
+    vitestSeedAnalysisJob({
+      id: "progress-cross-owner",
+      user_id: "user_a",
+      status: "running",
+      file_name: "progress.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa26",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      error_message: null,
+      completed_at: null,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userB);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/progress-cross-owner/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
   it("GET failed does not return data with sgf_content even when DB row has it", async () => {
     const secretSgf = "(;FAILED_NO_LEAK_SGF_MARKER[bb])";
     vitestSeedAnalysisJob({

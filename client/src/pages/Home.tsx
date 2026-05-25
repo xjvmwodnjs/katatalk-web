@@ -62,12 +62,16 @@ export default function Home() {
     completedCount: 0,
     totalPoints: null,
   });
-  const pollAbortRef = useRef(false);
+  const activePollRunRef = useRef(0);
+  const timelineProgressDisabledJobIdsRef = useRef<Set<string>>(new Set());
+  const timelineProgressAbortRef = useRef<AbortController | null>(null);
   const t = TRANSLATIONS[lang];
 
   useEffect(() => {
     return () => {
-      pollAbortRef.current = true;
+      activePollRunRef.current += 1;
+      timelineProgressAbortRef.current?.abort();
+      timelineProgressAbortRef.current = null;
     };
   }, []);
 
@@ -79,13 +83,52 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
-  async function pollTimelineProgress(jobId: string, failureCount: number): Promise<TimelineProgressPollResult> {
+  function beginPollingRun() {
+    activePollRunRef.current += 1;
+    timelineProgressAbortRef.current?.abort();
+    timelineProgressAbortRef.current = null;
+    return activePollRunRef.current;
+  }
+
+  function isPollingRunActive(runId: number) {
+    return activePollRunRef.current === runId;
+  }
+
+  function finishPollingRun(runId: number) {
+    if (activePollRunRef.current !== runId) return;
+    activePollRunRef.current += 1;
+    timelineProgressAbortRef.current?.abort();
+    timelineProgressAbortRef.current = null;
+  }
+
+  function disableTimelineProgressForJob(jobId: string) {
+    timelineProgressDisabledJobIdsRef.current.add(jobId);
+    timelineProgressAbortRef.current?.abort();
+    timelineProgressAbortRef.current = null;
+  }
+
+  async function pollTimelineProgress(
+    jobId: string,
+    failureCount: number,
+    runId: number
+  ): Promise<TimelineProgressPollResult> {
+    if (!isPollingRunActive(runId) || timelineProgressDisabledJobIdsRef.current.has(jobId)) {
+      return { status: "disabled" };
+    }
+    const controller = new AbortController();
+    timelineProgressAbortRef.current?.abort();
+    timelineProgressAbortRef.current = controller;
     try {
       const res = await fetch(`/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`, {
         credentials: "include",
         headers: { ...(await getAnalyzeAuthHeaders()) },
+        signal: controller.signal,
       });
+      if (!isPollingRunActive(runId)) {
+        return { status: "disabled" };
+      }
       if (res.status === 404 || res.status === 204) {
+        disableTimelineProgressForJob(jobId);
         return { status: "disabled" };
       }
       if (res.status === 429) {
@@ -102,6 +145,7 @@ export default function Home() {
       }
       const body = (await res.json().catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
       if (!body?.success || body.enabled === false) {
+        disableTimelineProgressForJob(jobId);
         return { status: "disabled" };
       }
       if (!Array.isArray(body.points)) {
@@ -133,14 +177,24 @@ export default function Home() {
         });
       }
       series.sort((a, b) => a.turnIndex - b.turnIndex);
+      if (!isPollingRunActive(runId) || timelineProgressDisabledJobIdsRef.current.has(jobId)) {
+        return { status: "disabled" };
+      }
       setTimelineProgressSeries(series);
       setTimelineProgressStats({ completedCount: body.completedCount, totalPoints: body.totalPoints });
       return { status: "ok" };
-    } catch {
+    } catch (error) {
+      if (!isPollingRunActive(runId) || (error instanceof DOMException && error.name === "AbortError")) {
+        return { status: "disabled" };
+      }
       return {
         status: "backoff",
         retryAfterMs: Math.min(TIMELINE_PROGRESS_MAX_BACKOFF_MS, POLL_INTERVAL_MS * 2 ** Math.min(failureCount, 4)),
       };
+    } finally {
+      if (timelineProgressAbortRef.current === controller) {
+        timelineProgressAbortRef.current = null;
+      }
     }
   }
 
@@ -150,7 +204,7 @@ export default function Home() {
     if (!jobId) return;
 
     let cancelled = false;
-    pollAbortRef.current = false;
+    const runId = beginPollingRun();
     setKatagoWorkerV1Result(null);
     setTimelineProgressSeries([]);
     setTimelineProgressStats({ completedCount: 0, totalPoints: null });
@@ -172,11 +226,12 @@ export default function Home() {
         let timelineProgressStopped = false;
         let timelineProgressFailureCount = 0;
         let timelineProgressNextAt = 0;
-        while (!cancelled && !pollAbortRef.current && Date.now() < deadline) {
+        while (!cancelled && isPollingRunActive(runId) && Date.now() < deadline) {
           const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
             credentials: "include",
             headers: { ...(await getAnalyzeAuthHeaders()) },
           });
+          if (cancelled || !isPollingRunActive(runId)) return;
           const pollBody = (await pollRes.json().catch(() => ({}))) as
             | AnalysisJobGetResponse
             | { success?: false; message?: string };
@@ -197,6 +252,7 @@ export default function Home() {
 
           if (normalizedStatus === "completed") {
             timelineProgressStopped = true;
+            disableTimelineProgressForJob(jobId);
             const parsed = parseStoredAnalysisJobResult(job.data);
             if (parsed == null) {
               throw new Error("Analysis finished but no data was returned.");
@@ -214,20 +270,23 @@ export default function Home() {
 
           if (normalizedStatus === "failed") {
             timelineProgressStopped = true;
+            disableTimelineProgressForJob(jobId);
             throw new Error(job.error?.message ?? "Analysis job failed.");
           }
 
           if (rawStatus === "canceled") {
             timelineProgressStopped = true;
+            disableTimelineProgressForJob(jobId);
             throw new Error("Analysis job canceled.");
           }
 
           if (
             (normalizedStatus === "queued" || normalizedStatus === "running") &&
             !timelineProgressStopped &&
+            !timelineProgressDisabledJobIdsRef.current.has(jobId) &&
             Date.now() >= timelineProgressNextAt
           ) {
-            const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount);
+            const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount, runId);
             if (progressResult.status === "disabled") {
               timelineProgressStopped = true;
             } else if (progressResult.status === "backoff") {
@@ -242,7 +301,7 @@ export default function Home() {
           await sleep(POLL_INTERVAL_MS);
         }
 
-        if (!cancelled && !pollAbortRef.current) {
+        if (!cancelled && isPollingRunActive(runId)) {
           throw new Error(
             lang === "ko" ? "분석 작업 시간이 초과되었습니다." :
             lang === "en" ? "Analysis timed out. Please try again." :
@@ -250,7 +309,7 @@ export default function Home() {
           );
         }
       } catch (error: any) {
-        if (cancelled) return;
+        if (cancelled || !isPollingRunActive(runId)) return;
         setView("upload");
         setJobStatus("idle");
         setJobProgress(0);
@@ -265,6 +324,7 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      finishPollingRun(runId);
     };
   }, [authLoading, isAuthenticated, lang]);
 
@@ -482,7 +542,7 @@ export default function Home() {
       return;
     }
 
-    pollAbortRef.current = false;
+    const runId = beginPollingRun();
     setKatagoWorkerV1Result(null);
     setTimelineProgressSeries([]);
     setTimelineProgressStats({ completedCount: 0, totalPoints: null });
@@ -530,6 +590,9 @@ export default function Home() {
               : "분석을 시작할 수 없습니다.";
         throw new Error(msg);
       }
+      if (!isPollingRunActive(runId)) {
+        return;
+      }
 
       if (
         typeof createPayload.creditBalance === "number" ||
@@ -539,16 +602,18 @@ export default function Home() {
       }
 
       const jobId = createPayload.jobId;
+      timelineProgressDisabledJobIdsRef.current.delete(jobId);
       const deadline = Date.now() + POLL_MAX_MS;
       let timelineProgressStopped = false;
       let timelineProgressFailureCount = 0;
       let timelineProgressNextAt = 0;
 
-      while (!pollAbortRef.current && Date.now() < deadline) {
+      while (isPollingRunActive(runId) && Date.now() < deadline) {
         const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
           credentials: "include",
           headers: { ...(await getAnalyzeAuthHeaders()) },
         });
+        if (!isPollingRunActive(runId)) return;
 
         const pollBody = (await pollRes.json().catch(() => ({}))) as
           | AnalysisJobGetResponse
@@ -570,6 +635,7 @@ export default function Home() {
 
         if (normalizedStatus === "completed") {
           timelineProgressStopped = true;
+          disableTimelineProgressForJob(jobId);
           const parsed = parseStoredAnalysisJobResult(job.data);
           if (parsed == null) {
             throw new Error("Analysis finished but no data was returned.");
@@ -592,20 +658,23 @@ export default function Home() {
 
         if (normalizedStatus === "failed") {
           timelineProgressStopped = true;
+          disableTimelineProgressForJob(jobId);
           throw new Error(job.error?.message ?? "Analysis job failed.");
         }
 
         if (rawStatus === "canceled") {
           timelineProgressStopped = true;
+          disableTimelineProgressForJob(jobId);
           throw new Error("Analysis job canceled.");
         }
 
         if (
           (normalizedStatus === "queued" || normalizedStatus === "running") &&
           !timelineProgressStopped &&
+          !timelineProgressDisabledJobIdsRef.current.has(jobId) &&
           Date.now() >= timelineProgressNextAt
         ) {
-          const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount);
+          const progressResult = await pollTimelineProgress(jobId, timelineProgressFailureCount, runId);
           if (progressResult.status === "disabled") {
             timelineProgressStopped = true;
           } else if (progressResult.status === "backoff") {
@@ -620,7 +689,7 @@ export default function Home() {
         await sleep(POLL_INTERVAL_MS);
       }
 
-      if (pollAbortRef.current) {
+      if (!isPollingRunActive(runId)) {
         return;
       }
       throw new Error(
@@ -629,6 +698,7 @@ export default function Home() {
         lang === "zh" ? "分析超时，请重试。" : "分析がタイムアウトしました。もう一度お試しください。"
       );
     } catch (error: any) {
+      if (!isPollingRunActive(runId)) return;
       setView("upload");
       setJobStatus("idle");
       setJobProgress(0);
@@ -638,6 +708,8 @@ export default function Home() {
         lang === "zh" ? "分析过程中发生错误。" : "分析中にエラーが発生しました。",
         { description: error.message }
       );
+    } finally {
+      finishPollingRun(runId);
     }
   };
 
