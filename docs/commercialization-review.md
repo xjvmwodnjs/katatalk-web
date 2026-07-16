@@ -471,8 +471,8 @@ corepack pnpm credits:audit
 
 #### Release-blocking findings
 
-1. **No current release candidate is committed.** The checked-out branch is `chore/ignore-codex-review-wip-v1` at `46be072` (`2026-05-21`). `git status` reports 187 worktree entries; the tracked diff summary reports 122 changed files (`6,225` insertions and `16,036` deletions), and Git separately reports 63 untracked files. The new CI, Worker, retention, privacy, and AI-quality work is therefore not part of any commit or push.
-2. **The branch is behind the current integration baseline.** A privilege-elevated `git fetch origin --prune` succeeded after the initial sandboxed `.git/FETCH_HEAD` access failure. The current HEAD is equal to `origin/chore/ignore-codex-review-wip-v1` and exactly 10 commits behind current `origin/master`. The branch must be reconciled with `master` before it can be a release candidate.
+1. **The release candidate is local-only until a reviewed push succeeds.** The commercialization checkpoint is committed locally as `57dda43`; it has not yet been accepted by the remote hosting boundary. GitHub CI and protected-environment evidence therefore still cannot begin.
+2. **The local branch is reconciled with the current integration baseline.** A privilege-elevated `git fetch origin --prune` completed, then `origin/master` was merged locally as `0b3d2f6`. The branch is two commits ahead of `origin/master` and zero commits behind it.
 3. **Real-engine and deployment evidence remains absent.** The actual KataGo suite, TypeScript check, and some tooling runs are intermittently blocked by OneDrive `EPERM` package-file locks. Supabase migrations 008-010, protected GitHub Actions environments, staging Web/Worker smoke, payment-credit E2E, and the reviewed private corpus have not been evidenced in this workspace.
 4. **Commercial terms are drafts only.** `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` correctly avoid unsupported claims, but legal approval, controller/contact details, refund policy, backup/deletion behavior, and regional obligations remain unresolved.
 
@@ -489,9 +489,9 @@ corepack pnpm credits:audit
 
 #### Delivery sequence
 
-1. Resolve the OneDrive file-lock issue or work from a non-synced checkout; run `git fetch origin` and reconcile the 10 cached `master` commits before any merge.
-2. Split the current worktree into reviewable commits: infrastructure/CI, Worker and migrations, AI quality gates, product UI/E2E, and legal/operations docs. Do not commit the unrelated deletion set without validating imports and build impact.
-3. Push the reviewed branch, require the GitHub CI workflow to pass, then apply migrations and execute staging smoke with protected environment secrets.
+1. Push the reviewed local branch after explicitly approving the external source-code transfer; require the GitHub CI workflow to pass.
+2. Create reviewable follow-up commits for any changes after this checkpoint; the existing legacy UI deletion set was checked for active import candidates before the checkpoint.
+3. Apply migrations and execute staging smoke with protected environment secrets.
 4. Run the private corpus with two independent reviews and zero-tolerance quality/category thresholds. Only then reassess public-beta readiness.
 
 - Commercialization readiness remains 76% for controlled public beta and 57% for formal production launch. The major missing percentage is external evidence and delivery discipline, not another local feature.
@@ -499,3 +499,11 @@ corepack pnpm credits:audit
 #### Git audit correction
 
 - After the initial report, a privilege-elevated `git fetch origin --prune` completed successfully. The Git delivery conclusions above now use current remote references rather than the previously stale local cache.
+
+### 2026-07-16: local release-candidate checkpoint and integration
+
+- Created local branch `wip/commercialization-readiness-20260716` and committed the accumulated commercialization work as `57dda43` (`185` files; analysis quality gates, Worker/retention operations, CI, product UI/E2E, legal drafts, and legacy UI cleanup).
+- Merged current `origin/master` locally as `0b3d2f6`; the branch is now `2` commits ahead and `0` behind `origin/master`.
+- Merge conflicts were limited to `.env.example`, `client/src/pages/Home.tsx`, `docs/env-guide.md`, and `server/analyzeRoute.db.test.ts`. The resolution retained the commercial result/deep-link and winrate-perspective behavior, adopted the current timeline-progress API contract, and exposed the new GPU backend-check configuration keys.
+- Targeted integration validation passed: `server/analyzeRoute.db.test.ts`, `server/worker/katagoBackendDetectionV1.test.ts`, and `server/apiRateLimit.test.ts` (`3` files, `53` tests). `git diff --check` and staged-diff checks passed.
+- The direct `git push -u origin wip/commercialization-readiness-20260716` attempt was blocked by the execution policy because it transfers the full source/docs WIP to an external host. No workaround was attempted, and `origin/master` was not modified. Explicit user approval is required before retrying the push.
