@@ -86,6 +86,22 @@ export const analyzeGetUserLimit = bypassWhenDisabled(
   })
 );
 
+/** GET /api/analyze/:jobId/timeline-progress — status polling 과 별도 budget */
+export const analyzeTimelineProgressGetUserLimit = bypassWhenDisabled(
+  rateLimit({
+    windowMs: 60_000,
+    max: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const u = req.katatalkUser;
+      if (!u) return `analyze-progress-get:anon:${ipKey(req)}`;
+      return `analyze-progress-get:${walletSubjectFromAuthUser(u)}`;
+    },
+    handler: limitHandler,
+  })
+);
+
 /** POST /api/billing/create-checkout — IP당 10분 20회 */
 export const billingCheckoutIpLimit = bypassWhenDisabled(
   rateLimit({

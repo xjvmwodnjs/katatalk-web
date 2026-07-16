@@ -21,6 +21,7 @@ import {
   analyzeGetUserLimit,
   analyzePostIpLimit,
   analyzePostUserLimit,
+  analyzeTimelineProgressGetUserLimit,
 } from "./middleware/apiRateLimit";
 import { logAnalysisEngineSnapshot, resolveCompletedJobMetaMock } from "./analysisEngineDeterminism";
 import {
@@ -111,6 +112,19 @@ const upload = multer({
 
 const analyzeRouter = Router();
 
+function emptyTimelineProgressResponse(jobId: string, enabled: boolean) {
+  return {
+    success: true as const,
+    jobId,
+    enabled,
+    events: [],
+    points: [],
+    completedCount: 0,
+    partialCount: 0,
+    totalPoints: null,
+  };
+}
+
 function parseLanguage(req: Request): AnalysisJobLanguage {
   const raw = req.body?.language;
   if (typeof raw === "string" && SUPPORTED_LANGUAGES.has(raw as AnalysisJobLanguage)) {
@@ -152,13 +166,9 @@ function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
 analyzeRouter.get(
   "/api/analyze/:jobId/timeline-progress",
   requireAnalyzeAuth,
-  analyzeGetUserLimit,
+  analyzeTimelineProgressGetUserLimit,
   (req: Request, res: Response) => {
     void (async () => {
-      if (!readWinrateTimelineLocalProgressEnabledFrom(process.env)) {
-        res.status(404).json({ success: false, message: "Timeline progress is not enabled." });
-        return;
-      }
       const user = req.katatalkUser;
       if (!user) {
         sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
@@ -190,9 +200,13 @@ analyzeRouter.get(
         res.status(403).json({ success: false, message: "이 분석 결과에 접근할 권한이 없습니다." });
         return;
       }
+      if (!readWinrateTimelineLocalProgressEnabledFrom(process.env)) {
+        res.json(emptyTimelineProgressResponse(jobId, false));
+        return;
+      }
       const progress = await readWinrateTimelineProgressV1(jobId);
       if (progress == null) {
-        res.status(404).json({ success: false, message: "Timeline progress not found." });
+        res.json(emptyTimelineProgressResponse(jobId, true));
         return;
       }
       res.json(progress);

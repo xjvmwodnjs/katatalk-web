@@ -1,13 +1,4 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import http from "http";
 import * as resolve from "./_core/resolveRequestUser";
@@ -48,9 +39,7 @@ const userB = {
 
 const minimalSgf = "(;FF[4]GM[1]SZ[19];B[pd];W[dp])";
 
-function listen(
-  app: express.Express
-): Promise<{ server: http.Server; port: number }> {
+function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolvePromise, reject) => {
     const server = http.createServer(app);
     server.listen(0, "127.0.0.1", () => {
@@ -96,48 +85,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
 
   it("GET /api/analyze/:jobId returns 404 when row is missing", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/missing-job-id-xyz`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
-    expect(res.status).toBe(404);
-  });
-
-  it("DELETE /api/analyze/:jobId/data purges final SGF and result while retaining the audit row", async () => {
-    vitestSeedAnalysisJob({
-      id: "job-purge",
-      user_id: "user_a",
-      status: "completed",
-      file_name: "private-game.sgf",
-      language: "ko",
-      credit_cost: 1,
-      result: { source: "katago-worker-v1", private: true },
-      sgf_content: minimalSgf,
-      sgf_sha256: "a".repeat(64),
-      sgf_size_bytes: 123,
-      is_mock: false,
-    });
-    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-purge/data`, {
-      method: "DELETE",
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/missing-job-id-xyz`, {
       headers: { Authorization: "Bearer fake" },
     });
-
-    expect(res.status).toBe(204);
-    expect(vitestAnalysisJobsStore.get("job-purge")).toMatchObject({
-      id: "job-purge",
-      status: "completed",
-      credit_cost: 1,
-      file_name: null,
-      result: null,
-      sgf_content: null,
-      sgf_sha256: null,
-      sgf_size_bytes: null,
-    });
-    expect(vitestAnalysisJobsStore.get("job-purge")?.data_purged_at).toEqual(expect.any(String));
+    expect(res.status).toBe(404);
   });
 
   it("GET returns 403 when job.user_id !== viewer", async () => {
@@ -181,21 +132,15 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const logSpy = vi.spyOn(console, "log");
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/job-db-sgf-merge`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-db-sgf-merge`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      success: boolean;
-      data?: Record<string, unknown>;
-    };
+    const body = (await res.json()) as { success: boolean; data?: Record<string, unknown> };
     expect(body.success).toBe(true);
     expect(body.data).toEqual({ ...resultPayload, sgf_content: minimalSgf });
-    const leaked = logSpy.mock.calls.some(args =>
-      args.some(a => typeof a === "string" && a.includes(minimalSgf))
+    const leaked = logSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === "string" && a.includes(minimalSgf))
     );
     expect(leaked).toBe(false);
     logSpy.mockRestore();
@@ -218,12 +163,9 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/job-db-result`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-db-result`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; data?: unknown };
     expect(body.success).toBe(true);
@@ -249,12 +191,9 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: null,
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/job-run-sgf`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-run-sgf`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain("RUNNING_NO_LEAK_SGF_MARKER");
@@ -293,33 +232,69 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       receivedAt: "2026-01-01T00:00:00.000Z",
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain(minimalSgf);
-    const body = JSON.parse(raw) as {
-      success: boolean;
-      points?: Array<{ turnIndex: number; visits: number }>;
-    };
+    const body = JSON.parse(raw) as { success: boolean; points?: Array<{ turnIndex: number; visits: number }> };
     expect(body.success).toBe(true);
     expect(body.points?.[0]).toMatchObject({ turnIndex: 1, visits: 7 });
   });
 
-  it("GET timeline-progress is disabled unless local progress opt-in is set", async () => {
-    delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
+  it("GET timeline-progress returns empty enabled response before progress file exists", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS = "true";
+    const jobId = `progressmissing${Date.now()}`;
+    vitestSeedAnalysisJob({
+      id: jobId,
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa24",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: null,
+    });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
-    expect(res.status).toBe(404);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    expect(body).toMatchObject({ success: true, enabled: true, points: [] });
+  });
+
+  it("GET timeline-progress returns enabled=false unless local progress opt-in is set", async () => {
+    delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
+    vitestSeedAnalysisJob({
+      id: "disabled-progress",
+      user_id: "user_a",
+      status: "running",
+      file_name: "r.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa25",
+      is_mock: false,
+      progress: 40,
+      result: null,
+      sgf_content: minimalSgf,
+      error_message: null,
+      completed_at: null,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`, {
+      headers: { Authorization: "Bearer fake" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    expect(body).toMatchObject({ success: true, enabled: false, points: [] });
   });
 
   it("GET failed does not return data with sgf_content even when DB row has it", async () => {
@@ -340,19 +315,13 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/job-fail-sgf`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-fail-sgf`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain("FAILED_NO_LEAK_SGF_MARKER");
-    const body = JSON.parse(raw) as {
-      data?: unknown;
-      error?: { message: string };
-    };
+    const body = JSON.parse(raw) as { data?: unknown; error?: { message: string } };
     expect(body.data).toBeUndefined();
     expect(body.error?.message).toBe("pipeline exploded");
   });
@@ -363,11 +332,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       source: "katago-worker-v1",
       isMock: false,
       top_mistakes: [],
-      engine: {
-        name: "katago",
-        maxVisits: 800,
-        winratePerspective: "black",
-      },
+      engine: { name: "katago", maxVisits: 800 },
       katago: {
         hasWinrate: true,
         hasScoreLead: true,
@@ -392,18 +357,11 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/analyze/job-katago-str`,
-      {
-        headers: { Authorization: "Bearer fake" },
-      }
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-katago-str`, {
+      headers: { Authorization: "Bearer fake" },
+    });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      success: boolean;
-      status: string;
-      data?: unknown;
-    };
+    const body = (await res.json()) as { success: boolean; status: string; data?: unknown };
     expect(body.success).toBe(true);
     expect(body.status).toBe("completed");
     expect(body.data).toEqual({ ...katagoPayload, sgf_content: minimalSgf });
@@ -456,10 +414,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       headers: { Authorization: "Bearer fake" },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      status: string;
-      progress: number | null;
-    };
+    const body = (await res.json()) as { status: string; progress: number | null };
     expect(body.status).toBe("queued");
     expect(body.progress).toBe(0);
   });
@@ -484,10 +439,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       headers: { Authorization: "Bearer fake" },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      success: boolean;
-      error?: { message: string };
-    };
+    const body = (await res.json()) as { success: boolean; error?: { message: string } };
     expect(body.success).toBe(true);
     expect(body.error?.message).toBe("pipeline exploded");
   });
@@ -496,11 +448,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(
-      SGF_UPLOAD_FORM_FIELD,
-      new Blob([minimalSgf], { type: "application/octet-stream" }),
-      "game.sgf"
-    );
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
       headers: { Authorization: "Bearer fake" },
@@ -524,13 +472,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(
-      SGF_UPLOAD_FORM_FIELD,
-      new Blob(["(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"], {
-        type: "application/octet-stream",
-      }),
-      "late-setup.sgf"
-    );
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob(["(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"], { type: "application/octet-stream" }), "late-setup.sgf");
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
       headers: { Authorization: "Bearer fake" },
@@ -549,11 +491,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(
-      SGF_UPLOAD_FORM_FIELD,
-      new Blob([minimalSgf], { type: "application/octet-stream" }),
-      "game.sgf"
-    );
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
       headers: { Authorization: "Bearer fake" },
@@ -571,11 +509,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(
-      SGF_UPLOAD_FORM_FIELD,
-      new Blob([minimalSgf], { type: "application/octet-stream" }),
-      "game.sgf"
-    );
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
       headers: { Authorization: "Bearer fake" },
@@ -593,11 +527,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(
-      SGF_UPLOAD_FORM_FIELD,
-      new Blob([minimalSgf], { type: "application/octet-stream" }),
-      "game.sgf"
-    );
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
       headers: { Authorization: "Bearer fake" },

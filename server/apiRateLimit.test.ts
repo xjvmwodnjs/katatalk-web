@@ -4,7 +4,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import http from "http";
-import { analyzePostIpLimit, isRateLimitVitestBypassActive, RATE_LIMIT_JSON } from "./middleware/apiRateLimit";
+import {
+  analyzeGetUserLimit,
+  analyzePostIpLimit,
+  analyzeTimelineProgressGetUserLimit,
+  isRateLimitVitestBypassActive,
+  RATE_LIMIT_JSON,
+} from "./middleware/apiRateLimit";
 
 function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolvePromise, reject) => {
@@ -64,6 +70,31 @@ describe("apiRateLimit", () => {
         const r = await fetch(url, { method: "POST", body: "{}" });
         expect(r.status).toBe(401);
       }
+    } finally {
+      await new Promise<void>((res, rej) => server.close(err => (err ? rej(err) : res())));
+    }
+  });
+
+  it("timeline progress polling uses a separate budget from job status polling", async () => {
+    const app = express();
+    app.set("trust proxy", 1);
+    app.get("/api/analyze/:jobId/timeline-progress", analyzeTimelineProgressGetUserLimit, (_req, res) => {
+      res.json({ success: true, enabled: false, points: [] });
+    });
+    app.get("/api/analyze/:jobId", analyzeGetUserLimit, (_req, res) => {
+      res.json({ success: true, status: "running" });
+    });
+
+    const { server, port } = await listen(app);
+    try {
+      const progressUrl = `http://127.0.0.1:${port}/api/analyze/job-rate/timeline-progress`;
+      const statusUrl = `http://127.0.0.1:${port}/api/analyze/job-rate`;
+      for (let i = 0; i < 130; i++) {
+        const r = await fetch(progressUrl);
+        expect(r.status).toBe(200);
+      }
+      const status = await fetch(statusUrl);
+      expect(status.status).toBe(200);
     } finally {
       await new Promise<void>((res, rej) => server.close(err => (err ? rej(err) : res())));
     }

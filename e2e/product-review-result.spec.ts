@@ -288,3 +288,118 @@ test.describe("Product Review result smoke", () => {
     await expect(deleteButton).toBeVisible();
   });
 });
+
+test.describe("Timeline progress polling hardening", () => {
+  test("stops progress polling after 404 while status polling completes", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      localStorage.setItem("katatalk-ui-lang", "ko");
+    });
+    let statusCalls = 0;
+    let progressCalls = 0;
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+      statusCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(statusCalls === 1 ? {
+          success: true,
+          jobId: productReviewE2eJobId,
+          status: "running",
+          progress: 40,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } : productReviewCompletedJobResponse),
+      });
+    });
+    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
+      progressCalls += 1;
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ success: false }) });
+    });
+
+    await page.goto(`/?jobId=${productReviewE2eJobId}`);
+    await expect(page.getByRole("img", { name: "바둑판 국면 스냅샷" })).toBeVisible();
+    await page.waitForTimeout(1200);
+    expect(progressCalls).toBe(1);
+    expect(statusCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  test("backs off progress polling after 429 without blocking status polling", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      localStorage.setItem("katatalk-ui-lang", "ko");
+    });
+    let statusCalls = 0;
+    let progressCalls = 0;
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+      statusCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(statusCalls === 1 ? {
+          success: true,
+          jobId: productReviewE2eJobId,
+          status: "running",
+          progress: 40,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } : productReviewCompletedJobResponse),
+      });
+    });
+    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
+      progressCalls += 1;
+      await route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ success: false, code: "RATE_LIMITED" }),
+      });
+    });
+
+    await page.goto(`/?jobId=${productReviewE2eJobId}`);
+    await expect(page.getByRole("img", { name: "바둑판 국면 스냅샷" })).toBeVisible();
+    await page.waitForTimeout(1200);
+    expect(progressCalls).toBe(1);
+    expect(statusCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  test("stops progress polling after failed status", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      localStorage.setItem("katatalk-ui-lang", "ko");
+    });
+    let statusCalls = 0;
+    let progressCalls = 0;
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+      statusCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(statusCalls === 1 ? {
+          success: true,
+          jobId: productReviewE2eJobId,
+          status: "running",
+          progress: 40,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } : {
+          success: true,
+          jobId: productReviewE2eJobId,
+          status: "failed",
+          progress: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+          error: { message: "Analysis job failed." },
+        }),
+      });
+    });
+    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
+      progressCalls += 1;
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ success: false }) });
+    });
+
+    await page.goto(`/?jobId=${productReviewE2eJobId}`);
+    await expect.poll(() => statusCalls).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(1200);
+    expect(progressCalls).toBe(1);
+  });
+});

@@ -301,7 +301,7 @@ Smoke 종류: <local-katago-basic | local-gpu-required | local-realtime-timeline
 실행 환경:
 - OS: <Windows 10 / Windows 11 / WSL2 / Linux 등>
 - GPU: <NVIDIA RTX 시리즈 / 없음, 실제 모델명 정도까지만>
-- KataGo backend: <cuda | opencl | eigen | unknown> (placeholder, 실제 binary path 금지)
+- KataGo backend: <cuda | opencl | tensorrt | eigen | unknown> (placeholder, 실제 binary path 금지)
 - Web env profile (placeholder 만):
   - NODE_ENV=<development|test>
   - AUTH_PROVIDER=<local-dev|...>
@@ -326,9 +326,10 @@ Smoke 종류: <local-katago-basic | local-gpu-required | local-realtime-timeline
 관찰된 핵심 log (enum / boolean 만):
 - engine=<mock|katago>
 - workerMode=<inline|external>
-- katagoBackend=<cuda|opencl|eigen|unknown>
+- katagoBackend=<cuda|opencl|tensorrt|eigen|unknown>
 - katagoGpuBackend=<true|false>
 - katagoBackendCheckOk=<true|false>
+- katagoSmokeOk=<true|false>
 - requireGpuBackend=<true|false>
 - timeline running=<true|false>
 - progress file present=<true|false>
@@ -371,14 +372,16 @@ UI 확인 항목:
 
 따라서 Codex 는 별도 브랜치 체크아웃 없이 master 만으로 §2 Required Reading Order 의 1~3 항목을 모두 읽을 수 있다.
 
-별도 브랜치 기능 / master 미머지 / 미구현 항목 (persona 문서에 "구현 완료" 로 쓰면 안 되는 것):
+master 반영 완료 기능 / 별도 브랜치 기능 / 미구현 항목 (persona 문서에 "구현 완료" 로 쓰면 안 되는 것):
 
 | 기능 | 상태 | 근거 |
 |---|---|---|
-| `KATAGO_BACKEND_CHECK_MODE` (`version` / `analysis_smoke` / `version_then_smoke`) | 별도 브랜치 (예: `feature/katago-gpu-runtime-integration-v1`) | 현재 master 코드의 `katagoBackendDetectionV1.ts` 는 `katago version` 출력 기반만 지원 |
-| `analysis_smoke` 기반 smoke query | 별도 브랜치 | 위와 동일 |
-| TensorRT backend 감지 (`tensorrt`) | 별도 브랜치 | 현재 master 의 `KatagoBackendV1` enum 은 `cuda` / `opencl` / `eigen` / `unknown` 만 인식 |
-| `katagoSmokeOk` startup log 필드 | 별도 브랜치 | 현재 master 의 worker startup log 에 없음 |
+| `KATAGO_BACKEND_CHECK_MODE` (`version` / `analysis_smoke` / `version_then_smoke`) | master 반영 완료 | master 의 `katagoBackendDetectionV1.ts` 에 구현됨 |
+| `analysis_smoke` 기반 smoke query | master 반영 완료 | master 의 Worker startup/backend check 경로에 구현됨 |
+| TensorRT backend 감지 (`tensorrt`) | master 반영 완료 | master 의 `KatagoBackendV1` 이 `tensorrt` 를 인식 |
+| `katagoSmokeOk` startup log 필드 | master 반영 완료 | master 의 worker startup log 에 구현됨 |
+| `katagoBackendConflict` startup log 필드 | master 반영 완료 | `version_then_smoke` backend 불일치 결과를 path 없이 기록 |
+| `KATAGO_REQUIRE_GPU_BACKEND` fail-fast 강화 | master 반영 완료 | `ok=false` 또는 GPU backend 미확인 시 startup fail-fast |
 | timeline-progress polling 404/429 client hardening (exponential backoff, 200 enabled:false) | 별도 브랜치 (`feature/timeline-progress-polling-hardening-v1` 등) | 현재 master 의 `client/src/pages/Home.tsx` polling 정책 기준으로만 사용 |
 | `KATAGO_WINRATE_TIMELINE_*` 일부 옵션 (예: 별도 hardening 옵션) | 머지 시점에 따라 다름 | 사용 전 master 코드의 `winrateTimelineConfig.ts` 와 일치 여부 확인 |
 | top_mistakes user-facing 결과 | 미구현 | 보고서 §1 |
@@ -393,7 +396,7 @@ UI 확인 항목:
 
 ## 12. Recommended First Tasks for Codex
 
-현재 master 기준으로 Codex 가 바로 진행할 수 있는 현실적인 작업 후보다. 이전 판본의 "persona pack 리뷰" 와 "workflow 보고서 / persona pack consistency check" 두 항목은 양쪽 브랜치 모두 master 머지 완료라 본 목록에서 제외했다. §11 표의 "별도 브랜치 기능 / 미구현 항목" 과 일관되게 유지한다.
+현재 master 기준으로 Codex 가 바로 진행할 수 있는 현실적인 작업 후보다. 이전 판본의 "persona pack 리뷰" 와 "workflow 보고서 / persona pack consistency check" 두 항목은 양쪽 브랜치 모두 master 머지 완료라 본 목록에서 제외했다. §11 표의 "master 반영 완료 기능 / 별도 브랜치 기능 / 미구현 항목" 과 일관되게 유지한다.
 
 1. **Dirty worktree 정리 계획** — Release Manager + Security/Privacy Guard
    - 메인 worktree 에 11개 modified (`server/**`, `package.json`, `tsconfig.json`, `docs/master-staging-smoke-v1.md`) + 7개 untracked root `codex-*-ko.md` 가 누적되어 있다.
@@ -402,11 +405,11 @@ UI 확인 항목:
    - 산출물: (a) modified 파일을 어느 feature branch 로 분리할지 합의, (b) root `codex-*-ko.md` 처리 정책 (`.gitignore` 또는 별도 보관 디렉토리), (c) stale worktree 정리 명령 목록.
    - 본 작업 자체는 어떤 코드도 수정하지 않는다.
 
-2. **GPU runtime integration branch 리뷰 / 병합** — KataGo Runtime Engineer + DevOps/Smoke + Release Manager
-   - 대상 브랜치 예: `feature/katago-gpu-runtime-integration-v1`.
-   - §11 표의 `KATAGO_BACKEND_CHECK_MODE` (`version` / `analysis_smoke` / `version_then_smoke`), `analysis_smoke` 기반 smoke query, TensorRT backend 감지 (`tensorrt`), `katagoSmokeOk` startup log 가 모두 master 미머지 항목이라는 전제로 진행한다.
-   - 산출물: §7 review template 한국어 보고서. 머지 가능 여부 + persona docs (`katago-runtime-engineer.md`, `devops-smoke-engineer.md`, `explanation-safety-engineer.md`, `release-manager.md`) 의 Required Context 갱신 필요 항목 정리.
-   - 머지 후에는 §11 표에서 해당 행을 "master 반영 완료" 로 옮기는 후속 sync commit 이 필요하다.
+2. **GPU runtime local smoke 확인** — KataGo Runtime Engineer + DevOps/Smoke + Release Manager
+   - 대상: master 에 반영 완료된 GPU runtime integration.
+   - §11 표의 `KATAGO_BACKEND_CHECK_MODE` (`version` / `analysis_smoke` / `version_then_smoke`), `analysis_smoke` 기반 smoke query, TensorRT backend 감지 (`tensorrt`), `katagoSmokeOk`, `katagoBackendConflict`, `KATAGO_REQUIRE_GPU_BACKEND` fail-fast 강화는 master 반영 완료 상태다.
+   - 산출물: local GPU 환경에서 realtime timeline smoke 실행 가능 여부와 안전한 env placeholder 목록.
+   - 실제 binary / config / model path, secret, SGF 원문은 보고서에 기록하지 않는다.
 
 3. **Timeline-progress polling hardening branch 상태 확인** — KataGo Runtime Engineer + UI/UX + QA/E2E
    - 대상 브랜치 예: `feature/timeline-progress-polling-hardening-v1` (404/429 client backoff, `200 enabled:false`, rate-limit 분리 등).
