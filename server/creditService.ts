@@ -163,6 +163,49 @@ export async function spendCreditForAnalysisJob(
   return { ok: true, balanceAfter: credits, ledgerId: logStr };
 }
 
+export type EnqueuePaidAnalysisJobResult =
+  | { ok: true; balanceAfter: number; ledgerId: string }
+  | { ok: false; code: "INSUFFICIENT_CREDITS" | "PROFILE_NOT_FOUND" | "JOB_ID_CONFLICT" | "INVALID_ARGUMENT" };
+
+export async function enqueuePaidAnalysisJob(args: {
+  user: AuthenticatedUser;
+  jobId: string;
+  fileName: string;
+  language: string;
+  sgfContent: string;
+  sgfSha256: string;
+  sgfSizeBytes: number;
+  isMock: boolean;
+  creditCost?: number;
+}): Promise<EnqueuePaidAnalysisJobResult> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.rpc("enqueue_paid_analysis_job", {
+    p_user_id: walletSubjectFromAuthUser(args.user),
+    p_analysis_job_id: args.jobId,
+    p_cost: args.creditCost ?? DEFAULT_ANALYSIS_COST,
+    p_file_name: args.fileName,
+    p_language: args.language,
+    p_sgf_content: args.sgfContent,
+    p_sgf_sha256: args.sgfSha256,
+    p_sgf_size_bytes: args.sgfSizeBytes,
+    p_is_mock: args.isMock,
+    p_data_retention_until: analysisDataRetentionUntil(readAnalysisDataRetentionDays()),
+  });
+  if (error) throw new Error(error.message);
+  const row = parseRpcJson(data);
+  const code = str(row?.code);
+  if (row?.ok !== true) {
+    if (code === "PROFILE_NOT_FOUND" || code === "JOB_ID_CONFLICT" || code === "INVALID_ARGUMENT") {
+      return { ok: false, code };
+    }
+    return { ok: false, code: "INSUFFICIENT_CREDITS" };
+  }
+  const credits = num(row?.credits);
+  const ledgerId = str(row?.log_id);
+  if (credits == null || !ledgerId) throw new Error("enqueue_paid_analysis_job: invalid success response");
+  return { ok: true, balanceAfter: credits, ledgerId };
+}
+
 export type RefundCreditForAnalysisResult =
   | { ok: true; duplicate: boolean }
   | { ok: false; duplicate?: boolean; errorCode: string; errorMessage?: string };

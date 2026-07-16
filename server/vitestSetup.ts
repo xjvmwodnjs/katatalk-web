@@ -280,6 +280,39 @@ vi.mock("./_core/supabaseAdmin", () => {
           error: null,
         };
       }
+      if (name === "enqueue_paid_analysis_job") {
+        const jobId = String(a.p_analysis_job_id ?? "");
+        if (jobId === "insufficient-job") {
+          return { data: { ok: false, code: "INSUFFICIENT_CREDITS" }, error: null };
+        }
+        vitestSeedAnalysisJob({
+          id: jobId,
+          user_id: a.p_user_id,
+          status: "queued",
+          file_name: a.p_file_name,
+          language: a.p_language,
+          credit_cost: a.p_cost,
+          credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+          is_mock: a.p_is_mock,
+          progress: 0,
+          sgf_content: a.p_sgf_content,
+          sgf_sha256: a.p_sgf_sha256,
+          sgf_size_bytes: a.p_sgf_size_bytes,
+          data_retention_until: a.p_data_retention_until,
+          result: null,
+          error_message: null,
+          completed_at: null,
+        });
+        return {
+          data: {
+            ok: true,
+            code: "OK",
+            credits: 1,
+            log_id: "00000000-0000-0000-0000-00000000aa01",
+          },
+          error: null,
+        };
+      }
       if (name === "refund_credit_for_analysis") {
         const jobId = a.p_analysis_job_id as string;
         if (jobId === "job-refund-rpc-error") {

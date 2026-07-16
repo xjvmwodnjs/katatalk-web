@@ -520,3 +520,10 @@ corepack pnpm credits:audit
 - Corrected the staging smoke readiness contract: `/readyz` intentionally returns `status: "ready"` on a healthy deployment, and `scripts/deploy-smoke.ts` now requires that value rather than the `/healthz` value `"ok"`.
 - Identified a P1 payment-integrity gap: the current analysis credit debit and queued-job insert are separate database operations. The current refund fallback is idempotent but a refund-RPC failure is not durably retried. Before paid release, replace this sequence with one security-definer transactional enqueue-and-debit RPC, add its migration and route tests, and deploy it only after its migration is present.
 - Deployment ordering is now explicitly release-blocking: apply and verify migrations `008 -> 009 -> 010` before the current retention-aware application code. The upcoming atomic enqueue RPC migration must be applied before Web/Worker rollout as well.
+
+### 2026-07-16: atomic paid-analysis enqueue
+
+- Added migration `011_atomic_enqueue_paid_analysis_job.sql`. Its security-definer RPC locks the customer profile, debits credits, creates the usage ledger row, and inserts the queued analysis job in one transaction; an insert failure rolls back the debit.
+- The normal `POST /api/analyze` path now uses this RPC by default. `KATATALK_ATOMIC_ENQUEUE=false` is an emergency-only legacy rollback switch and must not be used for normal deployments.
+- Verified the change with credit RPC, DB-backed analysis route, and billing webhook tests: `3` files and `47` tests passed, followed by a successful TypeScript check.
+- Migration `011` is now a hard prerequisite for deploying this Web code. Apply `008 -> 009 -> 010 -> 011`, verify the function exists with service-role-only execute access, then deploy Web and Worker.

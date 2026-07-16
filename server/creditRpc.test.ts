@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ensureProfileForClerkUser, spendCreditForAnalysisJob } from "./creditService";
+import { enqueuePaidAnalysisJob, ensureProfileForClerkUser, spendCreditForAnalysisJob } from "./creditService";
 import type { AuthenticatedUser } from "./_core/sdk";
 
 const sampleUser = {
@@ -33,5 +33,19 @@ describe("Supabase-backed credit RPC (mocked client)", () => {
     const r = await spendCreditForAnalysisJob(sampleUser, "insufficient-job", 1);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("INSUFFICIENT_CREDITS");
+  });
+
+  it("enqueuePaidAnalysisJob returns one atomic enqueue-and-debit result", async () => {
+    const r = await enqueuePaidAnalysisJob({
+      user: sampleUser,
+      jobId: `atomic-job-${Date.now()}`,
+      fileName: "game.sgf",
+      language: "ko",
+      sgfContent: "(;FF[4]GM[1]SZ[19])",
+      sgfSha256: "a".repeat(64),
+      sgfSizeBytes: 22,
+      isMock: false,
+    });
+    expect(r).toMatchObject({ ok: true, balanceAfter: 1 });
   });
 });

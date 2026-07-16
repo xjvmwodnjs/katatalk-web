@@ -40,6 +40,7 @@ import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
 import type { AnalysisJobDbRow } from "./creditService";
 import {
   ensureWalletWithSignupBonus,
+  enqueuePaidAnalysisJob,
   getAnalysisJobRow,
   insertAnalysisJobQueued,
   purgeFinalAnalysisJobData,
@@ -385,6 +386,58 @@ analyzeRouter.post(
       const fileName = file.originalname.trim() || "uploaded.sgf";
 
       const jobId = nanoid();
+      if (process.env.KATATALK_ATOMIC_ENQUEUE !== "false") {
+        const sgfSha256 = sha256HexUtf8(sgfContent);
+        const sgfSizeBytes = utf8ByteLength(sgfContent);
+        const enqueueIsMock = shouldEnqueueAnalysisJobAsMock();
+        let enqueue: Awaited<ReturnType<typeof enqueuePaidAnalysisJob>>;
+        try {
+          enqueue = await enqueuePaidAnalysisJob({
+            user,
+            jobId,
+            fileName,
+            language,
+            sgfContent,
+            sgfSha256,
+            sgfSizeBytes,
+            isMock: enqueueIsMock,
+          });
+        } catch (e) {
+          console.error("[analyze] enqueuePaidAnalysisJob", e);
+          res.status(503).json({ success: false, code: "CREDITS_UNAVAILABLE", message: "Unable to create analysis job." });
+          return;
+        }
+        if (!enqueue.ok) {
+          res.status(enqueue.code === "INSUFFICIENT_CREDITS" ? 402 : 409).json({
+            success: false,
+            code: enqueue.code,
+            message: "Unable to create analysis job.",
+          });
+          return;
+        }
+        logAnalysisEngineSnapshot({
+          phase: "enqueue",
+          jobId,
+          rowIsMock: enqueueIsMock,
+          selectedPipeline: enqueueIsMock ? "mock" : "katago",
+        });
+        if (getAnalysisWorkerMode() === "inline" && isMockAnalysisAllowed()) {
+          analysisJobStore.createAndEnqueueMock({
+            jobId,
+            payload: { fileName, language },
+            onJobFailed: () => { void refundCreditIfJobFailed(user, jobId, 1); },
+          });
+        }
+        const body: AnalysisJobCreateResponse = {
+          success: true,
+          jobId,
+          status: "queued",
+          creditBalance: enqueue.balanceAfter,
+          remainingCredits: enqueue.balanceAfter,
+        };
+        res.status(202).json(body);
+        return;
+      }
       const profileId = walletSubjectFromAuthUser(user);
 
       let spend: Awaited<ReturnType<typeof spendCreditForAnalysisJob>>;
