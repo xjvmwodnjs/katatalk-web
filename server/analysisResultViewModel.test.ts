@@ -296,6 +296,30 @@ describe("buildAnalysisResultViewModel", () => {
     expect(pv?.pv.length).toBeGreaterThan(0);
   });
 
+  it("surfaces KataGo quality gate warnings in the result header warnings", () => {
+    const vm = buildAnalysisResultViewModel(baseKatagoResult({
+      qualityGate: {
+        ok: true,
+        failureCount: 0,
+        warningCount: 2,
+        issues: [
+          { severity: "warn", code: "NO_BSI_SIGNALS", message: "No BSI signals were found." },
+          { severity: "warn", code: "NO_ADI_SIGNALS", message: "No ADI signals were found." },
+        ],
+      },
+    }));
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.warnings).toEqual(
+      expect.arrayContaining([
+        { code: "katago_quality_warning", params: { qualityCode: "NO_BSI_SIGNALS" } },
+        { code: "katago_quality_warning", params: { qualityCode: "NO_ADI_SIGNALS" } },
+      ])
+    );
+  });
+
   it("builds deterministic productReviewV1 with game result, decisive move, review moves, and explanation plans", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult());
     expect(vm.kind).toBe("katago-worker-v1");

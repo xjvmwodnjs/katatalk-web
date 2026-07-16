@@ -1,6 +1,8 @@
 # KataTalk
 
-React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(한국) + Lemon Squeezy(해외) 결제 추상화**가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 타이머 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작할 수 있습니다. **LLM·자연어 해설·패착 단정·Deep Search 실행·top_mistakes/Concept Tagger/Q&A 는 포함하지 않습니다.** **Stripe는 사용하지 않습니다** (한국 사업자 정산·온보딩 리스크, 국내 UX에 Toss가 적합하고 해외는 Lemon Squeezy로 분리).
+React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
+
+2026-07-14 기준 공개 유료 베타 상용화 readiness는 **76%** 입니다. 현재 출시 판정, 검증 근거와 다음 작업은 [`docs/commercialization-review.md`](docs/commercialization-review.md)를 단일 기준으로 사용합니다.
 
 ## 알고리즘 기준 문서
 
@@ -15,6 +17,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 `analysisPlan.candidateTurns` 중 상위 `KATAGO_MULTI_TURN_MAX` 개(기본 6, `final_position` 우선)에 대해 **해당 수를 두기 직전 국면**을 추가로 분석한다.
 
 - **Batch mode(기본, `KATAGO_MULTI_TURN_BATCH≠0`)**: KataGo `analysis` 가 **stdin에 JSON 여러 줄**을 받고 **stdout JSONL에 요청과 동일한 `id` 필드**를 돌려준다는 전제다. **배포 전 반드시 로컬 KataGo 버전으로 smoke** 해서 이 전제를 확인할 것.
+- **Persistent mode(운영 권장, opt-in)**: `KATAGO_PERSISTENT_ROOT_ENABLED=true`와 `KATAGO_PERSISTENT_MULTI_TURN_ENABLED=true`를 함께 설정하면 root와 multi-turn이 같은 KataGo process/model을 사용한다. `KATAGO_PERSISTENT_MULTI_TURN_STRICT=true`이면 persistent query 실패 시 별도 process fallback을 금지해 메모리 급증을 막는다. 실제 경로는 `multiTurnAnalysis.executionMode`와 persistent/fallback count에 기록된다.
 - **순차 모드(`KATAGO_MULTI_TURN_BATCH=0`)**: 디버그·호환용. 기본은 **`id` 없으면 해당 턴 failed**. `KATAGO_MULTI_TURN_ALLOW_IDLESS_SEQUENTIAL_FALLBACK=true` 일 때만 `pickPrimaryAnalysisObject` 폴백을 허용하며, 성공 시 해당 턴에 `fallbackUsed: true`.
 - **`KATAGO_MULTI_TURN_MAX` / `multiTurnAnalysis.maxTurnsRequested`**: **분석 시도 상한**이지 `completedCount` 와 같지 않다. `attemptedCount`·`completedCount`·`failedCount`·`allFailed`·`partialFailure` 를 함께 본다.
 - **Primary `KATAGO_MAX_VISITS`** 와 **`KATAGO_MULTI_TURN_MAX_VISITS`** 는 서로 다를 수 있다(최종 국면 1회 vs multi 쿼리).
@@ -25,7 +28,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 `server/bsiV1.ts`·`shared/bsiV1.ts`. **디버그·내부 signal** — `top_mistakes`·자연어 해설·UI 패착 라벨에 쓰지 말 것. `turnAnalyses[].moveSummary`·`comparisonReady`만 사용(추가 KataGo 없음).
 
-- **KataGo `scoreLead` / `scoreMean` / `winrate` 관점**은 엔진·버전별로 다를 수 있으므로, 운영 전 **실제 샘플 JSON으로 perspective 검증** 후 `scorePerspective` / `winratePerspective` 값을 좁힐 것(현재 기본은 `katago_output` 또는 `unknown`).
+- **KataGo `scoreLead` / `scoreMean` 관점**은 아직 provisional이므로 실제 corpus에서 별도 검증해야 한다. **winrate 관점**은 analysis config의 `reportAnalysisWinratesAs`를 Worker가 검증해 결과에 기록하며, 확인되지 않은 legacy 결과는 `katago_output` 또는 `unknown`으로 유지한다.
 - **`scoreBestMinusPlayed`**: best·played 가 **같은 score 축**(둘 다 `scoreLead` 또는 둘 다 `scoreMean`)일 때만 계산; **lead/mean 혼합 시 생략**(`scoreMetricUsed: "none"`, `components.scoreMetricMixed`). **`winrateBestMinusPlayed`** 는 양쪽 winrate 가 있으면 혼합 score 여부와 무관하게 계산 가능. 하위 호환 `scoreDelta`/`winrateDelta`는 동일 정책( mixed 시 score 쪽 생략).
 - **`bsiScore`**: visits 가중과 지수 포화로 **0~100** 사용 가능; `bsiRaw`·`components.zComposite` 등 원시·블렌드 입력은 ADI·LES 전 단계용.
 - **`severity` / `bsiBand`**: 내부 numerical band 별칭일 뿐 사용자 패착 판정이 아님.
@@ -57,11 +60,11 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 ### 분석 결과 ViewModel v1 (`analysis-result-viewmodel-v1`)
 
-프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`(각 점에 **`shared/winratePerspectiveV1.ts`** 정규화: `katago_output_only`/`unverified`, 흑백 승률은 아직 null)·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`(코드 배열: UI 에서 `analysisResultI18n` 으로 번역) 로 바꾸고, mock 레거시 JSON 은 **`kind: "mock-legacy"`** 로 분리한다. 승률 차트는 **KataGo 출력 관점**만 표시하며 흑/백 토글 UI는 비활성. **raw winrate (hardening):** `typeof raw === "number"` 이고 `Number.isFinite` 일 때만 유효; 문자열·boolean·NaN·Infinity 는 `unverified`. 차트 축 라벨은 `displayLabelKey` → `translateWinrateDisplayLabelKey`. **`verified` 승격은 v1 에서 생성하지 않음** — 조건은 `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1`·샘플 검증 체크리스트는 **`docs/winrate-axis-verification.md`** (차트는 `moveSummary.played.winrate` 사용). 흑/백 변환 공식 후보는 코드 미적용(`WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1`). **LLM·top_mistakes 생성은 ViewModel 에 포함하지 않는다.**
+프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`로 바꾸고, mock 레거시 JSON은 **`kind: "mock-legacy"`** 로 분리한다. `shared/winratePerspectiveV1.ts`는 결과에 기록된 `BLACK`/`WHITE`/`SIDETOMOVE` 관점과 명시적 current player 근거로 흑·백 승률을 생성한다. metadata가 없으면 추측하지 않고 `katago_output_only` 또는 `unverified`로 유지한다. raw는 유한한 number만 허용한다. 세부 계약과 실엔진 검증은 [`docs/winrate-axis-verification.md`](docs/winrate-axis-verification.md)에 있다. **LLM·top_mistakes 생성은 ViewModel에 포함하지 않는다.**
 
 **`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). 클라이언트는 완료 **`GET /api/analyze/:jobId` 의 `data.sgf_content`**(DB에서 병합) 또는 **`result` JSON 안의 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI:** `BadukBoardView` v1 — `sgfPlayback` 스냅샷·후보 ghost(참고 후보수/PV) 표시, **보기 전용**(착수·변화도 탐색 없음). **수순 탐색:** `BoardTurnNavigation` v1 — 처음/이전/다음/끝·슬라이더로 `selectedTurnIndex`(0…`totalMoves`)만 변경; `sgf_content` 활성 시에만 표시. **키보드:** ←/→·Home/End(보기 전용, 입력·버튼·슬라이더 focus 시 미동작).
 
-**결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `AnalysisVariationPreview` / `BadukBoardView` 가 ViewModel 을 바인딩한다(승률 SVG·참고도 PV·**SVG 바둑판**·수순 탐색). `sgf_content` 없으면 바둑판·탐색 UI는 placeholder 안내만. 흑백 승률 토글·착수·변화도 탐색은 미포함. **문구 i18n** 은 `shared/analysisResultI18n.ts` 에서 `ko`/`en`/`ja`/`zh` 를 제공하고, Home 등에서 쓰는 기존 `lang`(`Language`)을 그대로 넘긴다.
+**결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `BadukBoardView` 가 ViewModel을 바인딩한다(승률 SVG·참고도 PV·**SVG 바둑판**·수순 탐색). 검증된 결과는 흑 승률 기본의 흑/백 segmented control을 제공하고 legacy 결과는 비활성 안전 안내를 표시한다. `sgf_content` 없으면 바둑판·탐색 UI는 placeholder 안내만이며, 착수·변화도 탐색은 미포함이다. **문구 i18n**은 `shared/analysisResultI18n.ts`에서 `ko`/`en`/`ja`/`zh`를 제공한다.
 
 ## 로컬 실행
 
@@ -97,12 +100,12 @@ pnpm start
 
 플랫폼이 **의존성 설치를 자동**으로 하는 경우:
 
-- **Build Command:** `corepack pnpm build`  
+- **Build Command:** `corepack pnpm build`
 - **Start Command:** `corepack pnpm start`
 
 설치까지 한 줄로 묶고 싶거나, CI와 동일하게 맞추려면:
 
-- **Build Command:** `corepack pnpm install --frozen-lockfile && corepack pnpm build`  
+- **Build Command:** `corepack pnpm install --frozen-lockfile && corepack pnpm build`
 - **Start Command:** `corepack pnpm start`
 
 Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.json` 이 있는 디렉터리)로 두세요.
@@ -111,10 +114,10 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 앱은 **장시간 실행되는 Express 프로세스**(`pnpm start`) 한 개에서 정적 파일·REST API·**raw body 웹훅**을 함께 제공하는 구조를 기준으로 합니다.
 
-| 우선순위 | 플랫폼 |
-|---------|--------|
-| 1순위 | **Railway** (Node Web Service) |
-| 2순위 | **Render** (Web Service) |
+| 우선순위  | 플랫폼                                       |
+| --------- | -------------------------------------------- |
+| 1순위     | **Railway** (Node Web Service)               |
+| 2순위     | **Render** (Web Service)                     |
 | 추후 검토 | **Fly.io**, **일반 VPS** (Docker/systemd 등) |
 
 #### Vercel — 현재 미사용·보류
@@ -135,7 +138,7 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 #### PORT 와 APP_BASE_URL (Railway / Render)
 
-- **PORT:** Railway·Render 는 런타임에 **`PORT`** 환경 변수로 수신 포트를 지정합니다. **플랫폼이 넣어 주는 값을 그대로 쓰고**, 대시보드에서 임의로 **고정 포트에 맞춰 listen 하도록 덮어쓰지 마세요.** Production 에서는 **자동으로 다른 빈 포트로 바꿔 listen 하지 않으며**, 지정 포트 listen 에 실패하면 **프로세스가 종료**됩니다.  
+- **PORT:** Railway·Render 는 런타임에 **`PORT`** 환경 변수로 수신 포트를 지정합니다. **플랫폼이 넣어 주는 값을 그대로 쓰고**, 대시보드에서 임의로 **고정 포트에 맞춰 listen 하도록 덮어쓰지 마세요.** Production 에서는 **자동으로 다른 빈 포트로 바꿔 listen 하지 않으며**, 지정 포트 listen 에 실패하면 **프로세스가 종료**됩니다.
 - **APP_BASE_URL:** 반드시 브라우저·웹훅이 실제로 접속하는 **공개 HTTPS 도메인**(예: `https://your-app.up.railway.app`)을 넣습니다. **`PORT` 나 `http://localhost:…` 를 APP_BASE_URL 로 쓰지 마세요.** (Checkout·리다이렉트·Clerk·Lemon 설정과 불일치합니다.)
 
 **Lemon Squeezy 웹훅**은 반드시 **공개 HTTPS** URL이어야 합니다. 예시:
@@ -152,9 +155,9 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 로컬에서 결제·리다이렉트·웹훅이 꼬이지 않으려면 **실제 listen 포트**와 **`APP_BASE_URL`** 포트가 **반드시 일치**해야 합니다(`pnpm dev` 가 선호 포트가 아닐 때 자동으로 다음 포트를 쓰는 경우 포함).
 
-1. **`PORT=3000`**(또는 사용 중인 포트)로 서버를 띄운 뒤, **`.env` 의 `APP_BASE_URL`** 을 동일 포트로 맞춥니다. 예: `APP_BASE_URL=http://localhost:3000`  
-2. **ngrok** 예: `ngrok http 3000` — 터널이 앞단에서 받는 포트와 위 포트가 같아야 합니다.  
-3. Lemon Dashboard 웹훅 URL: `https://<ngrok-host>/api/billing/webhook/lemonsqueezy`  
+1. **`PORT=3000`**(또는 사용 중인 포트)로 서버를 띄운 뒤, **`.env` 의 `APP_BASE_URL`** 을 동일 포트로 맞춥니다. 예: `APP_BASE_URL=http://localhost:3000`
+2. **ngrok** 예: `ngrok http 3000` — 터널이 앞단에서 받는 포트와 위 포트가 같아야 합니다.
+3. Lemon Dashboard 웹훅 URL: `https://<ngrok-host>/api/billing/webhook/lemonsqueezy`
 4. 포트 불일치 시 `POST /api/billing/create-checkout` 는 **`APP_BASE_URL_PORT_MISMATCH`**(503)로 막을 수 있습니다.
 
 ### Lemon `order_created` idempotency·fixture
@@ -190,10 +193,10 @@ Railway **Web** 와 **Worker** 는 별도 서비스로 두는 것을 전제로 �
 
 내부·스테이징에서 **가짜 분석 end-to-end**(업로드·큐·완료 UI)를 검증할 때. **공개 유료 서비스에 그대로 두지 말 것.**
 
-| 서비스 | 변수 |
-|--------|------|
-| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
-| **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
+| 서비스     | 변수                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| **Web**    | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true` |
+| **Worker** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=true`                                  |
 
 Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next_analysis_job` RPC(004 초기 + 007 lease/stale)** 적용 필수. **007은 stale 재claim·시도 상한을 제공하고**, 앱 측에서는 **`locked_by` + `attempt_count` + `status=running` 조건의 lease-aware DB 갱신**으로 stale 이후 **이전 worker 가 completed/failed 를 덮어쓰지 못하게**(lease fencing) 한다. **장기 실행**에서는 **`heartbeatAnalysisJobLease`** 및 running **`progress` 갱신 시 `locked_at` 연장** + KataGo 구간 **`ANALYSIS_WORKER_HEARTBEAT_SECONDS`(기본 60초)** 주기 갱신으로 정상 처리 중 running 을 stale 로 오인하는 빈도를 줄인다. **heartbeat RPC 예외·`LEASE_LOST`** 는 분석 실패로 보지 않고 **`completed`/환불을 생략**하며 job 은 **running** 으로 두어 stale 재처리에 맡긴다.
 
@@ -201,9 +204,9 @@ Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next
 
 **로그인·결제·크레딧·SGF 업로드** 등은 테스트하되, **가짜 분석 결과를 공개 유저에게 노출하지 않을** 때.
 
-| 서비스 | 변수 |
-|--------|------|
-| **Web** | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** (`ANALYSIS_WORKER_MODE` 는 `external` 권장 — worker 없으면 queued 만 쌓임) |
+| 서비스     | 변수                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Web**    | `ANALYSIS_ENGINE=mock`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** (`ANALYSIS_WORKER_MODE` 는 `external` 권장 — worker 없으면 queued 만 쌓임)            |
 | **Worker** | 동일하게 `ANALYSIS_ENGINE=mock` + `KATATALK_ALLOW_MOCK_ANALYSIS=false`/미설정 이면 production 에서 **queued job 을 claim 하지 않음**(기존 README「Worker」절 참고) |
 
 이때 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 로 막힙니다.
@@ -212,12 +215,12 @@ Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next
 
 GPU 서버(또는 전용 워커 호스트) 구독 후, **KataGo binary/model/config 를 Worker 측에만** 배치합니다. **Web Service Variables 에 `KATAGO_*` 를 넣을 필요 없습니다.**
 
-| 서비스 | 변수 |
-|--------|------|
-| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정** |
-| **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, production 공통(Clerk·`APP_BASE_URL` 등은 호스트 정책에 맞게) |
+| 서비스         | 변수                                                                                                                                                                                                                                                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web**        | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정**                                                                                                                                                                                                                              |
+| **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, production 공통 |
 
-Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 `analysis_jobs` 를 가져와 **KataGo `analysis` 1회** 실행 후 `result.source=katago-worker-v1` 형태로 저장합니다. **stale running** 은 `ANALYSIS_CLAIM_STALE_SECONDS`(기본 900) 경과 후 재claim 됩니다.
+Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 `analysis_jobs` 를 가져와 `result.source=katago-worker-v1` 형태로 저장합니다. **stale running** 은 `ANALYSIS_CLAIM_STALE_SECONDS`(기본 900) 경과 후 재claim 됩니다. 기본은 작업 1개씩 처리하며, `ANALYSIS_WORKER_CONCURRENCY=2..4`에서는 한 KataGo process/model을 공유하는 bounded 실행을 사용한다. 이 모드는 persistent root/multi-turn enabled+strict, job별 multi-turn concurrency `1`, Deep Search/timeline OFF 조합이 아니면 시작 단계에서 실패한다.
 
 ### Railway / Render — Production 환경 변수 체크리스트
 
@@ -225,48 +228,50 @@ Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 
 
 **필수 (production)**
 
-| 변수 | 비고 |
-|------|------|
-| `NODE_ENV` | `production` |
-| `AUTH_PROVIDER` | `clerk` |
-| `VITE_AUTH_PROVIDER` | `clerk` (Vite 클라이언트 번들에 포함) |
-| `VITE_CLERK_PUBLISHABLE_KEY` | 브라우저에 노출되는 Clerk Publishable key |
-| `CLERK_SECRET_KEY` | **서버 전용** — 번들·Git·로그에 넣지 않음 |
-| `JWT_SECRET` | **서버 전용** |
-| `SUPABASE_URL` | Supabase 프로젝트 URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | **서버 전용** — `VITE_` 접두사 금지, 클라이언트 비노출 |
-| `LEMONSQUEEZY_API_KEY` | **서버 전용** |
-| `LEMONSQUEEZY_STORE_ID` | |
-| `LEMONSQUEEZY_WEBHOOK_SECRET` | **서버 전용** — Lemon 대시보드 Webhook Signing secret 과 일치 |
-| `LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID` | |
-| `LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID` | |
-| `LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID` | |
-| `APP_BASE_URL` | **공개 HTTPS 도메인** (예: `https://<배포도메인>`). 포트 번호나 localhost 가 아님 |
+| 변수                                           | 비고                                                                              |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `NODE_ENV`                                     | `production`                                                                      |
+| `AUTH_PROVIDER`                                | `clerk`                                                                           |
+| `VITE_AUTH_PROVIDER`                           | `clerk` (Vite 클라이언트 번들에 포함)                                             |
+| `VITE_CLERK_PUBLISHABLE_KEY`                   | 브라우저에 노출되는 Clerk Publishable key                                         |
+| `CLERK_SECRET_KEY`                             | **서버 전용** — 번들·Git·로그에 넣지 않음                                         |
+| `JWT_SECRET`                                   | **서버 전용**                                                                     |
+| `SUPABASE_URL`                                 | Supabase 프로젝트 URL                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY`                    | **서버 전용** — `VITE_` 접두사 금지, 클라이언트 비노출                            |
+| `LEMONSQUEEZY_API_KEY`                         | **서버 전용**                                                                     |
+| `LEMONSQUEEZY_STORE_ID`                        |                                                                                   |
+| `LEMONSQUEEZY_WEBHOOK_SECRET`                  | **서버 전용** — Lemon 대시보드 Webhook Signing secret 과 일치                     |
+| `LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID`  |                                                                                   |
+| `LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID` |                                                                                   |
+| `LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID`      |                                                                                   |
+| `APP_BASE_URL`                                 | **공개 HTTPS 도메인** (예: `https://<배포도메인>`). 포트 번호나 localhost 가 아님 |
 
 **선택**
 
-| 변수 | 비고 |
-|------|------|
-| `KATATALK_ALLOW_MOCK_ANALYSIS` | `true` 일 때만 production 에서 mock 분석 API·**worker mock 처리** 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
-| `ANALYSIS_WORKER_MODE` | `inline`(Express 내 타이머) / `external`(별도 worker). **production 기본값은 `external`**(미설정 시). Web 만 띄우고 worker 가 없으면 job 은 **queued** 에 남습니다. |
-| `ANALYSIS_ENGINE` | `mock`(기본) / `katago`. **실 KataGo 실행은 Worker 프로세스에서만** (`pnpm worker:analysis`). Web 에 `KATAGO_*` 가 없어도 됩니다. |
-| `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` | Worker(또는 로컬 smoke)에서만 필요. **binary·모델·cfg 는 Git 에 올리지 않음.** |
-| `KATAGO_MAX_VISITS` / `KATAGO_ANALYSIS_TIMEOUT_MS` | 선택. 기본 `200` / `120000`. worker timeout 시 **SIGTERM → 5s 후 SIGKILL** 시도. |
+| 변수                                                              | 비고                                                                                                                                                                  |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KATATALK_ALLOW_MOCK_ANALYSIS`                                    | `true` 일 때만 production 에서 mock 분석 API·**worker mock 처리** 허용. **내부 베타·스테이징** 에서만 사용. **공개 유료 production** 에서는 `false` 또는 미설정 권장. |
+| `ANALYSIS_WORKER_MODE`                                            | `inline`(Express 내 타이머) / `external`(별도 worker). **production 기본값은 `external`**(미설정 시). Web 만 띄우고 worker 가 없으면 job 은 **queued** 에 남습니다.   |
+| `ANALYSIS_ENGINE`                                                 | `mock`(기본) / `katago`. **실 KataGo 실행은 Worker 프로세스에서만** (`pnpm worker:analysis`). Web 에 `KATAGO_*` 가 없어도 됩니다.                                     |
+| `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` | Worker(또는 로컬 smoke)에서만 필요. **binary·모델·cfg 는 Git 에 올리지 않음.**                                                                                        |
+| `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`                     | 선택하되 운영에서는 설정 권장. `BLACK`/`WHITE`/`SIDETOMOVE`; 실제 cfg와 다르면 Worker 시작 실패.                                                                      |
+| `KATAGO_MAX_VISITS` / `KATAGO_ANALYSIS_TIMEOUT_MS`                | 선택. 기본 `200` / `120000`. worker timeout 시 **SIGTERM → 5s 후 SIGKILL** 시도.                                                                                      |
+| `ANALYSIS_WORKER_CONCURRENCY`                                     | 선택. 기본 `1`, 최대 `4`. `2..4`는 strict 공유 세션 안전 프로필과 대상 호스트 C4 SLO 검증 후 사용.                                                                    |
 
 `PORT` 는 Railway/Render 가 주입합니다. **대시보드에서 임의 고정할 필요 없음**(플랫폼 기본값 사용).
 
 ### Railway 배포 절차 (요약)
 
-1. [Railway](https://railway.app/) 에서 **New Project** → **Deploy from GitHub repo** 로 이 저장소 연결  
-2. **Node** 기반 **Web Service** (또는 동등한 서비스) 추가 — **Root** 는 저장소 루트  
-3. **Build Command** / **Start Command** 에 상단 **「Railway / Render — Build Command · Start Command」** 절의 `corepack pnpm …` 명령을 입력  
-4. **Variables** 에 상단 **「Railway / Render — Production 환경 변수 체크리스트」** 의 필수 항목 등록  
-5. 배포가 끝나면 Railway 가 준 **HTTPS 도메인**(예: `*.up.railway.app`)으로 서비스가 열리는지 확인  
-6. **`APP_BASE_URL`** 을 그 **공개 HTTPS URL** 로 설정한 뒤 **재배포**  
+1. [Railway](https://railway.app/) 에서 **New Project** → **Deploy from GitHub repo** 로 이 저장소 연결
+2. **Node** 기반 **Web Service** (또는 동등한 서비스) 추가 — **Root** 는 저장소 루트
+3. **Build Command** / **Start Command** 에 상단 **「Railway / Render — Build Command · Start Command」** 절의 `corepack pnpm …` 명령을 입력
+4. **Variables** 에 상단 **「Railway / Render — Production 환경 변수 체크리스트」** 의 필수 항목 등록
+5. 배포가 끝나면 Railway 가 준 **HTTPS 도메인**(예: `*.up.railway.app`)으로 서비스가 열리는지 확인
+6. **`APP_BASE_URL`** 을 그 **공개 HTTPS URL** 로 설정한 뒤 **재배포**
 7. **Lemon Squeezy** 대시보드 Webhook URL 을 다음으로 변경:  
-   `https://<railway-도메인>/api/billing/webhook/lemonsqueezy`  
-8. **Clerk** Dashboard 의 **Allowed origins / redirect URLs** 에 production 도메인 추가  
-9. 아래 **「배포 후 스모크 테스트」** 절 수행  
+   `https://<railway-도메인>/api/billing/webhook/lemonsqueezy`
+8. **Clerk** Dashboard 의 **Allowed origins / redirect URLs** 에 production 도메인 추가
+9. 아래 **「배포 후 스모크 테스트」** 절 수행
 
 #### Railway — 분석 Worker 를 Web 과 분리할 때
 
@@ -274,15 +279,16 @@ Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 
 
 동일 저장소에서 **Web Service** 와 **Worker Service** 두 개를 두는 방식을 권장합니다. **Build Command** 는 동일하게 `corepack pnpm build` (또는 install 포함 한 줄)로 두고, **Start Command** 만 다르게 합니다.
 
-| 서비스 | 역할 | Start Command |
-|--------|------|----------------|
-| **Web** | HTTP·정적·Clerk·Lemon webhook | `corepack pnpm start` |
+| 서비스     | 역할                                                                                                                                       | Start Command                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| **Web**    | HTTP·정적·Clerk·Lemon webhook                                                                                                              | `corepack pnpm start`           |
 | **Worker** | `claim_next_analysis_job` 로 queued·**stale running** 을 가져와 **`ANALYSIS_ENGINE`** 에 따라 mock 완료 또는 **KataGo v1** 분석 후 DB 갱신 | `corepack pnpm worker:analysis` |
 
-**Worker 전용 — `ANALYSIS_ENGINE=katago` (v1)**  
-- **Worker Service** Variables 예: `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`. **Web Service**에는 이 `KATAGO_*` 가 **없어도 됩니다**(KataGo는 worker에서만 실행).  
-- **Railway 일반 CPU**에서는 분석이 **느릴 수 있습니다.** 상용 고성능은 **GPU worker**(RunPod / Fly GPU / GPU VPS 등) 후보를 검토하세요.  
-- **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다.  
+**Worker 전용 — `ANALYSIS_ENGINE=katago` (v1)**
+
+- **Worker Service** Variables 예: `ANALYSIS_ENGINE=katago`, `ANALYSIS_WORKER_CONCURRENCY=1`, `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, persistent root/multi-turn enabled+strict, `KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=1`. **Web Service**에는 이 `KATAGO_*` 가 **없어도 됩니다**(KataGo는 worker에서만 실행).
+- **Railway 일반 CPU**에서는 분석이 **느릴 수 있습니다.** 상용 고성능은 **GPU worker**(RunPod / Fly GPU / GPU VPS 등) 후보를 검토하세요.
+- **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다. cfg의 `reportAnalysisWinratesAs`는 정확히 하나여야 하며 운영에서는 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정합니다.
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
 두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004`+`007` 의 `claim_next_analysis_job` RPC 및 `006` SECURITY DEFINER RPC 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(`006` 미적용 시 anon 등에 EXECUTE 가 남을 수 있음 — README「SECURITY DEFINER RPC 권한 검증」).
@@ -291,29 +297,57 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 ### Render 배포 절차 (요약)
 
-1. Render 대시보드에서 **New** → **Web Service**  
-2. **GitHub** 저장소 연결  
-3. **Runtime:** Node  
-4. **Build Command** / **Start Command** 는 위와 동일하게 `corepack pnpm build` · `corepack pnpm start` (또는 install 포함 한 줄)  
-5. **Environment** 에 동일한 production 변수 등록  
-6. **`APP_BASE_URL`** 을 Render 가 발급한 **HTTPS URL** 로 설정  
-7. Lemon Webhook: `https://<render-도메인>/api/billing/webhook/lemonsqueezy`  
-8. Clerk production URL 허용 목록에 Render 도메인 추가  
-9. **주의:** Render **무료·저가 티어**는 유휴 시 **슬립** 될 수 있어, 첫 요청 지연·웹훅 수신 타이밍·UX 에 영향을 줄 수 있습니다. 결제 웹훅·상시 응답이 중요하면 **유료·상시 구동 플랜** 검토  
+1. Render 대시보드에서 **New** → **Web Service**
+2. **GitHub** 저장소 연결
+3. **Runtime:** Node
+4. **Build Command** / **Start Command** 는 위와 동일하게 `corepack pnpm build` · `corepack pnpm start` (또는 install 포함 한 줄)
+5. **Environment** 에 동일한 production 변수 등록
+6. **`APP_BASE_URL`** 을 Render 가 발급한 **HTTPS URL** 로 설정
+7. Lemon Webhook: `https://<render-도메인>/api/billing/webhook/lemonsqueezy`
+8. Clerk production URL 허용 목록에 Render 도메인 추가
+9. **주의:** Render **무료·저가 티어**는 유휴 시 **슬립** 될 수 있어, 첫 요청 지연·웹훅 수신 타이밍·UX 에 영향을 줄 수 있습니다. 결제 웹훅·상시 응답이 중요하면 **유료·상시 구동 플랜** 검토
 
 ### 배포 후 스모크 테스트
 
-별도 **healthcheck API** 는 두지 않습니다. 아래를 **수동**으로 확인합니다.
+배포 후 먼저 자동 smoke를 실행합니다. 기본 smoke는 live 결제나 분석 job을 생성하지 않고 `/healthz`, `/readyz`, 익명 크레딧 조회 차단, 익명 checkout 생성 차단, 익명 분석 결과 조회 차단만 확인합니다.
+
+```bash
+corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
+```
+
+staging 전용 계정의 인증 토큰이 있을 때는 잔액 조회까지 확인할 수 있습니다. 이 단계도 checkout은 만들지 않습니다.
+
+```bash
+SMOKE_AUTH_TOKEN=<redacted> corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
+```
+
+Lemon checkout URL 생성까지 확인해야 할 때만, staging 전용 계정과 별도 승인 하에서 아래 옵션을 사용합니다. 카드 결제 완료와 webhook grant 검증은 별도 수동 절차로 분리합니다.
+
+```bash
+SMOKE_AUTH_TOKEN=<redacted> SMOKE_CREATE_CHECKOUT=true corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
+```
+
+결제·분석 smoke 이후에는 service-role 환경에서 크레딧 원장 감사를 실행합니다. 이 명령은 외부 HTTP API가 아니라 운영자 CLI이며, `profiles.credits`와 `credit_logs` 합계, payment 중복 지급, failed job 환불 누락, usage/refund 로그의 job 연결 오류를 점검합니다.
+
+```bash
+corepack pnpm credits:audit
+```
+
+대량 데이터에서는 기본 최대 50,000행까지 페이지 단위로 읽습니다. 필요하면 한도를 조정합니다.
+
+```bash
+corepack pnpm credits:audit -- --limit=100000
+```
 
 **최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase 006/007 운영 DB 적용 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
 
 1. 브라우저에서 **GET /** — 정적 홈이 로드되는지
-2. **Clerk 로그인** — 세션 후 홈 복귀  
-3. 인증된 상태로 **GET `/api/credits/me`** — 200 및 잔액 JSON  
-4. **`/pricing`** 페이지 로드  
-5. 앱에서 **Lemon checkout** 생성 후 테스트 결제(또는 스테이징 정책에 맞는 흐름)  
-6. Lemon 웹훅 처리 로그·응답에서 **`action=granted`** 에 해당하는 처리 확인  
-7. Supabase **`credit_logs`** 에 **refill** 유형 충전 행이 쌓였는지 SQL/대시보드로 확인  
+2. **Clerk 로그인** — 세션 후 홈 복귀
+3. 인증된 상태로 **GET `/api/credits/me`** — 200 및 잔액 JSON
+4. **`/pricing`** 페이지 로드
+5. 앱에서 **Lemon checkout** 생성 후 테스트 결제(또는 스테이징 정책에 맞는 흐름)
+6. Lemon 웹훅 처리 로그·응답에서 **`action=granted`** 에 해당하는 처리 확인
+7. Supabase **`credit_logs`** 에 **refill** 유형 충전 행이 쌓였는지 SQL/대시보드로 확인
 
 ### 운영 배포 체크리스트
 
@@ -327,48 +361,49 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 - [ ] `credit_logs` 충전 기록 확인
 - [ ] Rate limit **429** 동작 확인
 - [ ] Production 에서 **mock 분석 비활성**(또는 스테이징만 `KATATALK_ALLOW_MOCK_ANALYSIS=true`) 확인
-- [ ] **KataGo·LLM 미구현** 상태 표시 확인
+- [ ] 실제 KataGo Worker가 mock 없이 결과를 저장하고 실패 시 크레딧을 정확히 환불하는지 확인
+- [ ] LLM 해설은 검증 완료 전 비활성 상태인지 확인
 - [ ] 환불 정책·약관 **법무 검토**
 
 ## Clerk 환경 변수
 
-| 변수 | 사용 위치 | 설명 |
-|------|-----------|------|
-| `AUTH_PROVIDER` | 서버 | `clerk` 로 설정 시 Bearer JWT 검증 경로 사용 |
-| `VITE_AUTH_PROVIDER` | 클라이언트 빌드 | `clerk` 일 때 Clerk UI·토큰 헤더 사용 |
-| `VITE_CLERK_PUBLISHABLE_KEY` | 클라이언트(번들) | Clerk Publishable key 만 노출 |
-| `CLERK_SECRET_KEY` | 서버만 | Secret key — **저장소·프론트 번들에 포함 금지** |
-| `JWT_SECRET` | 서버 | 세션 쿠키 등 (운영에서는 필수) |
+| 변수                         | 사용 위치        | 설명                                            |
+| ---------------------------- | ---------------- | ----------------------------------------------- |
+| `AUTH_PROVIDER`              | 서버             | `clerk` 로 설정 시 Bearer JWT 검증 경로 사용    |
+| `VITE_AUTH_PROVIDER`         | 클라이언트 빌드  | `clerk` 일 때 Clerk UI·토큰 헤더 사용           |
+| `VITE_CLERK_PUBLISHABLE_KEY` | 클라이언트(번들) | Clerk Publishable key 만 노출                   |
+| `CLERK_SECRET_KEY`           | 서버만           | Secret key — **저장소·프론트 번들에 포함 금지** |
+| `JWT_SECRET`                 | 서버             | 세션 쿠키 등 (운영에서는 필수)                  |
 
 `DATABASE_URL` 은 **선택**입니다. 있으면 Drizzle/MySQL `users` 동기화 등에 사용합니다. **크레딧 잔액·원장·분석 job 메타**는 **Supabase**(`profiles`, `credit_logs`, `analysis_jobs`)를 사용합니다. **운영(production)** 에서는 `SUPABASE_URL` 과 `SUPABASE_SERVICE_ROLE_KEY`(서비스 롤)가 **필수**입니다. **Supabase Auth는 사용하지 않으며**, 브라우저에서 Supabase DB에 직접 접근하지 않고 **Express 서버 API + service role** 로만 접근합니다.
 
 ## Clerk Dashboard 설정
 
-1. [Clerk Dashboard](https://dashboard.clerk.com/) 에서 애플리케이션 생성  
-2. **Paths (Development)**  
-   - Development host / Application URL 은 **실제 dev 주소**와 같아야 합니다. 예: `http://localhost:3000` (`pnpm dev` 포트가 다르면 그 포트).  
-   - Sign-in URL 경로: **`/login`**  
-   - Sign-up URL 경로: **`/sign-up`**  
-   - 이메일 verification 코드는 오는데 **404 또는 빈 화면**이면 SMTP 문제가 아니라 **`/sign-up`·`/login` 라우팅** 또는 Dashboard 의 Paths/Redirect 허용 목록 문제일 가능성이 큽니다.  
-3. **Redirect / Allowed URLs**: `/login`, `/sign-up`, `/`(로그인·가입 완료 후 복귀)뿐 아니라 Clerk 이메일 인증 등으로 이동하는 **하위 경로**(예: `/sign-up/verify-email-address`, `/login/sso-callback`)가 같은 오리진에서 열리도록 Dashboard 의 Development host·Redirect/Allowed 목록을 **실제 dev URL**(포트 포함, 예: `http://localhost:3003`)과 함께 맞춥니다. 인증 메일은 오는데 404가 나면 SMTP 문제가 아니라 **앱 라우팅 또는 Dashboard URL 허용 목록**을 의심하세요.  
-4. **Email** sign-up / sign-in 은 Clerk Dashboard → User & Authentication → Email 에서 **반드시 활성화**되어 있어야 합니다. 메일이 오지 않으면 Dashboard 의 제한·도메인 설정을 확인하세요.  
-5. **Google** 등 소셜 로그인은 해당 제공자를 Clerk 에서 켠 뒤, 클라이언트 ID/시크릿과 리다이렉트 URI 를 제공자 콘솔과 일치시켜야 합니다.  
+1. [Clerk Dashboard](https://dashboard.clerk.com/) 에서 애플리케이션 생성
+2. **Paths (Development)**
+   - Development host / Application URL 은 **실제 dev 주소**와 같아야 합니다. 예: `http://localhost:3000` (`pnpm dev` 포트가 다르면 그 포트).
+   - Sign-in URL 경로: **`/login`**
+   - Sign-up URL 경로: **`/sign-up`**
+   - 이메일 verification 코드는 오는데 **404 또는 빈 화면**이면 SMTP 문제가 아니라 **`/sign-up`·`/login` 라우팅** 또는 Dashboard 의 Paths/Redirect 허용 목록 문제일 가능성이 큽니다.
+3. **Redirect / Allowed URLs**: `/login`, `/sign-up`, `/`(로그인·가입 완료 후 복귀)뿐 아니라 Clerk 이메일 인증 등으로 이동하는 **하위 경로**(예: `/sign-up/verify-email-address`, `/login/sso-callback`)가 같은 오리진에서 열리도록 Dashboard 의 Development host·Redirect/Allowed 목록을 **실제 dev URL**(포트 포함, 예: `http://localhost:3003`)과 함께 맞춥니다. 인증 메일은 오는데 404가 나면 SMTP 문제가 아니라 **앱 라우팅 또는 Dashboard URL 허용 목록**을 의심하세요.
+4. **Email** sign-up / sign-in 은 Clerk Dashboard → User & Authentication → Email 에서 **반드시 활성화**되어 있어야 합니다. 메일이 오지 않으면 Dashboard 의 제한·도메인 설정을 확인하세요.
+5. **Google** 등 소셜 로그인은 해당 제공자를 Clerk 에서 켠 뒤, 클라이언트 ID/시크릿과 리다이렉트 URI 를 제공자 콘솔과 일치시켜야 합니다.
 
 ### 로그인·회원가입 수동 테스트(로컬)
 
-1. 비로그인으로 `/login` 접속 → 다크 테마 로그인 카드  
-2. 이메일 입력 시 글자·placeholder 가 잘 보이는지 확인  
+1. 비로그인으로 `/login` 접속 → 다크 테마 로그인 카드
+2. 이메일 입력 시 글자·placeholder 가 잘 보이는지 확인
 3. 「회원가입」링크로 `/sign-up` 이동 → 가입 폼 표시  
-3-1. 브라우저에서 `/sign-up/verify-email-address` 등으로 직접 열어도 404가 아니어야 합니다.  
-4. 가입 또는 로그인 완료 후 `/` 로 이동하는지 확인  
-5. 로그아웃 후 `/login` 또는 비로그인 상태에서 분석 시도 시 401 안내  
+   3-1. 브라우저에서 `/sign-up/verify-email-address` 등으로 직접 열어도 404가 아니어야 합니다.
+4. 가입 또는 로그인 완료 후 `/` 로 이동하는지 확인
+5. 로그아웃 후 `/login` 또는 비로그인 상태에서 분석 시도 시 401 안내
 
 **코드 vs Dashboard**: 회원가입 링크·경로는 저장소에서 `/sign-up` 으로 연결합니다. 이메일 인증 메일 미수신·OAuth 오류는 대부분 **Clerk Dashboard·DNS·제공자 콘솔** 설정을 확인하세요. `CLERK_SECRET_KEY` 나 서버 시크릿은 README 나 로그에 적지 마세요.
 
 ## 인증과 mock 분석
 
-- `Authorization: Bearer <Clerk 세션 토큰>` 으로 `POST /api/analyze` 및 `GET /api/analyze/:jobId` 호출  
-- 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답  
+- `Authorization: Bearer <Clerk 세션 토큰>` 으로 `POST /api/analyze` 및 `GET /api/analyze/:jobId` 호출
+- 서버 미들웨어에서 인증 실패 시 **내부 스택을 노출하지 않고** 한국어 안내 메시지로 401 응답
 - `AUTH_PROVIDER=local-dev` 는 로컬 편의용이며, **운영 배포에서는 사용하지 마세요** (기존 가드 유지)
 - **Production** 에서는 `KATATALK_ALLOW_MOCK_ANALYSIS=true` 가 없으면 mock 분석 API 가 **503** 으로 차단됩니다. **KataGo/LLM 연동 전에는 유료 트래픽에 mock 결과를 노출하지 마세요.**
 
@@ -376,22 +411,22 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 ### Stripe에서 전환한 이유 (요약)
 
-- 한국 기반 판매자에게 **Stripe 사업자 온보딩·정산**이 불확실할 수 있음.  
-- **한국 유저**에게는 **Toss Payments**가 익숙함.  
-- **해외 유저**에게는 **Lemon Squeezy**(글로벌 카드)를 사용.  
-- Stripe에 더 깊게 묶일수록 이후 교체 비용이 커져, **초기에 provider 추상화**로 전환.  
+- 한국 기반 판매자에게 **Stripe 사업자 온보딩·정산**이 불확실할 수 있음.
+- **한국 유저**에게는 **Toss Payments**가 익숙함.
+- **해외 유저**에게는 **Lemon Squeezy**(글로벌 카드)를 사용.
+- Stripe에 더 깊게 묶일수록 이후 교체 비용이 커져, **초기에 provider 추상화**로 전환.
 - **Paddle** 등은 추후 fallback 후보로 문서·운영에서만 검토 (코드 미구현).
 
 ### 시스템
 
-- **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.  
-- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드, **일회성 크레딧 팩 구매**). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토하며 **현재 checkout UI 에는 노출하지 않습니다**. **Clerk Billing·Stripe·구독형 결제 미사용.**  
-- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.  
-- **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).  
-- **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.  
-- **크레딧 충전**은 **success URL이 아니라** 각 결제사 **웹훅**에서만 **`add_credits_from_payment` RPC** 로 반영 (`payment:<provider>:…` idempotency).  
-- `credit_logs` 의 **`stripe_*` 컬럼은 legacy**(과거 호환). 신규 충전은 **`payment_provider` / `payment_event_id` / `payment_order_id` / `payment_checkout_id`** 를 사용합니다 ([`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql)).  
-- 결제 UI: **환불 정책 동의 체크박스** 필수(운영 전 **법무 검토** TODO).  
+- **Auth = Clerk** (Supabase Auth 미사용). **`profiles.id` = Clerk `userId`(JWT `sub`)**.
+- **Payment = 현재 Lemon Squeezy 단일**(글로벌 카드, **일회성 크레딧 팩 구매**). **`server/paymentProviders/`** 추상화·**`POST /api/billing/create-checkout`**. **Toss Payments** 는 코드에 스켈레톤만 두고 **향후 국내 결제 옵션**으로 검토하며 **현재 checkout UI 에는 노출하지 않습니다**. **Clerk Billing·Stripe·구독형 결제 미사용.**
+- **DB = Supabase** — `profiles`, `credit_logs`, `analysis_jobs`. **`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용**.
+- **신규 프로필** 첫 생성 시 **2 credits** (`signup_bonus`, idempotent).
+- **SGF 분석 1회당 1 credit** — 차감은 **`spend_credit_for_analysis` RPC** 만. 부족 시 **402** `INSUFFICIENT_CREDITS`.
+- **크레딧 충전**은 **success URL이 아니라** 각 결제사 **웹훅**에서만 **`add_credits_from_payment` RPC** 로 반영 (`payment:<provider>:…` idempotency).
+- `credit_logs` 의 **`stripe_*` 컬럼은 legacy**(과거 호환). 신규 충전은 **`payment_provider` / `payment_event_id` / `payment_order_id` / `payment_checkout_id`** 를 사용합니다 ([`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql)).
+- 결제 UI: **환불 정책 동의 체크박스** 필수(운영 전 **법무 검토** TODO).
 - **수평 확장·다중 인스턴스** 환경에서는 인메모리 job만으로 운영하면 안 되며, **DB-backed job/큐** 가 필요합니다. **Vercel 배포는 현재 보류**이며, 초기 베타는 **long-running Node** 호스팅을 전제로 합니다.
 
 상세 TODO는 [`docs/TODO.md`](docs/TODO.md) 를 참고하세요.
@@ -421,16 +456,16 @@ mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANAL
 
 **`.env`·시크릿 키는 절대 커밋하지 마세요.**
 
-- **베타 UI**: 크레딧 충전은 **Lemon Squeezy만** 사용합니다.  
-- **Toss**: **실결제 연동 전**(스켈레톤만). 국내 결제 UX 확보 시 연동 검토. `TOSS_*` 는 서버 전용 (**`VITE_` 접두사 금지**).  
-- **Lemon Squeezy 상품(표시 가격·크레딧)** — 실제 과금은 Lemon 대시보드 variant와 일치해야 합니다.  
-  - Starter **$4.99** → **20** credits  
-  - Standard **$9.99** → **50** credits  
-  - Pro **$29.99** → **200** credits  
-- **환경 변수**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`(대시보드 **Webhook Signing secret** 과 동일해야 함), `LEMONSQUEEZY_CREDIT_PACK_*_VARIANT_ID` 3종, 결제 후 복귀 URL용 **`APP_BASE_URL`** (예: 로컬 `http://localhost:3000`).  
-- **웹훅 URL**: `https://<공개호스트>/api/billing/webhook/lemonsqueezy` — 로컬에서 Lemon 대시보드가 서버에 접근하려면 **ngrok 등 터널**이 필요합니다.  
-- **크레딧 증가는 success 리다이렉트가 아니라 웹훅(`order_created`)에서만** `add_credits_from_payment` 로 반영됩니다.  
-- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.  
+- **베타 UI**: 크레딧 충전은 **Lemon Squeezy만** 사용합니다.
+- **Toss**: **실결제 연동 전**(스켈레톤만). 국내 결제 UX 확보 시 연동 검토. `TOSS_*` 는 서버 전용 (**`VITE_` 접두사 금지**).
+- **Lemon Squeezy 상품(표시 가격·크레딧)** — 실제 과금은 Lemon 대시보드 variant와 일치해야 합니다.
+  - Starter **$4.99** → **20** credits
+  - Standard **$9.99** → **50** credits
+  - Pro **$29.99** → **200** credits
+- **환경 변수**: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`(대시보드 **Webhook Signing secret** 과 동일해야 함), `LEMONSQUEEZY_CREDIT_PACK_*_VARIANT_ID` 3종, 결제 후 복귀 URL용 **`APP_BASE_URL`** (예: 로컬 `http://localhost:3000`).
+- **웹훅 URL**: `https://<공개호스트>/api/billing/webhook/lemonsqueezy` — 로컬에서 Lemon 대시보드가 서버에 접근하려면 **ngrok 등 터널**이 필요합니다.
+- **크레딧 증가는 success 리다이렉트가 아니라 웹훅(`order_created`)에서만** `add_credits_from_payment` 로 반영됩니다.
+- 클라이언트는 **`POST /api/billing/create-checkout`** 에 `packageId` + 선택 `provider` (+ 선택 `locale`) 만 전달합니다. **크레딧 수·variant id 는 서버 설정만 유효**합니다.
 - 크레딧 결제 UI(`/pricing`) 문구는 **`katatalk-ui-lang`** 저장값과 동일한 네 언어(`mockData` `TRANSLATIONS`)로 표시됩니다.
 - **운영 체크리스트**: Lemon 대시보드 각 variant의 **실제 과금 금액**이 위 표·`shared/creditPackCatalog.ts` 와 일치하는지 배포 전에 확인합니다. **Lemon 호스팅 결제(Hosted Checkout) 화면 언어**는 이 저장소에서 제어하지 않으며, Lemon 설정에서 조정하거나 별도 검토가 필요합니다.
 - **Lemon 대시보드에서 직접 연 결제 링크(앱이 아닌 URL)로 결제**하면 `checkout_data.custom` 이 전달되지 않아 웹훅에 `custom_data`가 없을 수 있으며, 이 경우 **크레딧 지급이 되지 않습니다**. 반드시 앱의 **`/pricing` → `POST /api/billing/create-checkout` 이 돌려준 URL**로 결제하세요.
@@ -487,29 +522,38 @@ select has_function_privilege('service_role', 'public.ensure_profile_with_signup
 
 동일 패턴으로 다음 식별자를 점검한다(전부 `anon`/`authenticated` = false, `service_role` = true 기대).
 
-| RPC | `has_function_privilege` 두 번째 인자 (그대로 복사) |
-|-----|------------------------------------------------------|
-| `spend_credit_for_analysis` | `public.spend_credit_for_analysis(text,text,integer)` |
-| `refund_credit_for_analysis` | `public.refund_credit_for_analysis(text,text,integer)` |
-| `add_credits_from_stripe` | `public.add_credits_from_stripe(text,integer,text,text,text)` |
-| `add_credits_from_payment` | `public.add_credits_from_payment(text,integer,text,text,text,text,text,text)` |
-| `claim_next_analysis_job` | `public.claim_next_analysis_job(text, integer)` |
+| RPC                          | `has_function_privilege` 두 번째 인자 (그대로 복사)                           |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `spend_credit_for_analysis`  | `public.spend_credit_for_analysis(text,text,integer)`                         |
+| `refund_credit_for_analysis` | `public.refund_credit_for_analysis(text,text,integer)`                        |
+| `add_credits_from_stripe`    | `public.add_credits_from_stripe(text,integer,text,text,text)`                 |
+| `add_credits_from_payment`   | `public.add_credits_from_payment(text,integer,text,text,text,text,text,text)` |
+| `claim_next_analysis_job`    | `public.claim_next_analysis_job(text, integer)`                               |
 
 `pg_proc`·`information_schema.routine_privileges` 로 권한 행을 조회하는 방법도 있으나, 위 단일 함수 확인이 배포 전 스모크에 충분하다.
 
-## 아직 구현되지 않은 것
+## 공개 유료 베타 전 남은 핵심 작업
 
-- **KataGo / LLM** 실분석 워커 (현재 mock worker 슬롯만 분리됨)  
-- **KataGo** 를 `worker:analysis` 자리에 연결하고, 장시간·GPU 작업에 맞는 **프로세스/리소스** 설계
+- 실제 고객 SGF corpus와 사람 검수로 분석 정확성·교육적 품질을 검증
+- persistent root+multi-turn의 200 visits/6 turns 품질과 latency는 개선됐지만 로컬 burst 4건은 queue p95 68.4초로 30초 SLO 실패. 메모리가 충분한 전용 host와 staging에서 동시성 2/4 재검증
+- Clerk/Lemon/Supabase/Web/Worker/KataGo/credit ledger 전체 스테이징 E2E 통과
+- queue/ETA/재시도/환불 UX, 운영 메트릭·경보, 보안 헤더, 법적 문서 완성
 
-## KataGo 로컬 smoke·저장소 위생 (worker 실연결 전)
+## KataGo 로컬 smoke·저장소 위생
 
 - **`pnpm katago:smoke` 등 로컬 smoke** 가 쓰는 **`.tmp/katago/`** 는 **raw / normalized / stderr 출력 전용**이며 **커밋하지 않습니다.** (`.gitignore` 에 디렉터리와 `raw-*`·`normalized-*`·`stderr-*` 패턴을 명시.) **실제 사용자 기보는 `samples/` 에 넣지 말고** **`.tmp/`·`.local/`** 등 ignore 되는 경로에 두세요. **`samples/test.sgf`** 는 **짧은 synthetic fixture** 로 **예외적으로** 저장소에 둘 수 있습니다.
+- **`corepack pnpm katago:product-smoke -- <game.sgf>`** 는 raw stdout 검증을 넘어 실제 `analyzeSgfKatago` 제품 경로를 실행하고, `katago-worker-v1` 결과·BSI/ADI·Deep Search 요약·`qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 저장합니다. 상용 배포 전에는 로컬/스테이징 worker 환경에서 이 명령을 먼저 통과시킨 뒤 Web/Worker 큐 smoke 로 넘어가세요. `--strict-warnings` 를 붙이면 multi-turn/BSI/ADI 누락 같은 품질 경고도 실패로 처리합니다.
+- **`corepack pnpm katago:product-suite -- --default-fixtures`** 는 built-in synthetic SGF 묶음을 `.tmp/katago-suite/` 아래에 만들고 여러 product smoke 결과를 JSON/Markdown benchmark로 집계합니다. report에는 성공 분석·queue·E2E `p50`/`p90`/`p95`, 처리량, whole-system memory 근사치, expected-pass failure rate, quality warning/failure row count가 포함됩니다. `--concurrency 1..4`로 bounded 부하를 실행하고 `--repeat 3`은 각 wave에 서로 다른 fixture가 들어가도록 round-robin 반복합니다. 실제 고객형 SGF 묶음은 `.tmp/` 또는 `.local/` 에 두고 `--corpus-dir` 또는 직접 SGF 경로로 실행하세요. 상용 gate는 latency·품질 옵션과 함께 `--min-throughput-jobs-per-minute`, `--max-peak-used-delta-mib`, `--min-free-memory-mib`를 지정합니다. 메모리 값은 Worker RSS/GPU VRAM이 아니라 시스템 전체 근사치입니다.
+- **실제 고객 기보 출시 게이트**는 단순 `--corpus-dir` 대신 [`docs/katago-corpus-manifest-v1.md`](docs/katago-corpus-manifest-v1.md)의 manifest를 사용합니다. `corepack pnpm katago:corpus-validate -- .local/katago-corpus/manifest.json --require-human-review` 로 checksum·익명화·10건 이상·필수 coverage·검수자 2명을 먼저 검사하고, `katago:product-suite -- --corpus-manifest ...` 로 visits/multi-turn/BSI/ADI/quality 기대값까지 강제합니다.
+- **`corepack pnpm katago:persistent-benchmark -- --customer-fixtures`** 는 같은 SGF 묶음에서 spawn-per-analysis root 분석과 long-lived persistent root 분석 latency를 비교합니다. root 단독 benchmark에서 persistent warm p95 `2269ms`를 확인했고, 이후 `KATAGO_PERSISTENT_ROOT_ENABLED=true`로 실제 worker product path에 통합했습니다. customer-style product suite 4건은 4/4 성공, p50 `19979ms`, p95 `37081ms`, 품질 경고/실패 0이었으며 warm root 구간은 `451-494ms`였습니다. 실제 고객 corpus와 기본 운영 프로필 검증은 아직 남아 있습니다.
+- 2026-07-14 운영 후보 프로필(root 200 visits, multi-turn 6, persistent root+multi-turn strict)은 customer-style 4/4 성공, p50 `23053ms`, p95 `30769ms`, 품질 경고/실패 0을 기록했습니다. root만 persistent였던 기준선보다 전체 시간은 53.7%, p95는 44.7% 감소했습니다. 세부 근거는 [`docs/katago-operating-profile-2026-07-14.md`](docs/katago-operating-profile-2026-07-14.md)를 참고하세요.
+- **`corepack pnpm katago:concurrency-benchmark -- --levels 1,2,4 --jobs 4`** 는 실제 운영처럼 격리된 장기 실행 Worker 프로세스를 만들고 queue wait·engine·E2E p50/p95, 처리량, 품질, whole-system 메모리를 측정합니다. persistent multi-turn 적용 후 200/6 로컬 C1은 품질 4/4, 처리량 `3.4 jobs/min`, queue p95 `68406ms`, E2E p95 `70651ms`, peak delta `2128MiB`였습니다. 이전보다 크게 개선됐지만 queue SLO는 실패했고, C2/4는 실행 시점 메모리 안전 검사에서 차단되어 로컬 판정은 여전히 NO-GO입니다. [`docs/katago-concurrency-capacity-2026-07-14.md`](docs/katago-concurrency-capacity-2026-07-14.md)를 참고하세요. `--force-memory-risk`는 disposable benchmark host 외에는 사용하지 마세요.
+- 2026-07-09 로컬 벤치마크 기록은 [`docs/katago-product-benchmark-2026-07-09.md`](docs/katago-product-benchmark-2026-07-09.md), 런타임 결정 메모는 [`docs/katago-runtime-architecture-2026-07-09.md`](docs/katago-runtime-architecture-2026-07-09.md)를 참고하세요. 현재 결론은 spawn-per-analysis 구조를 상용 paid UX의 기본값으로 쓰지 않고 persistent worker 또는 GPU/전용 worker host를 검증하는 것입니다.
 - **KataGo binary·모델(`*.bin.gz` 등)·로컬 cfg** 는 **저장소에 올리지 마세요.** (루트 실행 파일·루트 cfg 는 `.gitignore` 로 차단.)
-- **worker 에 실제 KataGo 를 붙이기 전**에는 **SIGTERM 이후 SIGKILL fallback**, **stdout 상한·streaming**, **raw 출력 저장 정책** 등을 **별도 브랜치**에서 보강할 예정입니다.  
+- **worker 에 실제 KataGo 를 붙이기 전**에는 **SIGTERM 이후 SIGKILL fallback**, **stdout 상한·streaming**, **raw 출력 저장 정책** 등을 **별도 브랜치**에서 보강할 예정입니다.
 - **worker v1(`ANALYSIS_ENGINE=katago`)**은 이미 **timeout 시 SIGTERM → 5초 후 SIGKILL** 을 시도하며, **`analysis_jobs.result` 에 raw stdout 전체는 넣지 않습니다.** 전체 raw 보존은 **추후 Storage / 디버그 아티팩트 정책** 후 구현합니다.
 
 ## 보안·Git
 
-- `.env` 는 `.gitignore` 에 포함되어 있어 기본적으로 커밋되지 않습니다.  
+- `.env` 는 `.gitignore` 에 포함되어 있어 기본적으로 커밋되지 않습니다.
 - **Secret key·서비스 롤 키를 커밋하지 마세요.**

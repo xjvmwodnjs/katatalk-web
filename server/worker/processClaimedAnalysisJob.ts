@@ -14,6 +14,7 @@ import {
 import { runMockAnalysisDbPipeline } from "../mockAnalysisDbPipeline";
 import { getAnalysisEngineName } from "./analysisEngines";
 import { runKatagoAnalysisDbPipeline } from "./katagoAnalysisDbPipeline";
+import type { AnalysisWorkerJobOutcome } from "./analysisJobOutcome";
 
 const SUPPORTED = new Set<AnalysisJobLanguage>(["ko", "en", "zh", "ja"]);
 
@@ -31,7 +32,7 @@ async function failClaimedJobEngineMismatch(args: {
   mismatchDetail: string;
   refund: boolean;
   onRefund?: () => void | Promise<void>;
-}): Promise<void> {
+}): Promise<AnalysisWorkerJobOutcome> {
   const error_message = sanitizeAnalysisJobErrorMessage(
     `${args.mismatchCode}: ${args.mismatchDetail}`
   );
@@ -50,7 +51,7 @@ async function failClaimedJobEngineMismatch(args: {
         jobId: args.row.id,
         mismatchCode: args.mismatchCode,
       });
-      return;
+      return "lease_lost";
     }
   } else {
     await updateAnalysisJobRow(args.row.id, patch);
@@ -58,10 +59,13 @@ async function failClaimedJobEngineMismatch(args: {
   if (args.refund) {
     await args.onRefund?.();
   }
+  return "failed";
 }
 
 /** Claim 된 `analysis_jobs` 행을 job.is_mock + worker `ANALYSIS_ENGINE` 에 따라 처리한다. */
-export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<void> {
+export async function processClaimedAnalysisJob(
+  row: AnalysisJobDbRow
+): Promise<AnalysisWorkerJobOutcome> {
   const workerEngine = getAnalysisEngineName();
   const routing = resolveWorkerPipelineForClaimedJob(row, workerEngine);
   logAnalysisEngineSnapshot({
@@ -89,7 +93,7 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
 
   if (routing.pipeline === "engine_mismatch") {
     const refund = row.credit_cost > 0;
-    await failClaimedJobEngineMismatch({
+    return failClaimedJobEngineMismatch({
       row,
       lease,
       mismatchCode: routing.mismatchCode ?? "ENGINE_MISMATCH",
@@ -97,11 +101,10 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
       refund,
       onRefund: onFail,
     });
-    return;
   }
 
   if (routing.pipeline === "katago") {
-    await runKatagoAnalysisDbPipeline({
+    return runKatagoAnalysisDbPipeline({
       jobId: row.id,
       row,
       fileName,
@@ -109,11 +112,10 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
       lease,
       onJobFailed: onFail,
     });
-    return;
   }
 
   if (row.is_mock !== true) {
-    await failClaimedJobEngineMismatch({
+    return failClaimedJobEngineMismatch({
       row,
       lease,
       mismatchCode: "ENGINE_MISMATCH_WORKER_MOCK",
@@ -121,10 +123,9 @@ export async function processClaimedAnalysisJob(row: AnalysisJobDbRow): Promise<
       refund: true,
       onRefund: onFail,
     });
-    return;
   }
 
-  await runMockAnalysisDbPipeline({
+  return runMockAnalysisDbPipeline({
     jobId: row.id,
     fileName,
     language,

@@ -1,20 +1,35 @@
 /**
  * Winrate perspective normalizer v1 — KataGo raw output → UI-safe display metadata.
- * Does not assert black/white winrates until sample-verified in a later step.
+ * Black/white conversion is enabled only when the Worker records the analysis
+ * config's authoritative `reportAnalysisWinratesAs` value.
  *
  * ## Raw winrate input policy (v1 hardening)
  * - **Valid**: `typeof raw === "number"` and `Number.isFinite(raw)` → clamp to 0~1.
  * - **Invalid → unverified**: `null`, `undefined`, `string`, `boolean`, `NaN`, `±Infinity`, objects.
  * - **No coercion**: numeric strings (e.g. `"0.64"`) are rejected.
- * - **displayWinrate**: only when valid raw exists; mapped to 0~100.
- * - **status**: never emits `verified` in v1; only `katago_output_only` or `unverified`.
+ * - **displayWinrate**: black winrate when the axis is verified; otherwise raw output.
+ * - **status**: `verified` only for a recognized configured axis with enough evidence.
  */
 
-export type WinrateRawPerspectiveV1 = "katago_output";
+export type KatagoConfiguredWinratePerspectiveV1 =
+  | "black"
+  | "white"
+  | "side_to_move"
+  | "unknown";
 
-export type WinratePerspectiveStatusV1 = "unverified" | "katago_output_only" | "verified";
+export type WinrateRawPerspectiveV1 =
+  | "katago_output"
+  | Exclude<KatagoConfiguredWinratePerspectiveV1, "unknown">;
 
-export type WinrateDisplayLabelKeyV1 = "katagoOutputWinrate";
+export type WinratePerspectiveStatusV1 =
+  | "unverified"
+  | "katago_output_only"
+  | "verified";
+
+export type WinrateDisplayLabelKeyV1 =
+  | "katagoOutputWinrate"
+  | "blackWinrate"
+  | "whiteWinrate";
 
 export type WinrateNormalizedV1 = {
   status: WinratePerspectiveStatusV1;
@@ -46,6 +61,7 @@ export type NormalizeWinratePerspectiveV1Input = {
   player?: "B" | "W" | null;
   currentPlayer?: "B" | "W" | null;
   playerToMove?: "B" | "W" | null;
+  configuredPerspective?: KatagoConfiguredWinratePerspectiveV1 | null;
 };
 
 /**
@@ -53,26 +69,24 @@ export type NormalizeWinratePerspectiveV1Input = {
  * Full checklist: `docs/winrate-axis-verification.md`
  */
 export const WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 = [
-  "Real KataGo samples cover checklist types S1–S5 (black/white favored, balanced, side-to-move B/W); shapeOnly synthetic fixtures do not count.",
-  "At least 3 independent games with consistent winrate axis interpretation across real samples.",
-  "rootInfo.winrate and moveInfos[].winrate (and moveSummary.played.winrate used by chart) share the same axis within documented tolerance.",
-  "Relationship among currentPlayer (KataGo rootInfo), player (SGF move color), movesBeforeCount (= turnIndex - 1), and turnIndex documented with counterexamples ruled out.",
-  "KataGo engine version, rules, and komi recorded; re-verify after engine upgrades.",
-  "blackWinrate / whiteWinrate conversion formula chosen from documented candidates (see WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1); covered by fixture tests.",
-  "UI copy (ko/en/ja/zh) reviewed: no forbidden judgment labels; B/W toggle behavior specified.",
-  "Explicit code path sets status to verified; normalizer never auto-promotes.",
+  "KataGo analysis config contains exactly one recognized reportAnalysisWinratesAs value.",
+  "Worker startup rejects an unreadable, missing, unsupported, or expected-value-mismatched config axis.",
+  "KataGo's Analysis Engine contract states rootInfo and moveInfos values use reportAnalysisWinratesAs.",
+  "side_to_move conversion requires rootInfo.currentPlayer or equivalent explicit side-to-move evidence.",
+  "Black, white, side-to-move, missing-evidence, setup-stone, and pass paths are covered by regression tests.",
+  "UI copy (ko/en/ja/zh) distinguishes verified black/white values from legacy raw KataGo output.",
+  "Legacy results without recorded config metadata remain katago_output_only and never auto-promote.",
 ] as const;
 
 /**
- * Conversion formula **candidates** only — do not apply in code until samples pass
- * `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1`. See `docs/winrate-axis-verification.md` §7.
+ * Conversion formulas implemented by `normalizeWinratePerspectiveV1` once the
+ * configured axis satisfies `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1`.
  */
 export const WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1 = [
   "F1: axis=black → blackWinrate=w, whiteWinrate=1-w",
   "F2: axis=white → whiteWinrate=w, blackWinrate=1-w",
   "F3: axis=sideToMove → assign w to playerToMove, 1-w to opponent",
-  "F4: axis=moveColor(player at turnIndex) → per-point mapping from player",
-  "F5: keep displayWinrate as raw axis; toggle changes label only",
+  "Fallback: unknown axis → keep displayWinrate as raw output and do not expose B/W values",
 ] as const;
 
 /**
@@ -80,7 +94,7 @@ export const WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1 = [
  * - turnIndex: 1-based mainline move under review.
  * - player: color that played that move (from SGF).
  * - currentPlayer: KataGo rootInfo side-to-move when available; else pipeline fallback.
- * - playerToMove: intended side to move at query position; not used for B/W conversion in v1.
+ * - playerToMove: intended side to move at query position; fallback evidence for side-to-move config.
  */
 
 /** True only for finite JavaScript numbers (excludes NaN, ±Infinity). */
@@ -103,7 +117,9 @@ export function clampRawWinrate01(raw: unknown): number | null {
 }
 
 /** 0~100 display percent from 0~1 raw */
-export function rawWinrate01ToDisplayPercent(raw01: number | null): number | null {
+export function rawWinrate01ToDisplayPercent(
+  raw01: number | null
+): number | null {
   if (raw01 == null) {
     return null;
   }
@@ -132,30 +148,81 @@ function parseTurnIndex(v: unknown): number | null {
   return n;
 }
 
+export function normalizeKatagoConfiguredWinratePerspectiveV1(
+  value: unknown
+): KatagoConfiguredWinratePerspectiveV1 {
+  return value === "black" || value === "white" || value === "side_to_move"
+    ? value
+    : "unknown";
+}
+
+function complementPercent(value: number): number {
+  return Math.round((100 - value) * 100) / 100;
+}
+
 /**
- * Build perspective metadata for one chart point.
- * v1: blackWinrate/whiteWinrate stay null; display follows katago_output only.
+ * Build perspective metadata for one chart point. Legacy callers that omit
+ * `configuredPerspective` retain the conservative raw-output behavior.
  */
-export function normalizeWinratePerspectiveV1(input: NormalizeWinratePerspectiveV1Input): WinratePerspectivePointV1 {
+export function normalizeWinratePerspectiveV1(
+  input: NormalizeWinratePerspectiveV1Input
+): WinratePerspectivePointV1 {
   const raw01 = clampRawWinrate01(input.rawWinrate);
   const turnIndex = parseTurnIndex(input.turnIndex);
   const player = parseBw(input.player);
-  const currentPlayer = parseBw(input.currentPlayer) ?? player;
-  const playerToMove = parseBw(input.playerToMove) ?? player;
+  const explicitCurrentPlayer = parseBw(input.currentPlayer);
+  const explicitPlayerToMove = parseBw(input.playerToMove);
+  const currentPlayer = explicitCurrentPlayer ?? player;
+  const playerToMove = explicitPlayerToMove ?? player;
+  const configuredPerspective = normalizeKatagoConfiguredWinratePerspectiveV1(
+    input.configuredPerspective
+  );
 
-  const displayWinrate = rawWinrate01ToDisplayPercent(raw01);
+  const rawDisplayWinrate = rawWinrate01ToDisplayPercent(raw01);
   const hasRaw = raw01 != null;
-  const status: WinratePerspectiveStatusV1 = hasRaw ? "katago_output_only" : "unverified";
+  let blackWinrate: number | null = null;
+  let whiteWinrate: number | null = null;
+
+  if (rawDisplayWinrate != null && configuredPerspective === "black") {
+    blackWinrate = rawDisplayWinrate;
+    whiteWinrate = complementPercent(rawDisplayWinrate);
+  } else if (rawDisplayWinrate != null && configuredPerspective === "white") {
+    whiteWinrate = rawDisplayWinrate;
+    blackWinrate = complementPercent(rawDisplayWinrate);
+  } else if (
+    rawDisplayWinrate != null &&
+    configuredPerspective === "side_to_move"
+  ) {
+    const sideToMove = explicitCurrentPlayer ?? explicitPlayerToMove;
+    if (sideToMove === "B") {
+      blackWinrate = rawDisplayWinrate;
+      whiteWinrate = complementPercent(rawDisplayWinrate);
+    } else if (sideToMove === "W") {
+      whiteWinrate = rawDisplayWinrate;
+      blackWinrate = complementPercent(rawDisplayWinrate);
+    }
+  }
+
+  const status: WinratePerspectiveStatusV1 = !hasRaw
+    ? "unverified"
+    : blackWinrate != null && whiteWinrate != null
+      ? "verified"
+      : "katago_output_only";
+  const displayWinrate = blackWinrate ?? rawDisplayWinrate;
 
   return {
     rawWinrate: raw01,
-    rawPerspective: "katago_output",
+    rawPerspective:
+      configuredPerspective === "unknown"
+        ? "katago_output"
+        : configuredPerspective,
     normalized: {
       status,
-      blackWinrate: null,
-      whiteWinrate: null,
+      blackWinrate,
+      whiteWinrate,
       displayWinrate,
-      displayLabelKey: "katagoOutputWinrate",
+      displayLabelKey:
+        blackWinrate != null ? "blackWinrate" : "katagoOutputWinrate",
     },
     evidence: {
       turnIndex,

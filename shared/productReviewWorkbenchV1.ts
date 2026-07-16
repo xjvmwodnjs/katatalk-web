@@ -108,6 +108,8 @@ export type ProductReviewWorkbenchV1 = {
       turnIndex: number;
       category: string;
       rankingScore: number;
+      scoreLoss: number | null;
+      winrateLoss: number | null;
       evidence: string[];
       v25Taxonomy: string | null;
       v25EvidenceTypes: string[];
@@ -603,6 +605,8 @@ export function buildProductReviewWorkbenchV1(data: unknown): ProductReviewWorkb
         turnIndex: move.turnIndex,
         category: move.category,
         rankingScore: move.evidence.v25?.rankingScore ?? pool.find((row) => row.turnIndex === move.turnIndex)?.rankingScore ?? 0,
+        scoreLoss: move.scoreLoss,
+        winrateLoss: move.winrateLoss,
         evidence: move.evidence.source,
         v25Taxonomy: move.evidence.v25?.taxonomy ?? null,
         v25EvidenceTypes: move.evidence.v25?.evidenceTypes ?? [],

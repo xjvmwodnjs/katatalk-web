@@ -16,6 +16,7 @@ describe("validateProductionDeploymentEnv", () => {
     process.env.NODE_ENV = "production";
     process.env.AUTH_PROVIDER = "clerk";
     process.env.VITE_AUTH_PROVIDER = "clerk";
+    process.env.VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder_not_real";
     process.env.JWT_SECRET = "vitest-jwt-secret-minimum-32-characters-long-x";
     process.env.CLERK_SECRET_KEY = "sk_test_placeholder_not_real";
     process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -50,6 +51,12 @@ describe("validateProductionDeploymentEnv", () => {
     minimalProdBase();
     delete process.env.LEMONSQUEEZY_API_KEY;
     expect(() => validateProductionDeploymentEnv()).toThrow(/LEMONSQUEEZY_API_KEY/);
+  });
+
+  it("throws when VITE_CLERK_PUBLISHABLE_KEY is missing", () => {
+    minimalProdBase();
+    delete process.env.VITE_CLERK_PUBLISHABLE_KEY;
+    expect(() => validateProductionDeploymentEnv()).toThrow(/VITE_CLERK_PUBLISHABLE_KEY/);
   });
 
   it("passes with minimal valid production env", () => {

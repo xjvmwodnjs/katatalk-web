@@ -1,116 +1,71 @@
-# Winrate axis sample verification (KataGo)
+# KataGo 승률 축 검증
 
-> **Scope:** documentation and sample checklist only.
-> **Not in scope:** `blackWinrate` / `whiteWinrate` conversion, `status: verified` in code, B/W toggle UI.
+> 상태: **구성 파일에 기록된 승률 축에 대해 VERIFIED**
+> 기준일: 2026-07-14
+> 범위: 승률 관점 계약과 흑/백 표시 변환. 고객 기보 분석 품질과 사람 검수는 별도 출시에 필요한 근거다.
 
-## 1. Purpose
+## 1. 결론
 
-Confirm which **perspective** KataGo `winrate` values use before mapping them to black/white display winrates or enabling a B/W toggle.
+- KataGo 공식 Analysis Engine 문서는 모든 출력 승률이 analysis config의 `reportAnalysisWinratesAs` 관점을 따른다고 명시한다.
+- Worker는 실제 `KATAGO_CONFIG_PATH` 파일에서 활성 설정을 정확히 하나 읽어야 시작한다.
+- 선택 환경 변수 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`가 실제 설정과 다르면 Worker 시작을 차단한다.
+- 분석 결과에는 검증된 관점과 근거 출처를 기록한다. 관점 metadata가 없는 기존 결과는 변환하지 않고 `KataGo 출력 승률`로 유지한다.
+- 현재 로컬 검증 config는 `BLACK`이며, UI는 흑 승률을 기본으로 표시하고 백 승률을 `1 - blackWinrate`로 전환한다.
 
-Today the product chart uses **`moveSummary.played.winrate`** (a row from `moveInfos` matching the played move at `turnIndex`), normalized as **KataGo output** (`katago_output_only`). We do **not** yet assert that this equals black winrate, white winrate, or “side to move” winrate.
+공식 계약: [KataGo Analysis Engine documentation](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md)
 
-## 2. KataGo fields to inspect
+## 2. 변환 계약
 
-| Field | Where | Role in pipeline |
-|--------|--------|------------------|
-| `rootInfo.winrate` | KataGo analysis JSON | Position evaluation before the candidate move list; stored in `turnAnalyses[].katago.rootInfo` |
-| `rootInfo.currentPlayer` | same | KataGo’s reported side to move at the analyzed position |
-| `moveInfos[].winrate` | same | Per-candidate move stats; **chart uses the row whose `move` equals `playedMove`** |
-| `query.moves` | Built query (not always stored in result) | SGF mainline moves **before** `turnIndex` (see `sliceMovesBeforeTurnIndex`) |
-| `query.movesBeforeCount` | `turnAnalyses[].query` | `turnIndex - 1` — number of moves on the board when KataGo analyzes |
-| `turnIndex` | `turnAnalyses[]` | **1-based** mainline move number (the move being reviewed) |
-| `player` | `turnAnalyses[]` | Color that **played** move `turnIndex` (`B` or `W`) |
+| config 값    | 저장 관점      |                                    흑 승률 |     백 승률 | 추가로 필요한 근거                                          |
+| ------------ | -------------- | -----------------------------------------: | ----------: | ----------------------------------------------------------- |
+| `BLACK`      | `black`        |                                      `raw` |   `1 - raw` | config 파싱 성공                                            |
+| `WHITE`      | `white`        |                                  `1 - raw` |       `raw` | config 파싱 성공                                            |
+| `SIDETOMOVE` | `side_to_move` | 현재 차례가 흑이면 `raw`, 백이면 `1 - raw` | `1 - black` | 각 root의 명시적 `currentPlayer` 또는 요청의 `playerToMove` |
 
-**Current UI path:** `buildWinrateSeries` → `moveSummary.played.winrate` → `normalizeWinratePerspectiveV1` → `displayWinrate` (0–100, KataGo label).
+`raw`는 유한한 숫자이며 `0..1` 범위로 제한한다. `SIDETOMOVE`에서 현재 차례 근거가 없거나 config 관점이 확인되지 않으면 흑/백 수치를 생성하지 않는다.
 
-**Evidence fields today:** `evidence.turnIndex`, `evidence.player`, `evidence.currentPlayer`, `evidence.playerToMove` — populated from ViewModel; `currentPlayer` / `playerToMove` are currently aligned with `player` until axis is verified (see §5).
+## 3. 안전 장치
 
-## 3. Sample types to collect
+- 주석을 제외한 활성 `reportAnalysisWinratesAs`가 정확히 하나여야 한다.
+- 지원 표기는 KataGo config 계약과 같은 `BLACK`, `WHITE`, `SIDETOMOVE`뿐이다. 대소문자는 허용하지만 임의 별칭은 거부한다.
+- 누락, 중복, 미지원 값, 읽을 수 없는 config, 기대값 불일치는 `KATAGO_WINRATE_PERSPECTIVE_UNVERIFIED`로 fail-closed 처리한다.
+- Worker 시작 로그와 결과에는 정규화된 관점과 출처만 기록하며 config 경로와 본문은 노출하지 않는다.
+- product quality gate는 실제 KataGo 결과에 검증된 관점 metadata가 없으면 실패한다.
+- 기존 결과와 외부 fixture는 관점을 추측하지 않는다.
 
-Collect **real** KataGo stdout/JSON (or exported `turnAnalyses` slices) per scenario. Minimum set:
+## 4. 실제 엔진 검증
 
-| # | Scenario | What to record |
-|---|----------|----------------|
-| S1 | Black clearly ahead | High winrate when black should be favored |
-| S2 | White clearly ahead | High winrate when white should be favored |
-| S3 | Early balanced | ~50% region, few moves |
-| S4 | Side to move = Black | `rootInfo.currentPlayer === "B"` (or KataGo equivalent) |
-| S5 | Side to move = White | `rootInfo.currentPlayer === "W"` |
+검증 엔진은 KataGo `v1.16.4`, git revision `4b8de63bea2bd8790db96cd6f8daf86dc87be6f7`, CUDA `12.5.82`다. `KATAGO_MAX_VISITS=25`, multi-turn 2, timeline/deep search OFF, persistent root/multi-turn strict 조건에서 기본 fixture suite를 실행했다.
 
-For each sample, save: engine version, rules, komi, board size, `turnIndex`, `player`, full `rootInfo`, top 3 `moveInfos`, and `moveSummary.played` / `moveSummary.best`.
+| 시나리오           |  수 | root current | turn current 표본 |         raw | 흑 표시 | 백 표시 | 품질 경고/실패 |
+| ------------------ | --: | ------------ | ----------------- | ----------: | ------: | ------: | -------------: |
+| 짧은 19x19         |   2 | B            | W                 | 0.470996491 |  47.10% |  52.90% |            0/0 |
+| pass 포함 9x9      |   6 | B            | W                 | 0.999517352 |  99.95% |   0.05% |            0/0 |
+| setup stone 접바둑 |   7 | B            | W                 | 0.995884948 |  99.59% |   0.41% |            0/0 |
+| 24수 13x13         |  24 | B            | W, W              | 0.998548152 |  99.85% |   0.15% |            0/0 |
 
-**Shape-only (not axis truth):** `server/fixtures/winrateAxisSamplesV1.ts` — JSON shape + normalizer guards only. `shapeOnly: true` samples **do not** satisfy verified promotion; use real KataGo exports for S1–S5 below.
+- 기대 결과: malformed 입력의 예상 실패를 포함해 5/5 통과
+- 정상 product 결과: 4/4 통과
+- 총 실행 시간: 25,779ms, 실행 시간 25,754ms
+- p50 1,331ms, p95 20,889ms, 처리량 11.65 jobs/min
+- 모든 행에서 `axis=black`, `source=config`, 흑+백 표시 합계 100%, 품질 경고/실패 0/0
 
-## 4. Questions to answer per sample
+이 실행은 낮은 visits의 합성 fixture로 변환 계약과 제품 경로를 확인한 것이다. 고객 수준 분석 정확도나 교육적 해설 품질의 근거로 사용하지 않는다.
 
-For each sample, fill a short table:
+## 5. 회귀 검증
 
-1. **Black perspective?** If we assume winrate = P(Black wins), does S1 show high and S2 show low?
-2. **`currentPlayer` perspective?** Does winrate track the player in `rootInfo.currentPlayer`?
-3. **Side-to-move (query) perspective?** Does winrate track the player about to move at `movesBeforeCount` (i.e. opposite of last move on board, or equal to `currentPlayer`)?
-4. **`moveInfos` same axis?** Do `rootInfo.winrate`, `moveInfos[0].winrate`, and `moveSummary.played.winrate` use the **same** convention (allowing small search noise)?
-5. **Played vs root:** Is `played.winrate` closer to root or to best candidate? Document delta.
+- config 파서: 누락, 중복, 미지원 값, 기대값 불일치, 읽을 수 없는 경로, Worker fail-closed
+- 정규화: `BLACK`, `WHITE`, `SIDETOMOVE`, current player 누락, 비정상 raw 값
+- timeline: 흑/백 차례, setup stone, pass를 통과한 모든 점의 동일 축 변환
+- result quality gate: 관점 metadata 누락 시 실패
+- UI E2E: `390x844`, `430x932`, `1440x900`에서 흑/백 토글과 SVG 축 라벨 전환
 
-**Hypothesis to falsify:** “`played.winrate` is always black winrate.”
-**Hypothesis to falsify:** “`played.winrate` is always winrate for `player` (move color).”
+## 6. 배포 절차
 
-## 5. Field semantics (project conventions)
+1. Worker analysis config에 `reportAnalysisWinratesAs`를 정확히 하나 설정한다.
+2. 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정한다.
+3. Worker 시작 로그에서 검증된 관점과 `source=config`를 확인한다.
+4. strict product suite에서 관점 gate, 품질 경고/실패 0, 흑+백 변환을 확인한다.
+5. 실제 고객 corpus와 독립 바둑 검수자 결과를 별도 AI-01/02/03 gate로 통과시킨다.
 
-| Term | Meaning |
-|------|---------|
-| `turnIndex` | 1-based index into SGF **mainline**; the reviewed move is `moves[turnIndex - 1]` |
-| `movesBeforeCount` | Moves on board **before** that move is played (`turnIndex - 1`) |
-| `player` | Who **played** the move at `turnIndex` (from SGF color) |
-| `playedMove` / GTP | Coordinate of that move |
-| `currentPlayer` (KataGo `rootInfo`) | Side to move at analyzed position (verify against KataGo docs + samples) |
-| `playerToMove` (evidence) | Intended: side to move at query position; **until verified, do not use for conversion** |
-| `currentPlayer` (evidence in UI) | Placeholder aligned with pipeline; **until verified, chart label stays “KataGo output”** |
-
-## 6. `verified` promotion conditions (concrete)
-
-All must be true before implementing conversion or toggle. **Synthetic `shapeOnly` fixtures never count** toward these gates.
-
-1. **Checklist coverage:** Real KataGo samples for **all types S1–S5** (black favored, white favored, early balanced, side-to-move black, side-to-move white).
-2. **Volume:** **≥ 3 independent games** (or ≥ 3 distinct games with multiple turns each) showing **consistent** axis interpretation across samples.
-3. **rootInfo vs moveInfos:** Same axis for `rootInfo.winrate` and `moveInfos[].winrate` on every real sample (document max allowed drift).
-4. **Played row:** `moveSummary.played.winrate` follows the same axis as `rootInfo` (chart dependency).
-5. **Player linkage:** Documented rule tying winrate to `currentPlayer`, `player`, or black — with counterexamples ruled out; `movesBeforeCount = turnIndex - 1` confirmed on real exports.
-6. **Engine metadata:** KataGo version, rules, komi recorded; re-verify on engine upgrade.
-7. **UI copy:** ko/en/ja/zh strings approved; no forbidden judgment labels.
-8. **Tests:** Fixture-backed tests for conversion (future PR); existing tests keep `blackWinrate`/`whiteWinrate` null until then.
-9. **Explicit code path:** Only a dedicated function sets `status: "verified"`; normalizer never auto-promotes.
-
-See also: `WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` in `shared/winratePerspectiveV1.ts`.
-
-## 7. Black / white conversion formula candidates (do not implement yet)
-
-Document only. Pick one after §4–6 are satisfied.
-
-| ID | Formula (raw `w` = verified 0..1 axis) | Notes |
-|----|----------------------------------------|--------|
-| F1 | If axis = black: `blackWinrate = w`, `whiteWinrate = 1 - w` | Common if KataGo reports black winrate |
-| F2 | If axis = white: `whiteWinrate = w`, `blackWinrate = 1 - w` | Mirror of F1 |
-| F3 | If axis = side to move `S`: `winrate(S) = w`, `winrate(opponent) = 1 - w` | Needs `playerToMove` at each turn |
-| F4 | If axis = mover `player` at `turnIndex`: map using `player` per point | Matches “who just played” interpretation |
-| F5 | Keep `displayWinrate` as raw axis × 100; toggle only swaps label | Minimal change; still need axis truth |
-
-**Rejected until verified:** inferring black/white from `turnIndex` parity alone.
-
-## 8. Explicitly deferred
-
-- Computing `blackWinrate` / `whiteWinrate` in production code
-- Enabling B/W winrate toggle
-- Replacing `displayWinrate` with converted values
-- Auto-setting `status: verified`
-- Changing Worker/KataGo query or parser behavior in this step
-
-## 9. Recording template
-
-```markdown
-### Sample S1 — <game id> turn <n>
-- Engine: KataGo <version>, rules <>, komi <>
-- turnIndex: , player: , movesBeforeCount:
-- rootInfo.winrate: , rootInfo.currentPlayer:
-- moveInfos[0].winrate: , played.winrate:
-- Conclusion: axis = black | white | currentPlayer | unknown
-```
+KataGo 버전, 모델 또는 analysis config를 변경할 때 이 검증을 다시 수행한다. BSI의 score 관점은 이번 승률 축 검증과 별도이며 아직 provisional이다.

@@ -1,7 +1,14 @@
 import type { ParsedMinimalSgf } from "./katagoSgfQuery";
 import { sgfPointToGtp } from "./katagoSgfQuery";
-import { runKatagoWorkerAnalysisQueryLines, summarizeKatagoStderrForDb, type SpawnFn } from "./katagoSmokeRun";
-import { collectFinalResponsesByTurnNumber, katagoAnalyzeTurnResponseToProgressEventV1 } from "./katagoAnalyzeTurnsCollector";
+import {
+  runKatagoWorkerAnalysisQueryLines,
+  summarizeKatagoStderrForDb,
+  type SpawnFn,
+} from "./katagoSmokeRun";
+import {
+  collectFinalResponsesByTurnNumber,
+  katagoAnalyzeTurnResponseToProgressEventV1,
+} from "./katagoAnalyzeTurnsCollector";
 import {
   buildAnalyzeTurnNumbers,
   readWinrateTimelineAnalysisPvLenFrom,
@@ -25,6 +32,7 @@ import {
 import { appendWinrateTimelineProgressEventV1 } from "../../winrateTimelineProgressV1";
 import { extractJsonObjectsFromKatagoStdout } from "./katagoRawParser";
 import { detectKatagoBackendV1 } from "../katagoBackendDetectionV1";
+import type { KatagoConfiguredWinratePerspectiveV1 } from "@shared/winratePerspectiveV1";
 
 function timestampSuffix(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -38,14 +46,18 @@ export function buildKatagoAnalyzeTurnsQueryLine(params: {
   analysisPVLen: number;
   reportDuringSearchEverySeconds: number;
 }): string {
-  const pairs: [string, string][] = params.parsed.moves.map(({ color, sgfPoint }) => [
-    color,
-    sgfPointToGtp(sgfPoint, params.parsed.boardSize),
-  ]);
-  const initialStones: [string, string][] = params.parsed.initialStones.map(({ color, sgfPoint }) => [
-    color,
-    sgfPointToGtp(sgfPoint, params.parsed.boardSize),
-  ]);
+  const pairs: [string, string][] = params.parsed.moves.map(
+    ({ color, sgfPoint }) => [
+      color,
+      sgfPointToGtp(sgfPoint, params.parsed.boardSize),
+    ]
+  );
+  const initialStones: [string, string][] = params.parsed.initialStones.map(
+    ({ color, sgfPoint }) => [
+      color,
+      sgfPointToGtp(sgfPoint, params.parsed.boardSize),
+    ]
+  );
   const body = {
     id: `katatalk-wt-${params.jobId}-${timestampSuffix()}`,
     moves: pairs,
@@ -71,6 +83,7 @@ export type RunKatagoWinrateTimelineV1Opts = {
   env?: NodeJS.ProcessEnv;
   spawnFn?: SpawnFn;
   progressAppendFn?: (event: WinrateTimelineProgressEventV1) => Promise<void>;
+  winratePerspective?: KatagoConfiguredWinratePerspectiveV1;
 };
 
 async function appendProgressEventSafelyV1(
@@ -91,7 +104,9 @@ async function appendProgressEventSafelyV1(
 /**
  * Runs optional full-game timeline query. Never throws — failures become timeline metadata only.
  */
-export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV1Opts): Promise<WinrateTimelineV1> {
+export async function runKatagoWinrateTimelineV1(
+  opts: RunKatagoWinrateTimelineV1Opts
+): Promise<WinrateTimelineV1> {
   const env = opts.env != null ? { ...process.env, ...opts.env } : process.env;
   const totalMoves = opts.parsed.moves.length;
   const visits = readWinrateTimelineVisitsFrom(env);
@@ -99,10 +114,17 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
   const timeoutMs = readWinrateTimelineTimeoutMsFrom(env);
   const analysisPVLen = readWinrateTimelineAnalysisPvLenFrom(env);
   const includeFinal = readWinrateTimelineIncludeFinalFrom(env);
-  const reportDuringSearchEverySeconds = readWinrateTimelineReportEverySecondsFrom(env);
+  const reportDuringSearchEverySeconds =
+    readWinrateTimelineReportEverySecondsFrom(env);
   const localProgressEnabled = readWinrateTimelineLocalProgressEnabledFrom(env);
-  const progressAppendFn = opts.progressAppendFn ?? appendWinrateTimelineProgressEventV1;
-  const analyzeTurns = buildAnalyzeTurnNumbers(totalMoves, maxTurns, includeFinal);
+  const progressAppendFn =
+    opts.progressAppendFn ?? appendWinrateTimelineProgressEventV1;
+  const winratePerspective = opts.winratePerspective ?? "unknown";
+  const analyzeTurns = buildAnalyzeTurnNumbers(
+    totalMoves,
+    maxTurns,
+    includeFinal
+  );
 
   const basePolicy = {
     mode: "full-mainline-after-each-move" as const,
@@ -119,6 +141,7 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
       version: WINRATE_TIMELINE_V1_VERSION,
       enabled: false,
       source: "katago-analyzeTurns",
+      winratePerspective,
       policy: basePolicy,
       totalMoves,
       attemptedCount: 0,
@@ -130,7 +153,8 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
     };
   }
 
-  const gtpAt = (sgfPoint: string) => sgfPointToGtp(sgfPoint, opts.parsed.boardSize);
+  const gtpAt = (sgfPoint: string) =>
+    sgfPointToGtp(sgfPoint, opts.parsed.boardSize);
   const queryLine = buildKatagoAnalyzeTurnsQueryLine({
     parsed: opts.parsed,
     jobId: opts.jobId,
@@ -163,7 +187,9 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
         for (const line of lines) {
           const event = katagoAnalyzeTurnResponseToProgressEventV1(
             extractJsonObjectsFromKatagoStdout(line)[0],
-            opts.jobId
+            opts.jobId,
+            undefined,
+            winratePerspective
           );
           if (event) {
             void appendProgressEventSafelyV1(event, progressAppendFn);
@@ -193,7 +219,9 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
     if (localProgressEnabled && progressBuffer.trim()) {
       const event = katagoAnalyzeTurnResponseToProgressEventV1(
         extractJsonObjectsFromKatagoStdout(progressBuffer)[0],
-        opts.jobId
+        opts.jobId,
+        undefined,
+        winratePerspective
       );
       if (event) {
         await appendProgressEventSafelyV1(event, progressAppendFn);
@@ -202,25 +230,42 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
     }
     if (exitCode !== 0 && exitCode != null) {
       runErrorCode = "KATAGO_EXIT_NONZERO";
-      runErrorMessage = summarizeKatagoStderrForDb(stderr) || `exit ${String(exitCode)}`;
+      runErrorMessage =
+        summarizeKatagoStderrForDb(stderr) || `exit ${String(exitCode)}`;
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    runErrorCode = msg.startsWith("KATAGO_TIMEOUT:") ? "KATAGO_TIMEOUT" : "KATAGO_TIMELINE_RUN_ERROR";
+    runErrorCode = msg.startsWith("KATAGO_TIMEOUT:")
+      ? "KATAGO_TIMEOUT"
+      : "KATAGO_TIMELINE_RUN_ERROR";
     runErrorMessage = summarizeKatagoStderrForDb(msg) || msg.slice(0, 200);
   }
 
   const byTurn =
-    stdout.length > 0 ? collectFinalResponsesByTurnNumber(stdout) : new Map<number, Record<string, unknown>>();
+    stdout.length > 0
+      ? collectFinalResponsesByTurnNumber(stdout)
+      : new Map<number, Record<string, unknown>>();
 
-  const points = analyzeTurns.map((turnNumber) => {
-    const meta = timelineMetaForTurnNumber(turnNumber, opts.parsed.moves, gtpAt);
+  const points = analyzeTurns.map(turnNumber => {
+    const meta = timelineMetaForTurnNumber(
+      turnNumber,
+      opts.parsed.moves,
+      gtpAt
+    );
     const row = byTurn.get(turnNumber);
     const root = row?.rootInfo;
     if (root == null || typeof root !== "object" || Array.isArray(root)) {
-      return buildFailedTimelinePoint(meta, "MISSING_TURN_RESPONSE", "No final response for turnNumber");
+      return buildFailedTimelinePoint(
+        meta,
+        "MISSING_TURN_RESPONSE",
+        "No final response for turnNumber"
+      );
     }
-    return buildOkTimelinePointFromRootInfo(meta, root as Record<string, unknown>);
+    return buildOkTimelinePointFromRootInfo(
+      meta,
+      root as Record<string, unknown>,
+      winratePerspective
+    );
   });
 
   points.sort((a, b) => a.turnIndex - b.turnIndex);
@@ -241,15 +286,19 @@ export async function runKatagoWinrateTimelineV1(opts: RunKatagoWinrateTimelineV
     version: WINRATE_TIMELINE_V1_VERSION,
     enabled: true,
     source: "katago-analyzeTurns",
+    winratePerspective,
     policy: basePolicy,
     totalMoves,
     attemptedCount: points.length,
     completedCount: summary.completedCount,
     failedCount: summary.failedCount,
     partialFailure: summary.partialFailure || Boolean(runErrorCode),
-    allFailed: summary.allFailed || (points.length > 0 && summary.completedCount === 0),
+    allFailed:
+      summary.allFailed || (points.length > 0 && summary.completedCount === 0),
     ...(warningCodes.length > 0 ? { warningCodes } : {}),
-    ...(runErrorCode ? { errorCode: runErrorCode, errorMessage: runErrorMessage } : {}),
+    ...(runErrorCode
+      ? { errorCode: runErrorCode, errorMessage: runErrorMessage }
+      : {}),
     points,
   };
 }

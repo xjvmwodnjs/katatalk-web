@@ -1,22 +1,20 @@
 import { trpc } from "@/lib/trpc";
-import { supabase } from "@/lib/supabase";
-import { getClerkBearerHeaders } from "@/lib/clerkSessionBridge";
 import { KataTalkAuthRoot } from "@/_core/auth/KataTalkAuthRoot";
-import { KATATALK_UI_LANG_EVENT, readStoredUiLang, type UiLangCode } from "@/const";
 import { UNAUTHED_ERR_MSG } from "@shared/const";
-import { ClerkProvider } from "@clerk/clerk-react";
-import { enUS, jaJP, koKR, zhCN } from "@clerk/localizations";
-import { dark } from "@clerk/themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+const authProvider = import.meta.env.VITE_AUTH_PROVIDER;
+const clerkPk = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? "";
+const clerkMode = authProvider === "clerk";
+const useClerk = clerkMode && Boolean(clerkPk);
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -51,10 +49,15 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       async headers() {
-        if (import.meta.env.VITE_AUTH_PROVIDER === "clerk") {
+        if (authProvider === "clerk") {
+          const { getClerkBearerHeaders } = await import("@/lib/clerkSessionBridge");
           return getClerkBearerHeaders();
         }
-        if (import.meta.env.VITE_AUTH_PROVIDER === "supabase" && supabase) {
+        if (authProvider === "supabase") {
+          const { supabase } = await import("@/lib/supabase");
+          if (!supabase) {
+            return {};
+          }
           const { data } = await supabase.auth.getSession();
           const token = data.session?.access_token;
           return token ? { Authorization: `Bearer ${token}` } : {};
@@ -74,98 +77,32 @@ const trpcClient = trpc.createClient({
 function SupabaseSessionSync() {
   const utils = trpc.useUtils();
   useEffect(() => {
-    if (import.meta.env.VITE_AUTH_PROVIDER !== "supabase" || !supabase) {
+    if (authProvider !== "supabase") {
       return;
     }
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void utils.auth.me.invalidate();
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    void import("@/lib/supabase").then(({ supabase }) => {
+      if (cancelled || !supabase) {
+        return;
+      }
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(() => {
+        void utils.auth.me.invalidate();
+      });
+      if (cancelled) {
+        subscription.unsubscribe();
+        return;
+      }
+      unsubscribe = () => subscription.unsubscribe();
     });
     return () => {
-      subscription.unsubscribe();
+      cancelled = true;
+      unsubscribe?.();
     };
   }, [utils]);
   return null;
-}
-
-const clerkPk = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? "";
-const clerkMode = import.meta.env.VITE_AUTH_PROVIDER === "clerk";
-const useClerk = clerkMode && Boolean(clerkPk);
-
-const CLERK_LOCALIZATION: Record<UiLangCode, typeof koKR> = {
-  ko: koKR,
-  en: enUS,
-  zh: zhCN,
-  ja: jaJP,
-};
-
-/** Clerk 기본 다크 테마 + KataTalk 톤(골드 포인트, 입력 텍스트 고대비) */
-function ClerkProviderShell({ children }: { children: ReactNode }) {
-  const [uiLang, setUiLang] = useState<UiLangCode>(() =>
-    typeof window !== "undefined" ? readStoredUiLang() : "ko"
-  );
-
-  useEffect(() => {
-    const sync = () => setUiLang(readStoredUiLang());
-    window.addEventListener(KATATALK_UI_LANG_EVENT, sync);
-    return () => window.removeEventListener(KATATALK_UI_LANG_EVENT, sync);
-  }, []);
-
-  return (
-    <ClerkProvider
-      publishableKey={clerkPk}
-      localization={CLERK_LOCALIZATION[uiLang]}
-      afterSignInUrl="/"
-      afterSignUpUrl="/"
-      afterSignOutUrl="/login"
-      signInUrl="/login"
-      signUpUrl="/sign-up"
-      appearance={{
-        baseTheme: dark,
-        variables: {
-          colorPrimary: "#C9A84C",
-          colorBackground: "#16161c",
-          colorInputBackground: "rgba(255,255,255,0.08)",
-          colorInputText: "#fafafa",
-          colorText: "#f4f4f5",
-          colorTextSecondary: "#a1a1aa",
-          colorNeutral: "#71717a",
-          colorDanger: "#fca5a5",
-          colorSuccess: "#86efac",
-          borderRadius: "12px",
-          fontFamily: "'Noto Sans KR', system-ui, sans-serif",
-        },
-        elements: {
-          rootBox: "w-full",
-          card: "border border-white/10 bg-zinc-900/95 shadow-2xl",
-          headerTitle: "text-amber-50 font-semibold",
-          headerSubtitle: "text-zinc-400",
-          socialButtonsBlockButton:
-            "rounded-xl border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-amber-400/45",
-          formButtonPrimary:
-            "rounded-xl font-semibold text-stone-950 shadow-md hover:brightness-110 focus-visible:ring-2 focus-visible:ring-amber-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
-          formFieldInput:
-            "rounded-xl border-white/18 bg-zinc-950/90 text-white caret-amber-300 placeholder:text-zinc-400 focus:border-amber-500/45 focus:shadow-[0_0_0_1px_rgba(250,204,21,0.25)]",
-          formFieldLabel: "text-zinc-200 font-medium",
-          formFieldHintText: "text-zinc-400",
-          formFieldErrorText: "text-red-300",
-          dividerText: "text-zinc-400",
-          dividerLine: "bg-zinc-600",
-          footerActionLink:
-            "text-amber-200 hover:text-amber-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 rounded-sm",
-          identityPreviewText: "text-zinc-200",
-          alternativeMethodsBlockButton:
-            "rounded-xl border border-white/12 bg-white/5 text-zinc-100 hover:bg-white/10",
-          formFieldInputShowPasswordButton: "text-zinc-300 hover:text-white",
-          otpCodeFieldInput:
-            "text-white caret-amber-300 border-white/20 bg-zinc-950/90 placeholder:text-zinc-400",
-        },
-      }}
-    >
-      {children}
-    </ClerkProvider>
-  );
 }
 
 if (clerkMode && !clerkPk) {
@@ -207,7 +144,18 @@ if (clerkMode && !clerkPk) {
     </div>
   );
 } else {
-  createRoot(rootEl).render(
-    useClerk ? <ClerkProviderShell>{inner}</ClerkProviderShell> : inner
-  );
+  if (useClerk) {
+    const LazyClerkProviderShell = lazy(() =>
+      import("@/_core/auth/ClerkProviderShell").then(module => ({
+        default: module.ClerkProviderShell,
+      }))
+    );
+    createRoot(rootEl).render(
+      <Suspense fallback={<div className="min-h-screen bg-background" />}>
+        <LazyClerkProviderShell publishableKey={clerkPk}>{inner}</LazyClerkProviderShell>
+      </Suspense>
+    );
+  } else {
+    createRoot(rootEl).render(inner);
+  }
 }

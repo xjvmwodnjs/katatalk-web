@@ -5,14 +5,65 @@ import type { AnalysisJobDbRow } from "./creditService";
 import { runKatagoAnalysisDbPipeline } from "./worker/katagoAnalysisDbPipeline";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 
+function validKatagoWorkerResult(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    ok: true,
+    source: "katago-worker-v1",
+    isMock: false,
+    engine: {
+      name: "katago",
+      maxVisits: 200,
+      rawFormat: "json",
+      winratePerspective: "black",
+    },
+    input: { sgfSha256: "a".repeat(64), sgfSizeBytes: 42 },
+    katago: {
+      rootInfo: { winrate: 0.52, scoreLead: 0.4 },
+      moveInfosCount: 3,
+      topMove: { move: "Q16", winrate: 0.53 },
+      hasWinrate: true,
+      hasScoreLead: true,
+      hasOwnership: false,
+    },
+    game_info: { total_moves: 2 },
+    analysisPlan: {
+      version: "analysis-plan-v1",
+      totalMoves: 2,
+      boardSize: 19,
+      komi: 6.5,
+      candidateTurns: [],
+      strategy: {
+        mode: "light",
+        maxTurns: 20,
+        includeFinalPosition: true,
+        intervalStep: 20,
+        openingTurnCutoff: 30,
+      },
+    },
+    turnAnalyses: [
+      { status: "ok", turnIndex: 1, player: "B", playedMove: "Q16" },
+    ],
+    bsiV1: { version: "bsi-v1", signals: [{ turnIndex: 1 }] },
+    adiV1: { version: "adi-v1", signals: [{ turnIndex: 1 }] },
+    deepSearchResults: {
+      version: "deep-search-results-v1",
+      enabled: false,
+      completedCount: 0,
+    },
+    ...overrides,
+  };
+}
+
 describe("runKatagoAnalysisDbPipeline", () => {
   beforeEach(() => {
-    vi.spyOn(creditService, "updateAnalysisJobRow").mockResolvedValue(undefined);
-    vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue({
-      ok: true,
-      source: "katago-worker-v1",
-      isMock: false,
-    });
+    vi.spyOn(creditService, "updateAnalysisJobRow").mockResolvedValue(
+      undefined
+    );
+    vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue(
+      validKatagoWorkerResult()
+    );
   });
 
   afterEach(() => {
@@ -100,9 +151,11 @@ describe("runKatagoAnalysisDbPipeline", () => {
       language: "ko",
     });
 
-    const failedCall = vi.mocked(creditService.updateAnalysisJobRow).mock.calls.find(
-      args => (args[1] as { status?: string }).status === "failed"
-    );
+    const failedCall = vi
+      .mocked(creditService.updateAnalysisJobRow)
+      .mock.calls.find(
+        args => (args[1] as { status?: string }).status === "failed"
+      );
     expect(failedCall?.[1]).toEqual(
       expect.objectContaining({
         error_message: expect.stringContaining("ENGINE_MISMATCH_MOCK_RESULT"),
@@ -202,7 +255,7 @@ describe("runKatagoAnalysisDbPipeline", () => {
       vi.spyOn(analysisEngines, "analyzeSgfKatago").mockImplementation(
         () =>
           new Promise(resolve =>
-            setTimeout(() => resolve({ ok: true, source: "katago-worker-v1", isMock: false }), 3500)
+            setTimeout(() => resolve(validKatagoWorkerResult()), 3500)
           )
       );
 
@@ -216,13 +269,19 @@ describe("runKatagoAnalysisDbPipeline", () => {
       });
 
       await vi.advanceTimersByTimeAsync(1500);
-      const r = vitestAnalysisJobsStore.get("kg-hb-loss") as Record<string, unknown>;
+      const r = vitestAnalysisJobsStore.get("kg-hb-loss") as Record<
+        string,
+        unknown
+      >;
       Object.assign(r, { locked_by: "worker-reclaimed", attempt_count: 2 });
 
       await vi.advanceTimersByTimeAsync(2500);
       await done;
 
-      const rowAfter = vitestAnalysisJobsStore.get("kg-hb-loss") as { status: string; result: unknown };
+      const rowAfter = vitestAnalysisJobsStore.get("kg-hb-loss") as {
+        status: string;
+        result: unknown;
+      };
       expect(rowAfter.status).toBe("running");
       expect(rowAfter.result).toBeNull();
     });
@@ -264,12 +323,12 @@ describe("runKatagoAnalysisDbPipeline", () => {
     it("post-run heartbeat throw skips failed update and onJobFailed", async () => {
       vitestSeedAnalysisJob({ ...base, id: "post-throw" });
       const ul = vi.spyOn(creditService, "updateAnalysisJobRowWithLease");
-      vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockRejectedValue(new Error("db transport"));
-      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue({
-        ok: true,
-        source: "katago-worker-v1",
-        isMock: false,
-      });
+      vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockRejectedValue(
+        new Error("db transport")
+      );
+      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue(
+        validKatagoWorkerResult()
+      );
       const onJobFailed = vi.fn();
       const row = vitestAnalysisJobsStore.get("post-throw") as AnalysisJobDbRow;
       await runKatagoAnalysisDbPipeline({
@@ -280,20 +339,25 @@ describe("runKatagoAnalysisDbPipeline", () => {
         lease: { lockedBy: "worker-h", attemptCount: 1 },
         onJobFailed,
       });
-      const failedCalls = ul.mock.calls.filter(c => (c[2] as { status?: string }).status === "failed");
+      const failedCalls = ul.mock.calls.filter(
+        c => (c[2] as { status?: string }).status === "failed"
+      );
       expect(failedCalls.length).toBe(0);
       expect(onJobFailed).not.toHaveBeenCalled();
-      expect((vitestAnalysisJobsStore.get("post-throw") as { status: string }).status).toBe("running");
+      expect(
+        (vitestAnalysisJobsStore.get("post-throw") as { status: string }).status
+      ).toBe("running");
     });
 
     it("post-run heartbeat LEASE_LOST skips completed", async () => {
       vitestSeedAnalysisJob({ ...base, id: "post-lease" });
-      vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockResolvedValue({ ok: false, reason: "LEASE_LOST" });
-      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue({
-        ok: true,
-        source: "katago-worker-v1",
-        isMock: false,
+      vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockResolvedValue({
+        ok: false,
+        reason: "LEASE_LOST",
       });
+      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue(
+        validKatagoWorkerResult()
+      );
       const ul = vi.spyOn(creditService, "updateAnalysisJobRowWithLease");
       const row = vitestAnalysisJobsStore.get("post-lease") as AnalysisJobDbRow;
       await runKatagoAnalysisDbPipeline({
@@ -303,9 +367,13 @@ describe("runKatagoAnalysisDbPipeline", () => {
         language: "ko",
         lease: { lockedBy: "worker-h", attemptCount: 1 },
       });
-      const completedCalls = ul.mock.calls.filter(c => (c[2] as { status?: string }).status === "completed");
+      const completedCalls = ul.mock.calls.filter(
+        c => (c[2] as { status?: string }).status === "completed"
+      );
       expect(completedCalls.length).toBe(0);
-      expect((vitestAnalysisJobsStore.get("post-lease") as { status: string }).status).toBe("running");
+      expect(
+        (vitestAnalysisJobsStore.get("post-lease") as { status: string }).status
+      ).toBe("running");
     });
 
     it("interval heartbeat DB error skips completed without unhandledRejection", async () => {
@@ -317,11 +385,13 @@ describe("runKatagoAnalysisDbPipeline", () => {
       try {
         process.env.ANALYSIS_WORKER_HEARTBEAT_SECONDS = "5";
         vitestSeedAnalysisJob({ ...base, id: "iv-err" });
-        vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockRejectedValue(new Error("interval db"));
+        vi.spyOn(creditService, "heartbeatAnalysisJobLease").mockRejectedValue(
+          new Error("interval db")
+        );
         vi.spyOn(analysisEngines, "analyzeSgfKatago").mockImplementation(
           () =>
             new Promise(resolve =>
-              setTimeout(() => resolve({ ok: true, source: "katago-worker-v1", isMock: false }), 20_000)
+              setTimeout(() => resolve(validKatagoWorkerResult()), 20_000)
             )
         );
         const row = vitestAnalysisJobsStore.get("iv-err") as AnalysisJobDbRow;
@@ -335,7 +405,9 @@ describe("runKatagoAnalysisDbPipeline", () => {
         await vi.advanceTimersByTimeAsync(25_000);
         await p;
         expect(captured.length).toBe(0);
-        expect((vitestAnalysisJobsStore.get("iv-err") as { status: string }).status).toBe("running");
+        expect(
+          (vitestAnalysisJobsStore.get("iv-err") as { status: string }).status
+        ).toBe("running");
       } finally {
         process.off("unhandledRejection", handler);
         vi.useRealTimers();
@@ -349,11 +421,9 @@ describe("runKatagoAnalysisDbPipeline", () => {
 
     it("with lease and successful heartbeat completes job", async () => {
       vitestSeedAnalysisJob({ ...base, id: "ok-heart" });
-      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue({
-        ok: true,
-        source: "katago-worker-v1",
-        isMock: false,
-      });
+      vi.spyOn(analysisEngines, "analyzeSgfKatago").mockResolvedValue(
+        validKatagoWorkerResult()
+      );
       const row = vitestAnalysisJobsStore.get("ok-heart") as AnalysisJobDbRow;
       await runKatagoAnalysisDbPipeline({
         jobId: "ok-heart",
@@ -362,8 +432,12 @@ describe("runKatagoAnalysisDbPipeline", () => {
         language: "ko",
         lease: { lockedBy: "worker-h", attemptCount: 1 },
       });
-      expect((vitestAnalysisJobsStore.get("ok-heart") as { status: string }).status).toBe("completed");
-      expect((vitestAnalysisJobsStore.get("ok-heart") as { result: unknown }).result).toBeTruthy();
+      expect(
+        (vitestAnalysisJobsStore.get("ok-heart") as { status: string }).status
+      ).toBe("completed");
+      expect(
+        (vitestAnalysisJobsStore.get("ok-heart") as { result: unknown }).result
+      ).toBeTruthy();
     });
   });
 });

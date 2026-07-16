@@ -5,7 +5,8 @@
 
 import type { AnalysisPlanCandidateReasonV1 } from "./analysisPlanV1";
 
-export const MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION = "multi-turn-katago-analysis-v1" as const;
+export const MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION =
+  "multi-turn-katago-analysis-v1" as const;
 
 /** KataGo `moveInfos` 한 행 요약(BSI 등 후처리용, 전체 후보 배열 미저장) */
 export type TurnAnalysisMoveSummaryV1 = {
@@ -70,7 +71,7 @@ export type TurnAnalysisEntrySuccessV1 = {
   moveSummary?: TurnAnalysisMovePairSummaryV1;
   /** `moveInfos` 상위 N개만 요약(ADI v1 등; stdout 원문 저장 아님) */
   candidateMoves?: TurnAnalysisCandidateMoveSummaryV1[];
-  /** 순차 모드에서 `id` 없이 `pickPrimaryAnalysisObject` 폴백을 썼을 때만 true */
+  /** persistent query 실패 후 spawn fallback 또는 id-less 순차 폴백을 썼을 때 true */
   fallbackUsed?: boolean;
 };
 
@@ -85,7 +86,9 @@ export type TurnAnalysisEntryFailedV1 = {
   error: string;
 };
 
-export type TurnAnalysisEntryV1 = TurnAnalysisEntrySuccessV1 | TurnAnalysisEntryFailedV1;
+export type TurnAnalysisEntryV1 =
+  | TurnAnalysisEntrySuccessV1
+  | TurnAnalysisEntryFailedV1;
 
 export type MultiTurnKatagoAnalysisMetaV1 = {
   version: typeof MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION;
@@ -104,4 +107,18 @@ export type MultiTurnKatagoAnalysisMetaV1 = {
   partialFailure: boolean;
   /** batch stdout 에 기대 id 집합 밖의 `id` 응답 줄 수(요약용) */
   unknownResponseIdCount?: number;
+  /** 실제 query 실행 경로. 기존 저장 결과와의 하위 호환을 위해 optional. */
+  executionMode?:
+    | "skipped"
+    | "spawn_batch"
+    | "spawn_sequential"
+    | "persistent"
+    | "persistent_fallback_batch"
+    | "persistent_fallback_sequential";
+  /** persistent session으로 처음 시도한 query 수 */
+  persistentAttemptedCount?: number;
+  /** persistent session 1차 시도에서 실패한 query 수 */
+  persistentFailedCount?: number;
+  /** 기존 spawn 경로로 재시도한 query 수 */
+  fallbackAttemptedCount?: number;
 };

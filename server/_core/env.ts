@@ -95,6 +95,7 @@ export function validateProductionDeploymentEnv(): void {
   if (process.env.VITE_AUTH_PROVIDER?.trim() !== "clerk") {
     throw new Error("운영(production)에서는 VITE_AUTH_PROVIDER=clerk 가 필요합니다.");
   }
+  requireProdNonEmpty("VITE_CLERK_PUBLISHABLE_KEY", process.env.VITE_CLERK_PUBLISHABLE_KEY);
 
   requireProdNonEmpty("CLERK_SECRET_KEY", process.env.CLERK_SECRET_KEY);
   requireProdNonEmpty("JWT_SECRET", process.env.JWT_SECRET);

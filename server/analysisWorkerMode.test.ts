@@ -59,6 +59,7 @@ describe("buildAnalysisWorkerStartupEnvSnapshot", () => {
       ANALYSIS_WORKER_MODE: "external",
       KATATALK_ALLOW_MOCK_ANALYSIS: "false",
       ANALYSIS_WORKER_ID: "local-dev-worker-1",
+      ANALYSIS_WORKER_CONCURRENCY: 1,
       hasKATAGO_BINARY_PATH: true,
       hasKATAGO_CONFIG_PATH: true,
       hasKATAGO_MODEL_PATH: true,

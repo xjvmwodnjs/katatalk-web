@@ -12,6 +12,11 @@ export const productReviewCompletedResult = {
   ok: true,
   source: "katago-worker-v1",
   isMock: false,
+  engine: {
+    name: "katago",
+    winratePerspective: "black",
+    winratePerspectiveSource: "config",
+  },
   game_info: {
     black_player: "Black E2E",
     white_player: "White E2E",
@@ -28,11 +33,38 @@ export const productReviewCompletedResult = {
     boardSize: 19,
     komi: 6.5,
     candidateTurns: [
-      { turnIndex: 10, player: "B", move: "Q16", gtpMove: "Q16", reason: "interval_sample", priority: 0.9 },
-      { turnIndex: 18, player: "W", move: "D4", gtpMove: "D4", reason: "interval_sample", priority: 0.6 },
-      { turnIndex: 20, player: "W", move: "pass", gtpMove: "pass", reason: "final_position", priority: 0.1 },
+      {
+        turnIndex: 10,
+        player: "B",
+        move: "Q16",
+        gtpMove: "Q16",
+        reason: "interval_sample",
+        priority: 0.9,
+      },
+      {
+        turnIndex: 18,
+        player: "W",
+        move: "D4",
+        gtpMove: "D4",
+        reason: "interval_sample",
+        priority: 0.6,
+      },
+      {
+        turnIndex: 20,
+        player: "W",
+        move: "pass",
+        gtpMove: "pass",
+        reason: "final_position",
+        priority: 0.1,
+      },
     ],
-    strategy: { mode: "light", maxTurns: 20, includeFinalPosition: true, intervalStep: 10, openingTurnCutoff: 30 },
+    strategy: {
+      mode: "light",
+      maxTurns: 20,
+      includeFinalPosition: true,
+      intervalStep: 10,
+      openingTurnCutoff: 30,
+    },
   } satisfies AnalysisPlanV1,
   turnAnalyses: [
     {
@@ -44,8 +76,13 @@ export const productReviewCompletedResult = {
       priority: 0.9,
       query: { movesBeforeCount: 9, boardSize: 19, komi: 6.5 },
       katago: {
-        rootInfo: { winrate: 0.48, scoreLead: -2.2 },
-        topMove: { move: "D16", winrate: 0.56, scoreLead: 1.8, pv: ["D16", "C14", "F17", "Q4"] },
+        rootInfo: { winrate: 0.48, scoreLead: -2.2, currentPlayer: "B" },
+        topMove: {
+          move: "D16",
+          winrate: 0.56,
+          scoreLead: 1.8,
+          pv: ["D16", "C14", "F17", "Q4"],
+        },
         moveInfosCount: 6,
         hasWinrate: true,
         hasScoreLead: true,
@@ -71,15 +108,27 @@ export const productReviewCompletedResult = {
       priority: 0.6,
       query: { movesBeforeCount: 17, boardSize: 19, komi: 6.5 },
       katago: {
-        rootInfo: { winrate: 0.58, scoreLead: 2.7 },
-        topMove: { move: "Q4", winrate: 0.61, scoreLead: 3.1, pv: ["Q4", "R4", "R5"] },
+        rootInfo: { winrate: 0.58, scoreLead: 2.7, currentPlayer: "W" },
+        topMove: {
+          move: "Q4",
+          winrate: 0.61,
+          scoreLead: 3.1,
+          pv: ["Q4", "R4", "R5"],
+        },
         moveInfosCount: 5,
         hasWinrate: true,
         hasScoreLead: true,
         hasOwnership: false,
       },
-      comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 2, bestMove: "Q4" },
-      moveSummary: { played: { move: "D4", winrate: 0.58, scoreLead: 2.7 }, best: { move: "Q4", winrate: 0.61, scoreLead: 3.1 } },
+      comparisonReady: {
+        playedMoveFoundInCandidates: true,
+        playedMoveRank: 2,
+        bestMove: "Q4",
+      },
+      moveSummary: {
+        played: { move: "D4", winrate: 0.58, scoreLead: 2.7 },
+        best: { move: "Q4", winrate: 0.61, scoreLead: 3.1 },
+      },
       candidateMoves: [{ move: "Q4", order: 1, pvLength: 3, winrate: 0.61 }],
     },
   ] satisfies TurnAnalysisEntryV1[],
@@ -181,8 +230,18 @@ export const productReviewCompletedResult = {
   } satisfies AdiV1Result,
   deepSearchPlan: {
     version: "deep-search-plan-v1",
-    computedFrom: ["analysis-plan-v1", "multi-turn-katago-analysis-v1", "bsi-v1", "adi-v1"],
-    policy: { mode: "standard", maxCandidates: 3, minAdiScore: 0.5, minBsiScore: 30 },
+    computedFrom: [
+      "analysis-plan-v1",
+      "multi-turn-katago-analysis-v1",
+      "bsi-v1",
+      "adi-v1",
+    ],
+    policy: {
+      mode: "standard",
+      maxCandidates: 3,
+      minAdiScore: 0.5,
+      minBsiScore: 30,
+    },
     candidateCount: 1,
     candidates: [
       {
@@ -206,7 +265,12 @@ export const productReviewCompletedResult = {
     version: "deep-search-results-v1",
     computedFrom: ["deep-search-plan-v1"],
     enabled: false,
-    policy: { mode: "sequential", maxCandidates: 2, visits: 800, timeoutMs: 180_000 },
+    policy: {
+      mode: "sequential",
+      maxCandidates: 2,
+      visits: 800,
+      timeoutMs: 180_000,
+    },
     candidateCount: 1,
     attemptedCount: 0,
     completedCount: 0,
@@ -226,5 +290,9 @@ export const productReviewCompletedJobResponse = {
   createdAt: "2026-05-17T00:00:00.000Z",
   updatedAt: "2026-05-17T00:01:00.000Z",
   data: productReviewCompletedResult,
-  meta: { mock: false, message: "Synthetic katago-worker-v1 completed result for Product Review E2E." },
+  meta: {
+    mock: false,
+    message:
+      "Synthetic katago-worker-v1 completed result for Product Review E2E.",
+  },
 } satisfies AnalysisJobGetResponse;

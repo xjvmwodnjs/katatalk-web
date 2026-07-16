@@ -1,17 +1,11 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import {
-  SignIn,
-  SignUp,
-  UserButton,
-  SignedIn,
-  SignedOut,
-  useAuth as useClerkSession,
-} from "@clerk/clerk-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import LanguageSelector from "@/components/LanguageSelector";
 import { KATATALK_UI_LANG_EVENT, readStoredUiLang, persistUiLang, type UiLangCode } from "@/const";
 import type { Language } from "@/lib/mockData";
+
+type ClerkReactModule = typeof import("@clerk/clerk-react");
 
 /** 로그인 페이지 주변 안내 (Clerk 미번역분 보완) */
 const COPY: Record<
@@ -49,6 +43,20 @@ const COPY: Record<
 
 const PAGE_BG = "oklch(0.13 0.005 285)";
 
+let lazyClerkLoginScreen: ReturnType<typeof lazy> | null = null;
+
+function getLazyClerkLoginScreen() {
+  lazyClerkLoginScreen ??= lazy(async () => {
+    const clerk = await import("@clerk/clerk-react");
+    return {
+      default: function LazyClerkLoginScreenImpl() {
+        return <ClerkLoginScreen clerk={clerk} />;
+      },
+    };
+  });
+  return lazyClerkLoginScreen;
+}
+
 /** ClerkProvider 밖에서도 안전하게 안내만 표시 */
 function NonClerkLoginScreen() {
   const [uiLang, setUiLang] = useState<UiLangCode>(() => readStoredUiLang());
@@ -74,10 +82,11 @@ function NonClerkLoginScreen() {
 }
 
 /** Clerk 훅은 이 컴포넌트 안에서만 호출 (ClerkProvider 하위에서만 마운트) */
-function ClerkLoginScreen() {
+function ClerkLoginScreen({ clerk }: { clerk: ClerkReactModule }) {
+  const { SignIn, SignUp, UserButton, SignedIn, SignedOut } = clerk;
   const [, setLocation] = useLocation();
   const { isAuthenticated, loading } = useAuth();
-  const { isLoaded: clerkLoaded } = useClerkSession();
+  const { isLoaded: clerkLoaded } = clerk.useAuth();
   const [uiLang, setUiLang] = useState<UiLangCode>(() => readStoredUiLang());
   const t = COPY[uiLang];
   const pathOnly =
@@ -232,5 +241,10 @@ export default function LoginPage() {
   if (import.meta.env.VITE_AUTH_PROVIDER !== "clerk") {
     return <NonClerkLoginScreen />;
   }
-  return <ClerkLoginScreen />;
+  const LazyClerkLoginScreen = getLazyClerkLoginScreen();
+  return (
+    <Suspense fallback={<div className="min-h-screen" style={{ background: PAGE_BG }} />}>
+      <LazyClerkLoginScreen />
+    </Suspense>
+  );
 }

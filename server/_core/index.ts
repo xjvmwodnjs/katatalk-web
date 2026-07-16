@@ -15,6 +15,7 @@ import { serveStatic, setupVite } from "./vite";
 import { setServerListenPort } from "./serverListenPort";
 import { warnIfAppBaseUrlListenPortMismatch } from "./appBaseUrlPortGuard";
 import { resolveListenPortForServer } from "./listenPort";
+import { registerHealthRoutes } from "./healthRoutes";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -42,6 +43,7 @@ async function startServer() {
   if (ENV.isProduction) {
     app.set("trust proxy", 1);
   }
+  registerHealthRoutes(app);
   const server = createServer(app);
   // 결제 웹훅: 반드시 express.json() 앞에서 raw body 로 수신
   attachPaymentWebhooks(app);

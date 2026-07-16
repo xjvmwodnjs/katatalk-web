@@ -5,6 +5,7 @@ import {
   updateAnalysisJobRow,
   updateAnalysisJobRowWithLease,
 } from "./creditService";
+import type { AnalysisWorkerJobOutcome } from "./worker/analysisJobOutcome";
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -45,28 +46,28 @@ export async function runMockAnalysisDbPipeline(args: {
   /** Claim 경로 worker 전용; 없으면(인라인 mock) 기존 id-only update */
   lease?: AnalysisJobProcessingLease | null;
   onJobFailed?: () => void | Promise<void>;
-}): Promise<void> {
+}): Promise<AnalysisWorkerJobOutcome> {
   const { jobId, fileName, language, lease, onJobFailed } = args;
   try {
     await sleep(350);
     let r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 25 });
     if (!r.ok) {
       console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 25 });
-      return;
+      return "lease_lost";
     }
 
     await sleep(450);
     r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 55 });
     if (!r.ok) {
       console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 55 });
-      return;
+      return "lease_lost";
     }
 
     await sleep(400);
     r = await updateJobForPipeline(jobId, lease, { status: "running", progress: 85 });
     if (!r.ok) {
       console.warn("[mockAnalysisDbPipeline] lease_lost skip progress", { jobId, stage: 85 });
-      return;
+      return "lease_lost";
     }
 
     await sleep(300);
@@ -83,7 +84,9 @@ export async function runMockAnalysisDbPipeline(args: {
     });
     if (!r.ok) {
       console.warn("[mockAnalysisDbPipeline] lease_lost skip completed write", { jobId });
+      return "lease_lost";
     }
+    return "completed";
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     try {
@@ -97,7 +100,7 @@ export async function runMockAnalysisDbPipeline(args: {
       });
       if (!r.ok) {
         console.warn("[mockAnalysisDbPipeline] lease_lost skip failed write/refund", { jobId });
-        return;
+        return "lease_lost";
       }
     } catch (patchErr) {
       console.error("[mockAnalysisDbPipeline] failed to persist failure state", patchErr);
@@ -107,5 +110,6 @@ export async function runMockAnalysisDbPipeline(args: {
     } catch (refundErr) {
       console.error("[mockAnalysisDbPipeline] onJobFailed refund error", refundErr);
     }
+    return "failed";
   }
 }

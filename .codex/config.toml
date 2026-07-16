@@ -1,0 +1,9 @@
+# Project-scoped defaults for Codex sessions opened in this repository.
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+
+[agents]
+# Allow the primary agent plus up to four independent worker threads.
+max_threads = 4
+# Root agent may spawn direct workers; workers may not create further workers.
+max_depth = 1

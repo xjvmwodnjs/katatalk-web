@@ -1,0 +1,62 @@
+name: Analysis Data Retention
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Purge eligible analysis payloads. Leave false for a dry run.
+        required: true
+        default: false
+        type: boolean
+      batch_size:
+        description: Maximum final-job payloads to process (1-500)
+        required: true
+        default: "100"
+        type: choice
+        options:
+          - "25"
+          - "100"
+          - "250"
+          - "500"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analysis-data-retention
+  cancel-in-progress: false
+
+jobs:
+  retention:
+    name: Expire analysis payloads
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANALYSIS_DATA_RETENTION_BATCH_SIZE: ${{ inputs.batch_size }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install locked dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Require protected database credentials
+        shell: bash
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as protected production environment secrets."
+            exit 1
+          fi
+      - name: Run retention cleanup
+        shell: bash
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            corepack pnpm data:retention -- --apply
+          else
+            corepack pnpm data:retention
+          fi

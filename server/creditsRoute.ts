@@ -10,6 +10,21 @@ import { creditsLogsUserLimit, creditsMeUserLimit } from "./middleware/apiRateLi
 
 const creditsRouter = Router();
 
+type PublicCreditLogRow = Pick<
+  Awaited<ReturnType<typeof getCreditLogs>>[number],
+  "amount" | "type" | "description" | "payment_provider" | "created_at"
+>;
+
+function toPublicCreditLogRow(log: Awaited<ReturnType<typeof getCreditLogs>>[number]): PublicCreditLogRow {
+  return {
+    amount: log.amount,
+    type: log.type,
+    description: log.description,
+    payment_provider: log.payment_provider,
+    created_at: log.created_at,
+  };
+}
+
 function handleSupabaseCreditError(res: Response, e: unknown): void {
   if (e instanceof SupabaseAdminUnavailableError) {
     res.status(503).json({
@@ -55,7 +70,7 @@ creditsRouter.get("/api/credits/logs", requireAnalyzeAuth, creditsLogsUserLimit,
     try {
       await ensureProfileForClerkUser(user);
       const logs = await getCreditLogs(walletSubjectFromAuthUser(user), 20);
-      res.json({ logs });
+      res.json({ logs: logs.map(toPublicCreditLogRow) });
     } catch (e) {
       handleSupabaseCreditError(res, e);
     }

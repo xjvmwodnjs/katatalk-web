@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewModel";
 import type { Language } from "@/lib/mockData";
 import {
@@ -17,7 +18,11 @@ type Props = {
   fullTimeline?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-  progressStatus?: { isRunning: boolean; completedCount: number; totalPoints: number | null };
+  progressStatus?: {
+    isRunning: boolean;
+    completedCount: number;
+    totalPoints: number | null;
+  };
 };
 
 function clampWinratePct(n: number): number {
@@ -39,16 +44,43 @@ export default function AnalysisWinratePanel({
 }: Props) {
   const uiLang = normalizeAnalysisResultLang(lang);
   const t = getAnalysisResultUiStrings(uiLang);
+  const [displayColor, setDisplayColor] = useState<"B" | "W">("B");
+  const hasVerifiedBlackWhite = useMemo(() => {
+    const rowsWithWinrate = series.filter(point => point.rawWinrate != null);
+    return (
+      rowsWithWinrate.length > 0 &&
+      rowsWithWinrate.every(
+        point =>
+          point.perspective.normalized.status === "verified" &&
+          point.perspective.normalized.blackWinrate != null &&
+          point.perspective.normalized.whiteWinrate != null
+      )
+    );
+  }, [series]);
   const pts = useMemo(
-    () => series.filter((p) => p.perspective.normalized.displayWinrate != null),
-    [series]
+    () =>
+      series
+        .map(point => ({
+          ...point,
+          chartDisplayWinrate: hasVerifiedBlackWhite
+            ? displayColor === "B"
+              ? point.perspective.normalized.blackWinrate
+              : point.perspective.normalized.whiteWinrate
+            : point.perspective.normalized.displayWinrate,
+        }))
+        .filter(point => point.chartDisplayWinrate != null),
+    [displayColor, hasVerifiedBlackWhite, series]
   );
 
   const winrateYAxisLabel = useMemo(() => {
-    const key: WinrateDisplayLabelKeyV1 =
-      pts[0]?.perspective.normalized.displayLabelKey ?? "katagoOutputWinrate";
+    const key: WinrateDisplayLabelKeyV1 = hasVerifiedBlackWhite
+      ? displayColor === "B"
+        ? "blackWinrate"
+        : "whiteWinrate"
+      : (pts[0]?.perspective.normalized.displayLabelKey ??
+        "katagoOutputWinrate");
     return translateWinrateDisplayLabelKey(key, uiLang);
-  }, [pts, uiLang]);
+  }, [displayColor, hasVerifiedBlackWhite, pts, uiLang]);
 
   const { polyline, circles, pendingCircles } = useMemo(() => {
     const w = 560;
@@ -68,51 +100,115 @@ export default function AnalysisWinratePanel({
             ti,
           }))
         : [];
-      return { polyline: "", circles: [] as { cx: number; cy: number; ti: number; status: string }[], pendingCircles: pending };
+      return {
+        polyline: "",
+        circles: [] as { cx: number; cy: number; ti: number; status: string }[],
+        pendingCircles: pending,
+      };
     }
-    const maxTurn = Math.max(progressStatus?.totalPoints != null ? progressStatus.totalPoints - 1 : 0, ...pts.map((p) => p.turnIndex));
-    const xForTurn = (turnIndex: number) => padL + (maxTurn <= 0 ? iw / 2 : (turnIndex / maxTurn) * iw);
-    const xs = pts.map((p) => xForTurn(p.turnIndex));
-    const ys = pts.map(
-      (p) => padT + (1 - clampWinratePct(p.perspective.normalized.displayWinrate ?? 0) / 100) * ih
+    const maxTurn = Math.max(
+      progressStatus?.totalPoints != null ? progressStatus.totalPoints - 1 : 0,
+      ...pts.map(p => p.turnIndex)
     );
-    const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i]!.toFixed(1)}`).join(" ");
-    const circ = pts.map((p, i) => ({ cx: xs[i]!, cy: ys[i]!, ti: p.turnIndex, status: p.timelineStatus ?? "final" }));
-    const seen = new Set(pts.map((p) => p.turnIndex));
+    const xForTurn = (turnIndex: number) =>
+      padL + (maxTurn <= 0 ? iw / 2 : (turnIndex / maxTurn) * iw);
+    const xs = pts.map(p => xForTurn(p.turnIndex));
+    const ys = pts.map(
+      point =>
+        padT + (1 - clampWinratePct(point.chartDisplayWinrate ?? 0) / 100) * ih
+    );
+    const d = xs
+      .map(
+        (x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i]!.toFixed(1)}`
+      )
+      .join(" ");
+    const circ = pts.map((p, i) => ({
+      cx: xs[i]!,
+      cy: ys[i]!,
+      ti: p.turnIndex,
+      status: p.timelineStatus ?? "final",
+    }));
+    const seen = new Set(pts.map(p => p.turnIndex));
     const total = progressStatus?.totalPoints ?? 0;
     const pending = progressStatus?.isRunning
       ? Array.from({ length: total }, (_, ti) => ti)
-          .filter((ti) => !seen.has(ti))
-          .map((ti) => ({ cx: xForTurn(ti), cy: padT + ih / 2, ti }))
+          .filter(ti => !seen.has(ti))
+          .map(ti => ({ cx: xForTurn(ti), cy: padT + ih / 2, ti }))
       : [];
     return { polyline: d, circles: circ, pendingCircles: pending };
   }, [pts, progressStatus]);
 
+  const perspectiveControl = hasVerifiedBlackWhite ? (
+    <div
+      role="group"
+      aria-label={t.winrateTitle}
+      className="inline-flex h-8 overflow-hidden rounded-md border border-white/15 bg-black/20"
+    >
+      {(["B", "W"] as const).map(color => {
+        const selected = displayColor === color;
+        return (
+          <button
+            key={color}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => setDisplayColor(color)}
+            className={`min-w-10 px-2 text-xs font-semibold transition-colors ${
+              selected
+                ? "bg-amber-300 text-slate-950"
+                : "text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            {color === "B" ? t.blackPlayer : t.whitePlayer}
+          </button>
+        );
+      })}
+    </div>
+  ) : (
+    <button
+      type="button"
+      disabled
+      title={t.winrateToggleNote}
+      aria-label={t.winrateToggleNote}
+      className="h-8 rounded-md border border-white/10 px-2 text-xs text-slate-500 opacity-70"
+    >
+      {`${t.blackPlayer}/${t.whitePlayer}`}
+    </button>
+  );
+
+  const collapseControl = (
+    <button
+      type="button"
+      onClick={onToggleCollapsed}
+      title={collapsed ? t.winrateExpand : t.winrateCollapse}
+      aria-label={collapsed ? t.winrateExpand : t.winrateCollapse}
+      className="inline-flex size-8 items-center justify-center rounded-md border border-white/10 text-slate-300 hover:border-white/25 hover:bg-white/5"
+    >
+      {collapsed ? (
+        <ChevronDown aria-hidden="true" className="size-4" />
+      ) : (
+        <ChevronUp aria-hidden="true" className="size-4" />
+      )}
+    </button>
+  );
+
   if (pts.length === 0) {
     return (
-      <section className="mb-3 min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
+      <section className="mb-3 min-w-0 rounded-lg border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
         <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <h2 className="text-base font-bold text-amber-100 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+          <h2
+            className="text-base font-bold text-amber-100 sm:text-lg"
+            style={{ fontFamily: "'Noto Serif KR', serif" }}
+          >
             {t.winrateTitle}
           </h2>
-          <div className="flex min-w-0 flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:border-white/25"
-            >
-              {collapsed ? t.winrateExpand : t.winrateCollapse}
-            </button>
-            <button
-              type="button"
-              disabled
-              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
-            >
-              {t.winrateToggleNote}
-            </button>
+          <div className="flex min-w-0 items-center gap-2">
+            {perspectiveControl}
+            {collapseControl}
           </div>
         </div>
-        {!collapsed ? <p className="text-sm text-slate-500">{t.winrateEmpty}</p> : null}
+        {!collapsed ? (
+          <p className="text-sm text-slate-500">{t.winrateEmpty}</p>
+        ) : null}
         {!collapsed && progressStatus?.isRunning ? (
           <p className="text-xs text-slate-500">{`${t.winrateProgressLabel}: ${progressStatus.completedCount}/${progressStatus.totalPoints ?? "?"}`}</p>
         ) : null}
@@ -121,88 +217,132 @@ export default function AnalysisWinratePanel({
   }
 
   return (
-    <section className="mb-3 min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
+    <section className="mb-3 min-w-0 rounded-lg border border-white/10 bg-white/[0.03] p-3 sm:mb-6 sm:p-6">
       <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <h2 className="text-base font-bold text-amber-100 sm:text-lg" style={{ fontFamily: "'Noto Serif KR', serif" }}>
+        <h2
+          className="text-base font-bold text-amber-100 sm:text-lg"
+          style={{ fontFamily: "'Noto Serif KR', serif" }}
+        >
           {t.winrateTitle}
         </h2>
-        <div className="flex min-w-0 flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:border-white/25"
-          >
-            {collapsed ? t.winrateExpand : t.winrateCollapse}
-          </button>
-          <button
-            type="button"
-            disabled
-            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-500 cursor-not-allowed opacity-70"
-          >
-            {t.winrateToggleNote}
-          </button>
+        <div className="flex min-w-0 items-center gap-2">
+          {perspectiveControl}
+          {collapseControl}
         </div>
       </div>
       {!collapsed ? (
         <>
-          <p className="text-xs text-slate-500 mb-1">{t.winratePerspectiveNote}</p>
+          {!hasVerifiedBlackWhite ? (
+            <p className="mb-1 text-xs text-slate-500">
+              {t.winratePerspectiveNote}
+            </p>
+          ) : null}
           {fullTimeline ? (
-            <p className="text-xs text-slate-500 mb-1">{t.winrateFullTimelineNote}</p>
+            <p className="text-xs text-slate-500 mb-1">
+              {t.winrateFullTimelineNote}
+            </p>
           ) : null}
           {progressStatus?.isRunning ? (
             <p className="text-xs text-slate-500 mb-1">{`${t.winrateProgressLabel}: ${progressStatus.completedCount}/${progressStatus.totalPoints ?? "?"}`}</p>
           ) : null}
           <p className="text-xs text-slate-600 mb-3">{t.winrateClickHint}</p>
           <div className="min-w-0 overflow-hidden">
-        <svg viewBox="0 0 560 200" className="h-36 w-full max-w-full select-none sm:h-48" role="img" aria-label={winrateYAxisLabel}>
-          <rect x="0" y="0" width="560" height="200" fill="rgba(0,0,0,0.2)" rx="8" />
-          {[0, 25, 50, 75, 100].map((pct) => {
-            const y = 12 + (1 - pct / 100) * 160;
-            return (
-              <g key={pct}>
-                <line x1="44" y1={y} x2="544" y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                <text x="4" y={y + 4} fill="#64748b" fontSize="10" fontFamily="JetBrains Mono, monospace">
-                  {pct}
-                </text>
-              </g>
-            );
-          })}
-          <text x="44" y="196" fill="#94a3b8" fontSize="11" fontFamily="Noto Sans KR, sans-serif">
-            {winrateYAxisLabel}
-          </text>
-          {polyline ? (
-            <path d={polyline} fill="none" stroke="#C9A84C" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          ) : null}
-          {pendingCircles.map((c) => (
-            <circle key={`pending-${c.ti}`} cx={c.cx} cy={c.cy} r={3.5} fill="#1e293b" stroke="#475569" strokeWidth="1" opacity="0.45" />
-          ))}
-          {circles.map((c) => {
-            const sel = selectedTurnIndex === c.ti;
-            const partial = c.status === "partial";
-            return (
-              <circle
-                key={c.ti}
-                cx={c.cx}
-                cy={c.cy}
-                r={sel ? 7 : partial ? 4 : 5}
-                fill={sel ? "#E8D48B" : partial ? "#475569" : "#334155"}
-                stroke={sel ? "#fff" : partial ? "#C9A84C" : "#94a3b8"}
-                strokeDasharray={partial ? "3 2" : undefined}
-                strokeWidth={sel ? 2 : 1}
-                className="cursor-pointer hover:opacity-90"
-                onClick={() => onSelectTurnIndex(c.ti)}
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onSelectTurnIndex(c.ti);
-                  }
-                }}
-                aria-label={`${t.chartAriaTurn} ${c.ti}`}
+            <svg
+              viewBox="0 0 560 200"
+              className="h-36 w-full max-w-full select-none sm:h-48"
+              role="img"
+              aria-label={winrateYAxisLabel}
+            >
+              <rect
+                x="0"
+                y="0"
+                width="560"
+                height="200"
+                fill="rgba(0,0,0,0.2)"
+                rx="8"
               />
-            );
-          })}
-        </svg>
+              {[0, 25, 50, 75, 100].map(pct => {
+                const y = 12 + (1 - pct / 100) * 160;
+                return (
+                  <g key={pct}>
+                    <line
+                      x1="44"
+                      y1={y}
+                      x2="544"
+                      y2={y}
+                      stroke="rgba(255,255,255,0.06)"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x="4"
+                      y={y + 4}
+                      fill="#64748b"
+                      fontSize="10"
+                      fontFamily="JetBrains Mono, monospace"
+                    >
+                      {pct}
+                    </text>
+                  </g>
+                );
+              })}
+              <text
+                x="44"
+                y="196"
+                fill="#94a3b8"
+                fontSize="11"
+                fontFamily="Noto Sans KR, sans-serif"
+              >
+                {winrateYAxisLabel}
+              </text>
+              {polyline ? (
+                <path
+                  d={polyline}
+                  fill="none"
+                  stroke="#C9A84C"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              ) : null}
+              {pendingCircles.map(c => (
+                <circle
+                  key={`pending-${c.ti}`}
+                  cx={c.cx}
+                  cy={c.cy}
+                  r={3.5}
+                  fill="#1e293b"
+                  stroke="#475569"
+                  strokeWidth="1"
+                  opacity="0.45"
+                />
+              ))}
+              {circles.map(c => {
+                const sel = selectedTurnIndex === c.ti;
+                const partial = c.status === "partial";
+                return (
+                  <circle
+                    key={c.ti}
+                    cx={c.cx}
+                    cy={c.cy}
+                    r={sel ? 7 : partial ? 4 : 5}
+                    fill={sel ? "#E8D48B" : partial ? "#475569" : "#334155"}
+                    stroke={sel ? "#fff" : partial ? "#C9A84C" : "#94a3b8"}
+                    strokeDasharray={partial ? "3 2" : undefined}
+                    strokeWidth={sel ? 2 : 1}
+                    className="cursor-pointer hover:opacity-90"
+                    onClick={() => onSelectTurnIndex(c.ti)}
+                    tabIndex={0}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectTurnIndex(c.ti);
+                      }
+                    }}
+                    aria-label={`${t.chartAriaTurn} ${c.ti}`}
+                  />
+                );
+              })}
+            </svg>
           </div>
         </>
       ) : null}

@@ -2,6 +2,32 @@
 
 > 베타에서는 결제 UI가 **Lemon Squeezy** 만 사용합니다( **일회성 크레딧 팩 구매** , 구독 모델 아님). **Toss** 는 **향후 국내 결제 옵션**으로 검토하며(`tossProvider` 스켈레톤) **현재 checkout UI 에는 노출하지 않습니다**. Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
 
+## 상용화 readiness 기준
+
+- [ ] 공개 유료 베타 readiness **76% -> 80% 이상**으로 올리기 (`docs/commercialization-review.md`를 단일 기준으로 사용)
+- [x] 고객형 synthetic SGF suite 4개 launch gate 통과 (`katago:product-suite -- --customer-fixtures --strict-warnings --max-successful-p95-ms 120000 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0`)
+- [ ] 실제 고객형 SGF corpus 10-20개 manifest + product suite 통과 (`katago:corpus-validate`와 `--corpus-manifest` 구현 완료, 실제 corpus와 검수 결과는 아직 필요)
+- [x] corpus manifest v1 도구 구현 — SHA-256, 익명화 metadata, 최소 10건, 9/13/19·접바둑·pass·setup·장기 대국 coverage, 기대 visits/turn/BSI/ADI/quality 검사
+- [ ] 기보별 독립 바둑 검수자 2명 승인 (`--require-human-review` gate 구현 완료, 실제 검수 미실행)
+- [x] persistent KataGo root benchmark에서 spawn 대비 p50/p95 측정 (`katago:persistent-benchmark -- --customer-fixtures`; warm persistent p95 `2269ms`)
+- [x] persistent KataGo root analysis를 worker product path에 flag-gated 통합하고 full product suite 재측정 (4/4, p50 `19979ms`, p95 `37081ms`, quality warning/failure 0)
+- [x] 운영 후보 프로필 root 200 visits, multi-turn 6 측정 및 persistent multi-turn 재측정 (4/4, p50 `23053ms`, p95 `30769ms`, quality warning/failure 0; root-only 기준선 대비 전체 시간 `53.7%` 감소)
+- [x] root와 multi-turn의 동일 persistent process/model 재사용, 실패 query 선택 fallback/strict 모드, 실행 metadata, standalone CLI session 정리 구현
+- [x] KataGo 결과에 root/multi-turn/signal/deep/timeline 단계별 latency 계측 추가
+- [x] KataGo 승률 축 계약 검증 — 실제 analysis config 파싱, 기대값 불일치 Worker startup 차단, result quality gate, setup/pass 실엔진 4/4
+- [~] Worker 동시성 1/2/4 용량 검증: 격리 process C2/4는 메모리 NO-GO. bounded 단일 공유 KataGo C4 round-robin 8건 mini-soak는 8/8, E2E p95 `81686ms`, `5.88 jobs/min`, peak delta `2059.9MiB`, minimum free `8423MiB`, 품질 0/0으로 로컬 GO. query 실패 격리와 child crash pending 복구 단위 검증 완료. 실제 corpus·Worker RSS/GPU VRAM·Supabase staging queue·30~60분 soak·환불/reclaim fault injection 필요
+- [x] Worker runtime preflight 구현 — `pnpm worker:preflight`이 큐 claim 없이 KataGo 파일·승률 config·backend/GPU·동시성 정책을 fail-closed 검사. 실제 staging Worker 실행은 아직 필요.
+- [~] Worker observability foundation implemented: service-role status RPC and `/ops/analysis-worker-health` distinguish idle Worker liveness from job leases. Supabase migration, staging TTL/restart, and long-running job soak remain required.
+- [ ] staging Web/Worker/결제 webhook/credit ledger end-to-end 통과
+- [~] SGF/analysis payload deletion and opt-in retention implemented: result UI now exposes an owner-only confirmed delete action; migration 009 provides API deletion; migration 010 plus `data:retention` defaults to dry-run and only purges completed/failed payloads with an explicit expiry. Supabase migration application, staging UI E2E, scheduler, account-level anonymization, and legal review remain.
+- [~] Public-document drafts added: `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` reflect implemented flows and explicitly flag required legal decisions. Operator identity, jurisdiction, refunds, retention, support contact, and final legal approval remain.
+- [~] Protected manual retention workflow and runbook added: `.github/workflows/analysis-data-retention.yml` defaults to dry-run and requires a protected `production` environment plus explicit `apply=true` for deletion. Configure environment reviewers/secrets, apply migrations 009/010, perform a staging rehearsal, and obtain legal retention approval before production use.
+- [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
+- [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
+- [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
+- [~] 2026-07-16 repository cleanup removed ignored `.tmp/`, `test-results/`, `dist/`, and `analysis_logs/`. Git delivery remains blocked by a 187-entry dirty worktree and an `EPERM` failure updating `.git/FETCH_HEAD`; reconcile cached `origin/master`, split commits, and push CI-verified work before release.
+- [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
+
 ## 결제·법무
 
 - [ ] **Toss** 실결제창·결제 승인 API·웹훅 서명 검증 완성 (`tossProvider.ts` TODO)
@@ -19,7 +45,8 @@
 
 ## 알고리즘·해설(향후)
 
-- [ ] **BSI/ADI·Concept Tagger·Explanation Planner·Claim Verification·Q&A Engine** — 구현 시 설계·행위 근거는 **최종 알고리즘 기준 문서** [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)를 따른다.
+- [x] **BSI/ADI** — multi-turn 기반 결정론적 신호와 product review 경로에 연결.
+- [ ] **Concept Tagger·Explanation Planner·Claim Verification·Q&A Engine** — 핵심 경로 연결과 실제 기보 검증이 필요하며, 설계·행위 근거는 [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)를 따른다.
 
 ## 분석
 
@@ -32,13 +59,13 @@
 - [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI v1 수치·LLM 없음, Deep Search 미실행). timeout 시 SIGTERM→SIGKILL 시도.
 - [x] **analysis plan v1** — SGF 전체 수 파싱·`turnIndex`/`player`/`gtpMove`·간격+최종국면 후보(`shared/analysisPlanV1.ts`, `server/analysisPlan.ts`). KataGo는 1회; `result.analysisPlan`에 동봉.
 - [x] **multi-turn KataGo raw v1** — `analysisPlan` 후보별 착수 직전 국면 추가 분석(`turnAnalyses`, `multiTurnAnalysis`). 배치 시 stdout `id` 중복·누락 검증, 순차 폴백은 env 로만. 운영 전 **로컬 KataGo로 stdin JSONL 배치 smoke** 필수(README).
-- [ ] **KataGo worker 고도화** — stdout 스트리밍·상한, raw Storage/artifact 정책, GPU 호스트 분리.
+- [~] **KataGo worker 고도화** — root/multi-turn 동일 process/model 재사용, bounded C4, query failure 격리, child crash pending 정리, shutdown drain, 안전 설정 guard 완료. stdout 스트리밍·상한, raw Storage/artifact 정책, Worker RSS/GPU VRAM telemetry와 staging 환불/reclaim fault injection이 남음. 공유 C4 8건 whole-system peak delta 약 `2059.9MiB`
 - [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1`·`components`·perspective 메타(`provisional`). KataGo score/winrate 축은 샘플 검증 후 확정. `top_mistakes`/해설 미사용.
 - [x] **ADI v1 (signal only)** — `result.adiV1`·`deepSearchCandidate`·components(`visitEntropy` 등). **Deep Search 실행·`top_mistakes`/해설/LLM 없음.** `docs/algorithm/KataTalk_Algorithm_V2.5.md` 기준 Value & Search 단계 일부.
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
 - [x] **Analysis Learning Events v1** — BSI/ADI/Deep Search plan·result/`turnAnalyses`/`winrateTimelineV1` 기반 deterministic 핵심 검토 후보 최대 5개. ViewModel `learningEvents` 및 후보 chip 우선 입력으로 사용. 추가 KataGo/LLM/`top_mistakes` 없음.
-- [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·승률 시리즈(katago_output 원시만), 중립 라벨·경고문. 바둑판/차트 UI 미포함.
-- [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG·후보 카드·참고도 PV·`BadukBoardView` SVG·수순 탐색. `sgf_content` 없으면 placeholder. mock-legacy / unknown 별도 안내. 흑/백 승률 토글은 비활성(준비 중).
+- [x] **분석 결과 ViewModel v1** — `buildAnalysisResultViewModel` (`shared/analysisResultViewModel.ts`): katago-worker-v1 / mock-legacy 분리, 후보·PV·검증된 흑백 승률 시리즈, 중립 라벨·경고문. metadata 없는 legacy 결과는 원시 관점 유지.
+- [x] **결과 페이지 UI v1** — `AnalysisResultView` + 승률 SVG·후보 카드·참고도 PV·`BadukBoardView` SVG·수순 탐색. `sgf_content` 없으면 placeholder. 검증된 결과는 흑/백 토글, legacy/unknown은 비활성 안전 안내.
 - [ ] **분석 결과 UI v3 모바일 수동 점검** — viewport `390x844`, `430x932`, `768x1024`, desktop `1440px` 에서 바둑판 overflow 없음, 수순 버튼 줄바꿈 없음, 승률 패널 접기/펼치기, 후보 chip horizontal scroll, AI 메모 버튼 wrap 확인.
 - [x] **SGF playback / board ViewModel v1** — `shared/sgfPlaybackV1.ts` 메인라인·pass/중복/좌표·`buildAnalysisResultViewModel(data, { selectedTurnIndex })`. `sgf_content`/`sgfContent` 없으면 placeholder.
 - [x] **SGF token parser + capture engine v1** — property bracket 이스케이프·주석 속 `;B[]` 오인 방지·변화도 skip 경고·liberty 기반 상대 포획(연결군). ko/자살 미완 경고.
@@ -46,16 +73,17 @@
 - [x] **Board navigation v1** — `BoardTurnNavigation` + `shared/boardNavigationV1.ts`: 처음/이전/다음/끝·슬라이더·`{current}/{total}`. 승률·후보·참고도·보드 동일 `selectedTurnIndex`. mock/placeholder 미표시.
 - [x] **Board keyboard navigation v1** — ←/→·Home/End로 `selectedTurnIndex` 보기 전용 이동. input/textarea/select/button/slider focus 시 비활성.
 - [x] **Board navigation hardening** — `selectTurnIndex` clamp 통일·`defaultPrevented` 존중·`totalMoves=0` 비활성 UX.
-- [ ] **바둑판 UX** — 착수 인터략션·변화도 탐색·흑백 승률 토글·애니메이션 등은 미구현.
+- [ ] **바둑판 UX** — 착수 인터랙션·변화도 탐색·애니메이션 등은 미구현.
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).
-- [x] **Winrate perspective normalizer v1** — `shared/winratePerspectiveV1.ts`: raw clamp·`katago_output_only`/`unverified`·evidence. `blackWinrate`/`whiteWinrate` null. 차트는 KataGo 관점 유지.
-- [x] **Winrate perspective hardening** — raw 는 `typeof number` + finite 만 유효(문자열·boolean·NaN·Infinity → `unverified`). `displayLabelKey` → `translateWinrateDisplayLabelKey`. `verified` 승격 미구현(`WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` 문서화만).
-- [x] **Winrate axis sample verification (docs)** — `docs/winrate-axis-verification.md`·`server/fixtures/winrateAxisSamplesV1.ts`·승격 조건·변환 공식 후보. 코드 변환/토글/verified 생성 없음.
-- [x] **Full-game winrate timeline v1** — Worker `analyzeTurns`·`result.winrateTimelineV1`·ViewModel/UI 우선(기본 `KATAGO_WINRATE_TIMELINE_ENABLED=false`). `totalMoves > maxTurns` 시 `warningCodes`에 `TIMELINE_TURNS_CAPPED`. 흑백 변환/토글 없음.
+- [x] **Winrate perspective normalizer v1** — `shared/winratePerspectiveV1.ts`: raw clamp, `BLACK`/`WHITE`/`SIDETOMOVE` 변환, 명시적 current player 근거, legacy `katago_output_only` fallback.
+- [x] **Winrate perspective hardening** — raw는 `typeof number` + finite만 유효. config 누락·중복·미지원·기대값 불일치와 current player 근거 누락은 fail-closed 또는 미변환.
+- [x] **Winrate axis real-engine verification** — [`docs/winrate-axis-verification.md`](winrate-axis-verification.md): KataGo v1.16.4, config `BLACK`, 흑·백 차례·pass·setup stone product suite 4/4, 품질 0/0.
+- [x] **Full-game winrate timeline v1** — Worker `analyzeTurns`·`result.winrateTimelineV1`·ViewModel/UI 우선(기본 `KATAGO_WINRATE_TIMELINE_ENABLED=false`). 축 metadata와 흑백 변환을 final/progress에 동일 적용.
 - [x] **환경 변수 가이드** — [`docs/env-guide.md`](env-guide.md): Local / Railway Web / Worker·mock·GPU 프로파일.
-- [ ] **흑/백 승률 표시 토글** — 실제 KataGo 샘플로 축 확정·`WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1` 충족 후 `verified` 승격·토글 UX.
-- [ ] **KataGo / LLM** — Deep Search 실행·해설 파이프라인(V2.5 문서 기준).
+- [x] **흑/백 승률 표시 토글** — 검증 metadata가 있는 결과에서 흑 기본·백 보완값 segmented control과 축 라벨 전환. legacy 결과 비활성. 390/430/1440 E2E 통과.
+- [x] **KataGo Deep Search 실행** — feature flag 기반 선택형 실행과 결과 요약 경로 구현.
+- [ ] **검증된 LLM 해설** — Claim 근거 검증을 포함한 선택형 해설 파이프라인을 실제 corpus로 검증.
 
 ## 최신 master 배포 전 smoke (체크리스트)
 
@@ -79,13 +107,13 @@
 
 ### Web / Worker 환경 변수 최종 체크리스트
 
-| 구분 | 확인 항목 |
-|------|------------|
-| **공통** | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk, Lemon, `APP_BASE_URL` (HTTPS), `JWT_SECRET` |
-| **Web** | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago` (실분석 공개 시), **`KATATALK_ALLOW_MOCK_ANALYSIS` 미설정 또는 false**; **Web 에는 `KATAGO_*` 경로 불필요**(GPU worker 호스트에만 binary/model) |
-| **Worker** | Web 과 동일 Supabase·Clerk 등 최소 동일 세트; **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH`**; **`ANALYSIS_WORKER_ID`**(선택, lease 식별용) |
-| **Lease** | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부 |
-| **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토 |
+| 구분            | 확인 항목                                                                                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **공통**        | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk, Lemon, `APP_BASE_URL` (HTTPS), `JWT_SECRET`                                                                                                                           |
+| **Web**         | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago` (실분석 공개 시), **`KATATALK_ALLOW_MOCK_ANALYSIS` 미설정 또는 false**; **Web 에는 `KATAGO_*` 경로 불필요**(GPU worker 호스트에만 binary/model)                                        |
+| **Worker**      | Web 과 동일 Supabase·Clerk 등 최소 동일 세트; **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` / `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`**; **`ANALYSIS_WORKER_ID`**(선택, lease 식별용) |
+| **Lease**       | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부                                                                                                                                                          |
+| **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토                                                                                                                            |
 
 ### Deep Search **OFF** 기본 스모크 (프로덕션·스테이징 공통 권장)
 

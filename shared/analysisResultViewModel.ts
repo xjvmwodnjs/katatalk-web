@@ -3,11 +3,20 @@
  * 바둑판 렌더·승률 그래프 컴포넌트·LLM·top_mistakes 생성 없음.
  */
 
-import type { AnalysisPlanCandidateReasonV1, AnalysisPlanV1 } from "./analysisPlanV1";
+import type {
+  AnalysisPlanCandidateReasonV1,
+  AnalysisPlanV1,
+} from "./analysisPlanV1";
 import type { AdiV1Result, AdiV1Signal } from "./adiV1";
 import type { BsiV1Result, BsiV1Signal } from "./bsiV1";
-import type { DeepSearchPlanCandidateV1, DeepSearchPlanV1Result } from "./deepSearchPlanV1";
-import type { DeepSearchResultsV1Result, DeepSearchSingleResultOkV1 } from "./deepSearchResultsV1";
+import type {
+  DeepSearchPlanCandidateV1,
+  DeepSearchPlanV1Result,
+} from "./deepSearchPlanV1";
+import type {
+  DeepSearchResultsV1Result,
+  DeepSearchSingleResultOkV1,
+} from "./deepSearchResultsV1";
 import {
   buildAnalysisLearningEventsV1,
   isAnalysisLearningEventsV1,
@@ -34,16 +43,28 @@ import {
   buildExplanationPlanV2ForReviewMove,
   type ExplanationPlanV2,
 } from "./explanationPlannerV2";
-import { attachConceptTagsToProductMoveV1, type ConceptTaggerOwnershipSummaryV1 } from "./conceptTaggerV1";
+import {
+  attachConceptTagsToProductMoveV1,
+  type ConceptTaggerOwnershipSummaryV1,
+} from "./conceptTaggerV1";
 import { attachCandidateComparisonToProductMoveV1 } from "./candidateComparisonV1";
-import type { TurnAnalysisEntryV1, TurnAnalysisEntrySuccessV1 } from "./multiTurnKatagoAnalysisV1";
+import type {
+  TurnAnalysisEntryV1,
+  TurnAnalysisEntrySuccessV1,
+} from "./multiTurnKatagoAnalysisV1";
 import {
   buildSgfPlaybackStateV1,
   readSgfContentFromResultPayload,
   type SgfPlaybackPlaceholderV1,
   type SgfPlaybackViewModelV1,
 } from "./sgfPlaybackV1";
-import { normalizeWinratePerspectiveV1, type WinratePerspectivePointV1 } from "./winratePerspectiveV1";
+import {
+  normalizeKatagoConfiguredWinratePerspectiveV1,
+  normalizeWinratePerspectiveV1,
+  type KatagoConfiguredWinratePerspectiveV1,
+  type WinratePerspectivePointV1,
+  type WinrateRawPerspectiveV1,
+} from "./winratePerspectiveV1";
 import {
   isWinrateTimelineV1,
   type WinrateTimelineGraphPointStatusV1,
@@ -54,7 +75,8 @@ import {
 export type AnalysisResultVmWarningCodeV1 =
   | "beta_numeric_reference"
   | "mock_demo_disclaimer"
-  | "unknown_result_format";
+  | "unknown_result_format"
+  | "katago_quality_warning";
 
 export type AnalysisResultVmWarningV1 = {
   code: AnalysisResultVmWarningCodeV1;
@@ -73,13 +95,17 @@ const NEUTRAL_LABEL_KEYS = [
   "ar_label_played_vs_candidate_gap",
 ] as const;
 
-const DEFAULT_VM_WARNINGS: AnalysisResultVmWarningV1[] = [{ code: "beta_numeric_reference" }];
+const DEFAULT_VM_WARNINGS: AnalysisResultVmWarningV1[] = [
+  { code: "beta_numeric_reference" },
+];
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
-function isKatagoWorkerV1Payload(data: unknown): data is Record<string, unknown> {
+function isKatagoWorkerV1Payload(
+  data: unknown
+): data is Record<string, unknown> {
   return isPlainObject(data) && data.source === "katago-worker-v1";
 }
 
@@ -87,23 +113,59 @@ function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
+function extractKatagoQualityWarnings(
+  result: Record<string, unknown>
+): AnalysisResultVmWarningV1[] {
+  const qualityGate = result.qualityGate;
+  if (!isPlainObject(qualityGate) || !Array.isArray(qualityGate.issues)) {
+    return [];
+  }
+  const out: AnalysisResultVmWarningV1[] = [];
+  const seen = new Set<string>();
+  for (const issue of qualityGate.issues) {
+    if (!isPlainObject(issue)) {
+      continue;
+    }
+    const code = typeof issue.code === "string" ? issue.code.trim() : "";
+    if (!code || seen.has(code)) {
+      continue;
+    }
+    const severity = issue.severity;
+    if (severity !== "warn" && severity !== "fail") {
+      continue;
+    }
+    seen.add(code);
+    out.push({ code: "katago_quality_warning", params: { qualityCode: code } });
+    if (out.length >= 3) {
+      break;
+    }
+  }
+  return out;
+}
+
 function labelKeyForIndex(i: number): string {
   return NEUTRAL_LABEL_KEYS[i % NEUTRAL_LABEL_KEYS.length]!;
 }
 
-function turnReasonFromPlan(analysisPlan: AnalysisPlanV1 | undefined, turnIndex: number): AnalysisPlanCandidateReasonV1 | null {
+function turnReasonFromPlan(
+  analysisPlan: AnalysisPlanV1 | undefined,
+  turnIndex: number
+): AnalysisPlanCandidateReasonV1 | null {
   if (!analysisPlan?.candidateTurns) {
     return null;
   }
-  const row = analysisPlan.candidateTurns.find((c) => c.turnIndex === turnIndex);
+  const row = analysisPlan.candidateTurns.find(c => c.turnIndex === turnIndex);
   return row?.reason ?? null;
 }
 
-function turnReasonFromTurnAnalyses(turnAnalyses: TurnAnalysisEntryV1[] | undefined, turnIndex: number): AnalysisPlanCandidateReasonV1 | null {
+function turnReasonFromTurnAnalyses(
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined,
+  turnIndex: number
+): AnalysisPlanCandidateReasonV1 | null {
   if (!turnAnalyses) {
     return null;
   }
-  const row = turnAnalyses.find((t) => t.turnIndex === turnIndex);
+  const row = turnAnalyses.find(t => t.turnIndex === turnIndex);
   return row && "reason" in row ? row.reason : null;
 }
 
@@ -138,7 +200,9 @@ function extractPvFromTopMove(topMove: unknown): string[] {
   return out;
 }
 
-function extractPvFromCandidateMoves(entry: TurnAnalysisEntrySuccessV1): string[] {
+function extractPvFromCandidateMoves(
+  entry: TurnAnalysisEntrySuccessV1
+): string[] {
   const first = entry.candidateMoves?.[0];
   if (!first || typeof first.move !== "string") {
     return [];
@@ -147,11 +211,14 @@ function extractPvFromCandidateMoves(entry: TurnAnalysisEntrySuccessV1): string[
   return [first.move];
 }
 
-function getTurnAnalysisOk(turnAnalyses: TurnAnalysisEntryV1[] | undefined, turnIndex: number): TurnAnalysisEntrySuccessV1 | null {
+function getTurnAnalysisOk(
+  turnAnalyses: TurnAnalysisEntryV1[] | undefined,
+  turnIndex: number
+): TurnAnalysisEntrySuccessV1 | null {
   if (!turnAnalyses) {
     return null;
   }
-  const row = turnAnalyses.find((t) => t.turnIndex === turnIndex);
+  const row = turnAnalyses.find(t => t.turnIndex === turnIndex);
   if (!row || row.status !== "ok") {
     return null;
   }
@@ -165,16 +232,24 @@ function getDeepOkRow(
   if (!deep?.enabled || !deep.results) {
     return null;
   }
-  const r = deep.results.find((x) => x.turnIndex === turnIndex && x.status === "ok");
+  const r = deep.results.find(
+    x => x.turnIndex === turnIndex && x.status === "ok"
+  );
   return r && r.status === "ok" ? r : null;
 }
 
-function findBsi(bsi: BsiV1Result | undefined, turnIndex: number): BsiV1Signal | null {
-  return bsi?.signals?.find((s) => s.turnIndex === turnIndex) ?? null;
+function findBsi(
+  bsi: BsiV1Result | undefined,
+  turnIndex: number
+): BsiV1Signal | null {
+  return bsi?.signals?.find(s => s.turnIndex === turnIndex) ?? null;
 }
 
-function findAdi(adi: AdiV1Result | undefined, turnIndex: number): AdiV1Signal | null {
-  return adi?.signals?.find((s) => s.turnIndex === turnIndex) ?? null;
+function findAdi(
+  adi: AdiV1Result | undefined,
+  turnIndex: number
+): AdiV1Signal | null {
+  return adi?.signals?.find(s => s.turnIndex === turnIndex) ?? null;
 }
 
 export type AnalysisResultWinratePointV1 = {
@@ -184,7 +259,7 @@ export type AnalysisResultWinratePointV1 = {
   rawWinrate: number | null;
   /** 0~100 표시용 — mirrors `perspective.normalized.displayWinrate` */
   displayWinrate: number | null;
-  displayPerspective: "katago_output";
+  displayPerspective: WinrateRawPerspectiveV1;
   currentPlayer: "B" | "W" | null;
   playerToMove: "B" | "W" | null;
   confidence: "provisional" | "verified";
@@ -270,7 +345,7 @@ export type MockLegacyAnalysisViewModel = {
     deepSearchEnabled: false;
   };
   productReviewV1: null;
-  graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
+  graph: { winrateSeries: []; winrateSeriesFromTimeline: false };
   learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
   variationPreview: [];
@@ -293,7 +368,7 @@ export type UnknownAnalysisViewModel = {
     deepSearchEnabled: false;
   };
   productReviewV1: null;
-  graph: { winrateSeries: [], winrateSeriesFromTimeline: false };
+  graph: { winrateSeries: []; winrateSeriesFromTimeline: false };
   learningEvents: AnalysisLearningEventsV1;
   keyMoveCandidates: [];
   variationPreview: [];
@@ -306,9 +381,31 @@ export type BuildAnalysisResultViewModelOpts = {
   selectedTurnIndex?: number | null;
 };
 
-export type AnalysisResultViewModel = KatagoWorkerV1AnalysisViewModel | MockLegacyAnalysisViewModel | UnknownAnalysisViewModel;
+export type AnalysisResultViewModel =
+  | KatagoWorkerV1AnalysisViewModel
+  | MockLegacyAnalysisViewModel
+  | UnknownAnalysisViewModel;
 
-function timelinePointToWinrateSeriesPoint(pt: WinrateTimelinePointV1): AnalysisResultWinratePointV1 | null {
+function readResultWinratePerspective(
+  result: Record<string, unknown>
+): KatagoConfiguredWinratePerspectiveV1 {
+  const engine = isPlainObject(result.engine) ? result.engine : null;
+  return normalizeKatagoConfiguredWinratePerspectiveV1(
+    engine?.winratePerspective
+  );
+}
+
+function readRootCurrentPlayer(
+  row: TurnAnalysisEntrySuccessV1
+): "B" | "W" | null {
+  const value = row.katago?.rootInfo?.currentPlayer;
+  return value === "B" || value === "W" ? value : null;
+}
+
+function timelinePointToWinrateSeriesPoint(
+  pt: WinrateTimelinePointV1,
+  configuredPerspective: KatagoConfiguredWinratePerspectiveV1
+): AnalysisResultWinratePointV1 | null {
   if (pt.status !== "ok" || pt.displayWinrate == null) {
     return null;
   }
@@ -318,25 +415,37 @@ function timelinePointToWinrateSeriesPoint(pt: WinrateTimelinePointV1): Analysis
     player: pt.player,
     currentPlayer: pt.currentPlayer,
     playerToMove: pt.currentPlayer,
+    configuredPerspective,
   });
   return {
     turnIndex: pt.turnIndex,
     player: pt.player,
     rawWinrate: perspective.rawWinrate,
     displayWinrate: perspective.normalized.displayWinrate,
-    displayPerspective: "katago_output",
+    displayPerspective: perspective.rawPerspective,
     currentPlayer: pt.currentPlayer,
     playerToMove: pt.currentPlayer,
-    confidence: "provisional",
+    confidence:
+      perspective.normalized.status === "verified" ? "verified" : "provisional",
     timelineStatus: "final",
     perspective,
   };
 }
 
-function buildWinrateSeriesFromTimeline(timeline: WinrateTimelineV1): AnalysisResultWinratePointV1[] {
+function buildWinrateSeriesFromTimeline(
+  timeline: WinrateTimelineV1,
+  fallbackPerspective: KatagoConfiguredWinratePerspectiveV1
+): AnalysisResultWinratePointV1[] {
   const out: AnalysisResultWinratePointV1[] = [];
+  const timelinePerspective = normalizeKatagoConfiguredWinratePerspectiveV1(
+    timeline.winratePerspective
+  );
+  const configuredPerspective =
+    timelinePerspective === "unknown"
+      ? fallbackPerspective
+      : timelinePerspective;
   for (const pt of timeline.points) {
-    const row = timelinePointToWinrateSeriesPoint(pt);
+    const row = timelinePointToWinrateSeriesPoint(pt, configuredPerspective);
     if (row) {
       out.push(row);
     }
@@ -350,37 +459,54 @@ export function buildWinrateSeriesPreferTimeline(
   turnAnalyses: TurnAnalysisEntryV1[] | undefined,
   bsi: BsiV1Result | undefined
 ): { series: AnalysisResultWinratePointV1[]; fromTimeline: boolean } {
+  const configuredPerspective = readResultWinratePerspective(result);
   const timelineRaw = result.winrateTimelineV1;
-  if (isWinrateTimelineV1(timelineRaw) && timelineRaw.enabled && timelineRaw.completedCount > 0) {
-    const series = buildWinrateSeriesFromTimeline(timelineRaw);
+  if (
+    isWinrateTimelineV1(timelineRaw) &&
+    timelineRaw.enabled &&
+    timelineRaw.completedCount > 0
+  ) {
+    const series = buildWinrateSeriesFromTimeline(
+      timelineRaw,
+      configuredPerspective
+    );
     if (series.length > 0) {
       return { series, fromTimeline: true };
     }
   }
-  return { series: buildWinrateSeries(turnAnalyses, bsi), fromTimeline: false };
+  return {
+    series: buildWinrateSeries(turnAnalyses, bsi, configuredPerspective),
+    fromTimeline: false,
+  };
 }
 
 function buildWinrateSeries(
   turnAnalyses: TurnAnalysisEntryV1[] | undefined,
-  bsi: BsiV1Result | undefined
+  bsi: BsiV1Result | undefined,
+  configuredPerspective: KatagoConfiguredWinratePerspectiveV1 = "unknown"
 ): AnalysisResultWinratePointV1[] {
+  void bsi;
   const out: AnalysisResultWinratePointV1[] = [];
   if (!turnAnalyses) {
     return out;
   }
-  const okRows = turnAnalyses.filter((t): t is TurnAnalysisEntrySuccessV1 => t.status === "ok");
+  const okRows = turnAnalyses.filter(
+    (t): t is TurnAnalysisEntrySuccessV1 => t.status === "ok"
+  );
   const sorted = [...okRows].sort((a, b) => a.turnIndex - b.turnIndex);
   for (const t of sorted) {
     const wr = t.moveSummary?.played?.winrate;
+    const rootCurrentPlayer = readRootCurrentPlayer(t);
     const perspective = normalizeWinratePerspectiveV1({
       rawWinrate: wr,
       turnIndex: t.turnIndex,
       player: t.player,
-      currentPlayer: t.player,
-      playerToMove: t.player,
+      currentPlayer: rootCurrentPlayer,
+      playerToMove: rootCurrentPlayer,
+      configuredPerspective,
     });
-    const bsiRow = findBsi(bsi, t.turnIndex);
-    const conf = bsiRow?.interpretationStatus === "verified" ? "verified" : "provisional";
+    const conf =
+      perspective.normalized.status === "verified" ? "verified" : "provisional";
     const cp = perspective.evidence.currentPlayer ?? t.player;
     const ptm = perspective.evidence.playerToMove ?? t.player;
     out.push({
@@ -388,7 +514,7 @@ function buildWinrateSeries(
       player: t.player,
       rawWinrate: perspective.rawWinrate,
       displayWinrate: perspective.normalized.displayWinrate,
-      displayPerspective: "katago_output",
+      displayPerspective: perspective.rawPerspective,
       currentPlayer: cp,
       playerToMove: ptm,
       confidence: conf,
@@ -398,9 +524,13 @@ function buildWinrateSeries(
   return out;
 }
 
-function mergeReasons(planReasons: string[] | undefined, extras: string[]): string[] {
-  const base = planReasons?.filter((s) => typeof s === "string" && s.trim()) ?? [];
-  const seen = new Set(base.map((s) => s.trim().toLowerCase()));
+function mergeReasons(
+  planReasons: string[] | undefined,
+  extras: string[]
+): string[] {
+  const base =
+    planReasons?.filter(s => typeof s === "string" && s.trim()) ?? [];
+  const seen = new Set(base.map(s => s.trim().toLowerCase()));
   const add: string[] = [];
   for (const e of extras) {
     const k = e.trim().toLowerCase();
@@ -412,7 +542,10 @@ function mergeReasons(planReasons: string[] | undefined, extras: string[]): stri
   return [...base, ...add];
 }
 
-function extrasFromSignals(adi?: AdiV1Signal | null, bsi?: BsiV1Signal | null): string[] {
+function extrasFromSignals(
+  adi?: AdiV1Signal | null,
+  bsi?: BsiV1Signal | null
+): string[] {
   const r: string[] = [];
   if (adi?.adiScore != null && adi.adiScore >= 0.65) {
     r.push("signal_high_adi");
@@ -473,15 +606,25 @@ function buildCandidateAccumulator(
         playedMove: c.playedMove,
         bestMove: c.bestMove,
         selectionScore: c.selectionScore,
-        adiScore: typeof c.adiScore === "number" ? c.adiScore : adiRow?.adiScore ?? null,
-        bsiScore: typeof c.bsiScore === "number" ? c.bsiScore : bsiRow?.bsiScore ?? null,
-        planReasons: Array.isArray(c.reasons) ? (c.reasons as string[]) : undefined,
+        adiScore:
+          typeof c.adiScore === "number"
+            ? c.adiScore
+            : (adiRow?.adiScore ?? null),
+        bsiScore:
+          typeof c.bsiScore === "number"
+            ? c.bsiScore
+            : (bsiRow?.bsiScore ?? null),
+        planReasons: Array.isArray(c.reasons)
+          ? (c.reasons as string[])
+          : undefined,
         fromPlan: true,
       });
     }
   }
 
-  const adiSignals = [...(adi?.signals ?? [])].filter((s) => s.status === "scored" && typeof s.adiScore === "number");
+  const adiSignals = [...(adi?.signals ?? [])].filter(
+    s => s.status === "scored" && typeof s.adiScore === "number"
+  );
   adiSignals.sort((a, b) => (b.adiScore ?? 0) - (a.adiScore ?? 0));
   for (const s of adiSignals) {
     if (byTurn.size >= max) {
@@ -506,7 +649,9 @@ function buildCandidateAccumulator(
     });
   }
 
-  const bsiSignals = [...(bsi?.signals ?? [])].filter((s) => s.status === "scored" && typeof s.bsiScore === "number");
+  const bsiSignals = [...(bsi?.signals ?? [])].filter(
+    s => s.status === "scored" && typeof s.bsiScore === "number"
+  );
   bsiSignals.sort((a, b) => (b.bsiScore ?? 0) - (a.bsiScore ?? 0));
   for (const s of bsiSignals) {
     if (byTurn.size >= max) {
@@ -557,7 +702,7 @@ function buildKeyMoveVmList(
   adi: AdiV1Result | undefined,
   bsi: BsiV1Result | undefined
 ): AnalysisResultKeyMoveCandidateV1[] {
-  const planTurns = new Set((plan?.candidates ?? []).map((c) => c.turnIndex));
+  const planTurns = new Set((plan?.candidates ?? []).map(c => c.turnIndex));
   const out: AnalysisResultKeyMoveCandidateV1[] = [];
   let i = 0;
   for (const row of acc) {
@@ -592,19 +737,19 @@ function playerForLearningEvent(
   bsi: BsiV1Result | undefined
 ): "B" | "W" {
   const turn = event.turnIndex;
-  const ta = turnAnalyses?.find((t) => t.turnIndex === turn);
+  const ta = turnAnalyses?.find(t => t.turnIndex === turn);
   if (ta?.player === "B" || ta?.player === "W") {
     return ta.player;
   }
-  const p = plan?.candidates?.find((c) => c.turnIndex === turn);
+  const p = plan?.candidates?.find(c => c.turnIndex === turn);
   if (p?.player === "B" || p?.player === "W") {
     return p.player;
   }
-  const a = adi?.signals?.find((s) => s.turnIndex === turn);
+  const a = adi?.signals?.find(s => s.turnIndex === turn);
   if (a?.player === "B" || a?.player === "W") {
     return a.player;
   }
-  const b = bsi?.signals?.find((s) => s.turnIndex === turn);
+  const b = bsi?.signals?.find(s => s.turnIndex === turn);
   if (b?.player === "B" || b?.player === "W") {
     return b.player;
   }
@@ -619,8 +764,8 @@ function learningEventsToKeyMoveVmList(
   bsi: BsiV1Result | undefined,
   turnAnalyses: TurnAnalysisEntryV1[] | undefined
 ): AnalysisResultKeyMoveCandidateV1[] {
-  const planTurns = new Set((plan?.candidates ?? []).map((c) => c.turnIndex));
-  return learningEvents.events.map((event) => {
+  const planTurns = new Set((plan?.candidates ?? []).map(c => c.turnIndex));
+  return learningEvents.events.map(event => {
     const deepOk = getDeepOkRow(deep, event.turnIndex);
     const adiRow = findAdi(adi, event.turnIndex);
     const bsiRow = findBsi(bsi, event.turnIndex);
@@ -637,7 +782,8 @@ function learningEventsToKeyMoveVmList(
       labelKey: event.labelKey,
       bsiScore: event.signals.bsiScore ?? bsiRow?.bsiScore ?? null,
       adiScore: event.signals.adiScore ?? adiRow?.adiScore ?? null,
-      deepSearchSelected: event.signals.deepSearchSelected ?? planTurns.has(event.turnIndex),
+      deepSearchSelected:
+        event.signals.deepSearchSelected ?? planTurns.has(event.turnIndex),
       deepSearchCompleted: event.signals.deepSearchCompleted ?? deepOk != null,
       reasons,
       learningEvent: event,
@@ -666,7 +812,10 @@ function readRawGameResult(result: Record<string, unknown>): string | null {
   return null;
 }
 
-function buildProductGameResultForVm(result: Record<string, unknown>, sgfText: string | null): ProductGameResultV1 {
+function buildProductGameResultForVm(
+  result: Record<string, unknown>,
+  sgfText: string | null
+): ProductGameResultV1 {
   if (sgfText != null && sgfText.trim().length > 0) {
     return parseProductGameResultV1FromSgf(sgfText);
   }
@@ -674,7 +823,9 @@ function buildProductGameResultForVm(result: Record<string, unknown>, sgfText: s
 }
 
 function productSourceReasons(source: readonly string[]): string[] {
-  return source.length > 0 ? source.map((s) => `product:${s}`) : ["product:deterministic"];
+  return source.length > 0
+    ? source.map(s => `product:${s}`)
+    : ["product:deterministic"];
 }
 
 function productMoveToKeyMoveVm(
@@ -692,7 +843,10 @@ function productMoveToKeyMoveVm(
     player: move.player,
     playedMove: move.playedMove ?? "—",
     bestMove: move.recommendedMove,
-    labelKey: role === "decisive" ? "ar_label_decisive_scene_candidate" : "ar_label_product_review_candidate",
+    labelKey:
+      role === "decisive"
+        ? "ar_label_decisive_scene_candidate"
+        : "ar_label_product_review_candidate",
     bsiScore: bsiRow?.bsiScore ?? null,
     adiScore: adiRow?.adiScore ?? null,
     deepSearchSelected: move.evidence.source.includes("deepSearchResultsV1"),
@@ -710,7 +864,15 @@ function productReviewToKeyMoveVmList(
 ): AnalysisResultKeyMoveCandidateV1[] {
   const out: AnalysisResultKeyMoveCandidateV1[] = [];
   if (productReview.decisiveMove != null) {
-    out.push(productMoveToKeyMoveVm(productReview.decisiveMove, "decisive", deep, adi, bsi));
+    out.push(
+      productMoveToKeyMoveVm(
+        productReview.decisiveMove,
+        "decisive",
+        deep,
+        adi,
+        bsi
+      )
+    );
   }
   for (const move of productReview.reviewMoves) {
     out.push(productMoveToKeyMoveVm(move, "review", deep, adi, bsi));
@@ -729,9 +891,13 @@ function buildProductReviewV1(args: {
   totalMoves: number;
   sgfText?: string | null;
 }): AnalysisProductReviewV1 | null {
-  const ownershipForMove = (turnIndex: number): ConceptTaggerOwnershipSummaryV1 | null => {
-    const row = args.turnAnalyses?.find((turn) => turn.turnIndex === turnIndex);
-    return row?.status === "ok" ? { available: row.katago?.hasOwnership === true } : null;
+  const ownershipForMove = (
+    turnIndex: number
+  ): ConceptTaggerOwnershipSummaryV1 | null => {
+    const row = args.turnAnalyses?.find(turn => turn.turnIndex === turnIndex);
+    return row?.status === "ok"
+      ? { available: row.katago?.hasOwnership === true }
+      : null;
   };
   const rawDecisiveMove =
     args.gameResult.loserColor == null
@@ -768,7 +934,7 @@ function buildProductReviewV1(args: {
     winrateTimeline: args.winrateTimeline,
     totalMoves: args.totalMoves,
     maxMoves: 5,
-  }).map((move) =>
+  }).map(move =>
     attachCandidateComparisonToProductMoveV1(
       attachConceptTagsToProductMoveV1(move, {
         sgfText: args.sgfText,
@@ -787,12 +953,18 @@ function buildProductReviewV1(args: {
     decisiveMove,
     reviewMoves,
     explanationPlans: [
-      ...(decisiveMove == null ? [] : [buildExplanationPlanForDecisiveMoveV1(decisiveMove)]),
-      ...reviewMoves.map((move) => buildExplanationPlanForReviewMoveV1(move)),
+      ...(decisiveMove == null
+        ? []
+        : [buildExplanationPlanForDecisiveMoveV1(decisiveMove)]),
+      ...reviewMoves.map(move => buildExplanationPlanForReviewMoveV1(move)),
     ],
     explanationPlansV2: [
-      ...(decisiveMove == null ? [] : [buildExplanationPlanV2ForDecisiveMove(decisiveMove, "dan")]),
-      ...reviewMoves.map((move) => buildExplanationPlanV2ForReviewMove(move, "dan")),
+      ...(decisiveMove == null
+        ? []
+        : [buildExplanationPlanV2ForDecisiveMove(decisiveMove, "dan")]),
+      ...reviewMoves.map(move =>
+        buildExplanationPlanV2ForReviewMove(move, "dan")
+      ),
     ],
     source: "deterministic-product-events-v1",
   };
@@ -845,11 +1017,19 @@ function buildVariationPreview(
 
 function readGameTotalMoves(result: Record<string, unknown>): number {
   const gi = result.game_info;
-  if (isPlainObject(gi) && typeof gi.total_moves === "number" && Number.isFinite(gi.total_moves)) {
+  if (
+    isPlainObject(gi) &&
+    typeof gi.total_moves === "number" &&
+    Number.isFinite(gi.total_moves)
+  ) {
     return Math.trunc(gi.total_moves);
   }
   const ap = result.analysisPlan;
-  if (isPlainObject(ap) && typeof ap.totalMoves === "number" && Number.isFinite(ap.totalMoves)) {
+  if (
+    isPlainObject(ap) &&
+    typeof ap.totalMoves === "number" &&
+    Number.isFinite(ap.totalMoves)
+  ) {
     return Math.trunc(ap.totalMoves);
   }
   return 0;
@@ -870,24 +1050,48 @@ function isMockLegacyResult(data: unknown): boolean {
  * `GET /api/analyze/:jobId` 의 `data`(또는 `analysis_jobs.result`)를 ViewModel 로 변환.
  * `selectedTurnIndex` 는 SGF 재생 스냅샷용(결과 JSON에 `sgf_content` 가 있을 때만 반영).
  */
-export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysisResultViewModelOpts): AnalysisResultViewModel {
+export function buildAnalysisResultViewModel(
+  data: unknown,
+  opts?: BuildAnalysisResultViewModelOpts
+): AnalysisResultViewModel {
   if (isKatagoWorkerV1Payload(data)) {
     const result = data;
-    const analysisPlan = (isPlainObject(result.analysisPlan) ? (result.analysisPlan as AnalysisPlanV1) : undefined) ?? undefined;
+    const analysisPlan =
+      (isPlainObject(result.analysisPlan)
+        ? (result.analysisPlan as AnalysisPlanV1)
+        : undefined) ?? undefined;
     const turnAnalyses = asArray(result.turnAnalyses) as TurnAnalysisEntryV1[];
-    const plan = isPlainObject(result.deepSearchPlan) ? (result.deepSearchPlan as DeepSearchPlanV1Result) : undefined;
-    const deep = isPlainObject(result.deepSearchResults) ? (result.deepSearchResults as DeepSearchResultsV1Result) : undefined;
-    const adi = isPlainObject(result.adiV1) ? (result.adiV1 as AdiV1Result) : undefined;
-    const bsi = isPlainObject(result.bsiV1) ? (result.bsiV1 as BsiV1Result) : undefined;
-    const winrateTimeline = isWinrateTimelineV1(result.winrateTimelineV1) ? result.winrateTimelineV1 : undefined;
+    const plan = isPlainObject(result.deepSearchPlan)
+      ? (result.deepSearchPlan as DeepSearchPlanV1Result)
+      : undefined;
+    const deep = isPlainObject(result.deepSearchResults)
+      ? (result.deepSearchResults as DeepSearchResultsV1Result)
+      : undefined;
+    const adi = isPlainObject(result.adiV1)
+      ? (result.adiV1 as AdiV1Result)
+      : undefined;
+    const bsi = isPlainObject(result.bsiV1)
+      ? (result.bsiV1 as BsiV1Result)
+      : undefined;
+    const winrateTimeline = isWinrateTimelineV1(result.winrateTimelineV1)
+      ? result.winrateTimelineV1
+      : undefined;
 
     const totalMoves = readGameTotalMoves(result);
     const sgfText = readSgfContentFromResultPayload(result);
     const multi = result.multiTurnAnalysis;
-    const hasMulti = isPlainObject(multi) && typeof multi.attemptedCount === "number" && multi.attemptedCount > 0;
+    const hasMulti =
+      isPlainObject(multi) &&
+      typeof multi.attemptedCount === "number" &&
+      multi.attemptedCount > 0;
 
-    const embeddedLearningEvents = isAnalysisLearningEventsV1(result.learningEventsV1)
-      ? normalizeAnalysisLearningEventsV1(result.learningEventsV1, { analysisPlan, turnAnalyses })
+    const embeddedLearningEvents = isAnalysisLearningEventsV1(
+      result.learningEventsV1
+    )
+      ? normalizeAnalysisLearningEventsV1(result.learningEventsV1, {
+          analysisPlan,
+          turnAnalyses,
+        })
       : null;
     const learningEvents =
       embeddedLearningEvents ??
@@ -911,14 +1115,32 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       totalMoves,
       sgfText,
     });
-    const acc = buildCandidateAccumulator(analysisPlan, turnAnalyses, plan, adi, bsi, 5);
+    const acc = buildCandidateAccumulator(
+      analysisPlan,
+      turnAnalyses,
+      plan,
+      adi,
+      bsi,
+      5
+    );
     const keyMoveCandidates =
       productReviewV1 != null
         ? productReviewToKeyMoveVmList(productReviewV1, deep, adi, bsi)
         : learningEvents.events.length > 0
-        ? learningEventsToKeyMoveVmList(learningEvents, plan, deep, adi, bsi, turnAnalyses)
-        : buildKeyMoveVmList(acc, plan, deep, adi, bsi);
-    const variationPreview = buildVariationPreview(keyMoveCandidates, turnAnalyses, deep);
+          ? learningEventsToKeyMoveVmList(
+              learningEvents,
+              plan,
+              deep,
+              adi,
+              bsi,
+              turnAnalyses
+            )
+          : buildKeyMoveVmList(acc, plan, deep, adi, bsi);
+    const variationPreview = buildVariationPreview(
+      keyMoveCandidates,
+      turnAnalyses,
+      deep
+    );
 
     const sgfPlayback: SgfPlaybackViewModelV1 =
       sgfText != null && sgfText.trim().length > 0
@@ -933,11 +1155,8 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
             totalMovesHint: totalMoves > 0 ? totalMoves : null,
           };
 
-    const { series: winrateSeries, fromTimeline: winrateSeriesFromTimeline } = buildWinrateSeriesPreferTimeline(
-      result,
-      turnAnalyses,
-      bsi
-    );
+    const { series: winrateSeries, fromTimeline: winrateSeriesFromTimeline } =
+      buildWinrateSeriesPreferTimeline(result, turnAnalyses, bsi);
 
     const vm: KatagoWorkerV1AnalysisViewModel = {
       kind: "katago-worker-v1",
@@ -961,7 +1180,10 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       learningEvents,
       keyMoveCandidates,
       variationPreview,
-      warnings: [...DEFAULT_VM_WARNINGS],
+      warnings: [
+        ...DEFAULT_VM_WARNINGS,
+        ...extractKatagoQualityWarnings(result),
+      ],
       sgfPlayback,
     };
     return vm;
@@ -970,7 +1192,11 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
   if (isMockLegacyResult(data) && isPlainObject(data)) {
     const gi = data.game_info;
     const tm =
-      isPlainObject(gi) && typeof gi.total_moves === "number" && Number.isFinite(gi.total_moves) ? Math.trunc(gi.total_moves) : null;
+      isPlainObject(gi) &&
+      typeof gi.total_moves === "number" &&
+      Number.isFinite(gi.total_moves)
+        ? Math.trunc(gi.total_moves)
+        : null;
     const vm: MockLegacyAnalysisViewModel = {
       kind: "mock-legacy",
       summary: {
@@ -990,7 +1216,10 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
       learningEvents: { version: "learning-events-v1", events: [] },
       keyMoveCandidates: [],
       variationPreview: [],
-      warnings: [{ code: "mock_demo_disclaimer" }, { code: "beta_numeric_reference" }],
+      warnings: [
+        { code: "mock_demo_disclaimer" },
+        { code: "beta_numeric_reference" },
+      ],
       sgfPlayback: {
         placeholder: true,
         messageKey: SGF_PLACEHOLDER_MOCK_SCOPE,
@@ -1000,7 +1229,8 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
     return vm;
   }
 
-  const src = isPlainObject(data) && data.source != null ? String(data.source) : null;
+  const src =
+    isPlainObject(data) && data.source != null ? String(data.source) : null;
   return {
     kind: "unknown",
     summary: {
@@ -1020,7 +1250,10 @@ export function buildAnalysisResultViewModel(data: unknown, opts?: BuildAnalysis
     learningEvents: { version: "learning-events-v1", events: [] },
     keyMoveCandidates: [],
     variationPreview: [],
-    warnings: [{ code: "unknown_result_format" }, { code: "beta_numeric_reference" }],
+    warnings: [
+      { code: "unknown_result_format" },
+      { code: "beta_numeric_reference" },
+    ],
     sgfPlayback: {
       placeholder: true,
       messageKey: SGF_PLACEHOLDER_UNKNOWN,

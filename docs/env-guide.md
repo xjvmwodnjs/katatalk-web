@@ -5,11 +5,11 @@
 
 ## 1. 개요
 
-| 구분 | 역할 |
-|------|------|
-| **Local** | `localhost`에서 Web + Worker(선택) 동시 실행, mock 또는 로컬 KataGo |
-| **Railway Web** | 로그인·결제·업로드·API enqueue — **KataGo 실행 금지** |
-| **Railway Worker** | `analysis_jobs` claim·KataGo 실행·DB 결과 기록 |
+| 구분               | 역할                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| **Local**          | `localhost`에서 Web + Worker(선택) 동시 실행, mock 또는 로컬 KataGo |
+| **Railway Web**    | 로그인·결제·업로드·API enqueue — **KataGo 실행 금지**               |
+| **Railway Worker** | `analysis_jobs` claim·KataGo 실행·DB 결과 기록                      |
 
 Master 기준 local/Railway staging smoke 절차와 기록 템플릿은 `docs/master-staging-smoke-v1.md`와 `docs/internal-beta-smoke-report.template.md`를 따른다.
 
@@ -62,15 +62,24 @@ ANALYSIS_ENGINE=mock
 # ANALYSIS_WORKER_ID=local-dev-worker-1
 ANALYSIS_CLAIM_STALE_SECONDS=900
 ANALYSIS_WORKER_HEARTBEAT_SECONDS=60
+ANALYSIS_WORKER_CONCURRENCY=1
 
 # KataGo (Worker 또는 dev:worker와 동일 .env)
 KATAGO_BINARY_PATH=<placeholder>
 KATAGO_CONFIG_PATH=<placeholder>
 KATAGO_MODEL_PATH=<placeholder>
+# 실제 cfg의 reportAnalysisWinratesAs와 반드시 일치
+KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK
 KATAGO_REQUIRE_GPU_BACKEND=false
 KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 KATAGO_MAX_VISITS=200
 KATAGO_ANALYSIS_TIMEOUT_MS=120000
+KATAGO_PERSISTENT_ROOT_ENABLED=false
+KATAGO_PERSISTENT_ROOT_STRICT=false
+KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS=60000
+KATAGO_PERSISTENT_MULTI_TURN_ENABLED=false
+KATAGO_PERSISTENT_MULTI_TURN_STRICT=false
+KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=6
 KATAGO_MULTI_TURN_MAX=6
 # KATAGO_MULTI_TURN_MAX_VISITS=
 # KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS=
@@ -113,12 +122,14 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 3. `ANALYSIS_WORKER_MODE=external`
 4. `KATATALK_ALLOW_MOCK_ANALYSIS=false` (또는 미설정)
 5. Worker에 `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` 설정
-6. **새로 업로드한 job** 과 예전 `queued` mock job 구분 (`is_mock` 다름)
-7. Supabase `analysis_jobs.is_mock` — 실분석은 `false`
-8. 완료 후 `result.source` — `katago-worker-v1`
-9. `GET /api/analyze/:id` → `meta.mock` — `false`
-10. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
-11. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda` 확인
+6. cfg의 활성 `reportAnalysisWinratesAs`와 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정
+7. Worker startup log에서 정규화된 승률 관점과 `source=config` 확인. 불일치 시 기동 실패가 정상
+8. **새로 업로드한 job** 과 예전 `queued` mock job 구분 (`is_mock` 다름)
+9. Supabase `analysis_jobs.is_mock` — 실분석은 `false`
+10. 완료 후 `result.source` — `katago-worker-v1`
+11. `GET /api/analyze/:id` → `meta.mock` — `false`
+12. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
+13. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda` 확인
 
 PowerShell 예시:
 
@@ -163,13 +174,13 @@ KATATALK_ALLOW_MOCK_ANALYSIS=false
 
 **금지·주의:**
 
-| 설정 | 이유 |
-|------|------|
-| `ANALYSIS_WORKER_MODE=inline` + `ANALYSIS_ENGINE=katago` | 운영 enqueue **503** (`KATAGO_INLINE_FORBIDDEN`) |
-| Web에 `KATAGO_*` | 불필요·혼동. Worker 전용 |
-| `KATATALK_ALLOW_MOCK_ANALYSIS=true` (공개 유료) | 내부 베타만. 공개 서비스는 **false/미설정** |
-| `KATATALK_LLM_COMMENTARY_ENABLED=true` | provider adapter만 준비됨. 실제 제품 연결 전에는 **false/미설정** |
-| `PORT` 덮어쓰기 | Railway가 주입하는 `PORT` 유지 |
+| 설정                                                     | 이유                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| `ANALYSIS_WORKER_MODE=inline` + `ANALYSIS_ENGINE=katago` | 운영 enqueue **503** (`KATAGO_INLINE_FORBIDDEN`)                  |
+| Web에 `KATAGO_*`                                         | 불필요·혼동. Worker 전용                                          |
+| `KATATALK_ALLOW_MOCK_ANALYSIS=true` (공개 유료)          | 내부 베타만. 공개 서비스는 **false/미설정**                       |
+| `KATATALK_LLM_COMMENTARY_ENABLED=true`                   | provider adapter만 준비됨. 실제 제품 연결 전에는 **false/미설정** |
+| `PORT` 덮어쓰기                                          | Railway가 주입하는 `PORT` 유지                                    |
 
 ---
 
@@ -188,14 +199,22 @@ ANALYSIS_ENGINE=katago
 ANALYSIS_WORKER_ID=railway-worker-1
 ANALYSIS_CLAIM_STALE_SECONDS=900
 ANALYSIS_WORKER_HEARTBEAT_SECONDS=60
+ANALYSIS_WORKER_CONCURRENCY=1
 
 KATAGO_BINARY_PATH=<placeholder>
 KATAGO_CONFIG_PATH=<placeholder>
 KATAGO_MODEL_PATH=<placeholder>
+KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK
 KATAGO_REQUIRE_GPU_BACKEND=false
 KATAGO_BACKEND_CHECK_TIMEOUT_MS=10000
 KATAGO_MAX_VISITS=200
 KATAGO_ANALYSIS_TIMEOUT_MS=120000
+KATAGO_PERSISTENT_ROOT_ENABLED=true
+KATAGO_PERSISTENT_ROOT_STRICT=true
+KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS=600000
+KATAGO_PERSISTENT_MULTI_TURN_ENABLED=true
+KATAGO_PERSISTENT_MULTI_TURN_STRICT=true
+KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=1
 KATAGO_MULTI_TURN_MAX=6
 
 KATAGO_DEEP_SEARCH_ENABLED=false
@@ -208,6 +227,8 @@ KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=false
 ```
 
 Clerk/Lemon/`APP_BASE_URL`은 Web과 **동일 Values**를 쓰는 배포를 권장(코드·검증 일관성). Worker 단독 최소 세트는 Supabase + 분석 env.
+
+`ANALYSIS_WORKER_CONCURRENCY` 기본값은 `1`, 최대값은 `4`다. `2..4`는 위와 같이 persistent root/multi-turn을 모두 enabled+strict로 두고, `KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=1`, Deep Search/timeline `false`를 만족할 때만 Worker가 시작된다. 로컬 200 visits/6 turns 고객형 C4는 통과했지만 실제 staging queue와 대상 GPU 호스트에서 같은 gate를 재검증한 후 `4`로 올린다.
 
 **Railway CPU Worker:** `KATAGO_DEEP_SEARCH_ENABLED=true`, `KATAGO_WINRATE_TIMELINE_ENABLED=true` 비권장(비용·타임아웃). GPU 호스트에서만 소규모 테스트.
 
@@ -280,6 +301,7 @@ ANALYSIS_ENGINE=katago
 KATAGO_BINARY_PATH=...
 KATAGO_CONFIG_PATH=...
 KATAGO_MODEL_PATH=...
+KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK
 # 필요 시만:
 KATAGO_DEEP_SEARCH_ENABLED=true
 KATAGO_WINRATE_TIMELINE_ENABLED=true
@@ -293,22 +315,29 @@ KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true
 
 ## 9. Deep Search / Winrate Timeline 비용 주의
 
-| 변수 | 기본 | 비고 |
-|------|------|------|
-| `KATAGO_MAX_VISITS` | `200` | strict integer, 무효값 → 200, clamp 1–5000 |
-| `KATAGO_ANALYSIS_TIMEOUT_MS` | `120000` | strict integer, 무효값 → 120000, clamp 30000–900000 |
-| `KATAGO_MULTI_TURN_MAX` | `6` | strict integer, 무효값 → 6, clamp 0–100 (`0`이면 multi-turn 생략) |
-| `KATAGO_MULTI_TURN_MAX_VISITS` | `KATAGO_MAX_VISITS` | strict integer, 무효값 → fallback, clamp 1–5000 |
-| `KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS` | `KATAGO_ANALYSIS_TIMEOUT_MS` | strict integer, 무효값 → fallback, clamp 30000–900000 |
-| `KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS` | 자동 산출 | strict integer, 무효값 → 자동 산출, clamp 30000–900000 |
-| `KATAGO_DEEP_SEARCH_ENABLED` | `false` | `true` 시 plan 후보에 추가 고 visits KataGo |
-| `KATAGO_DEEP_SEARCH_VISITS` | `800` | 후보별 순차 실행 |
-| `KATAGO_WINRATE_TIMELINE_ENABLED` | `false` | `true` 시 `analyzeTurns` 0..N 단일 쿼리 |
-| `KATAGO_WINRATE_TIMELINE_MAX_VISITS` | `50` | **clamp 1–2000** (무효값 → 50). legacy `KATAGO_WINRATE_TIMELINE_VISITS`도 읽음 |
-| `KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS` | `0.5` | KataGo partial result interval |
-| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS` | `false` | local/dev progress file + polling API opt-in; production에서는 비활성 |
-| `KATAGO_WINRATE_TIMELINE_MAX_TURNS` | `300` | clamp 1–500; `totalMoves > maxTurns` 시 `TIMELINE_TURNS_CAPPED` |
-| `KATAGO_WINRATE_TIMELINE_TIMEOUT_MS` | `600000` | clamp 30s–30m |
+| 변수                                               | 기본                         | 비고                                                                           |
+| -------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------ |
+| `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`      | 미설정                       | 운영 설정 권장. `BLACK`/`WHITE`/`SIDETOMOVE`; 실제 cfg와 불일치 시 기동 실패   |
+| `KATAGO_MAX_VISITS`                                | `200`                        | strict integer, 무효값 → 200, clamp 1–5000                                     |
+| `KATAGO_ANALYSIS_TIMEOUT_MS`                       | `120000`                     | strict integer, 무효값 → 120000, clamp 30000–900000                            |
+| `KATAGO_PERSISTENT_ROOT_ENABLED`                   | `false`                      | 장기 실행 Worker에서 root process/model 재사용                                 |
+| `KATAGO_PERSISTENT_ROOT_STRICT`                    | `false`                      | `true`면 persistent root 실패 시 one-shot spawn fallback 금지                  |
+| `KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS`             | `60000`                      | 공유 process 유휴 종료, clamp 1000–900000                                      |
+| `KATAGO_PERSISTENT_MULTI_TURN_ENABLED`             | `false`                      | persistent root와 같은 process/model로 multi-turn query 실행                   |
+| `KATAGO_PERSISTENT_MULTI_TURN_STRICT`              | `false`                      | `true`면 persistent query 실패 시 별도 process fallback 금지                   |
+| `KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY` | `6`                          | job별 query fan-out, clamp 1–16. Worker C2–C4에서는 반드시 `1`                 |
+| `KATAGO_MULTI_TURN_MAX`                            | `6`                          | strict integer, 무효값 → 6, clamp 0–100 (`0`이면 multi-turn 생략)              |
+| `KATAGO_MULTI_TURN_MAX_VISITS`                     | `KATAGO_MAX_VISITS`          | strict integer, 무효값 → fallback, clamp 1–5000                                |
+| `KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS`               | `KATAGO_ANALYSIS_TIMEOUT_MS` | strict integer, 무효값 → fallback, clamp 30000–900000                          |
+| `KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS`               | 자동 산출                    | strict integer, 무효값 → 자동 산출, clamp 30000–900000                         |
+| `KATAGO_DEEP_SEARCH_ENABLED`                       | `false`                      | `true` 시 plan 후보에 추가 고 visits KataGo                                    |
+| `KATAGO_DEEP_SEARCH_VISITS`                        | `800`                        | 후보별 순차 실행                                                               |
+| `KATAGO_WINRATE_TIMELINE_ENABLED`                  | `false`                      | `true` 시 `analyzeTurns` 0..N 단일 쿼리                                        |
+| `KATAGO_WINRATE_TIMELINE_MAX_VISITS`               | `50`                         | **clamp 1–2000** (무효값 → 50). legacy `KATAGO_WINRATE_TIMELINE_VISITS`도 읽음 |
+| `KATAGO_WINRATE_TIMELINE_REPORT_EVERY_SECONDS`     | `0.5`                        | KataGo partial result interval                                                 |
+| `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS`           | `false`                      | local/dev progress file + polling API opt-in; production에서는 비활성          |
+| `KATAGO_WINRATE_TIMELINE_MAX_TURNS`                | `300`                        | clamp 1–500; `totalMoves > maxTurns` 시 `TIMELINE_TURNS_CAPPED`                |
+| `KATAGO_WINRATE_TIMELINE_TIMEOUT_MS`               | `600000`                     | clamp 30s–30m                                                                  |
 
 Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 메타만).
 
@@ -339,27 +368,28 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 
 ## 부록: 주요 변수 빠른 참조
 
-| 변수 | Web | Worker | 설명 |
-|------|:---:|:------:|------|
-| `NODE_ENV` | ✓ | ✓ | `production` 시 `validateProductionDeploymentEnv()` |
-| `PORT` | ✓ | — | Railway Web만 (Worker는 별도 start command) |
-| `APP_BASE_URL` | ✓ | △ | 결제 redirect; production HTTPS 필수 |
-| `AUTH_PROVIDER` / `VITE_AUTH_PROVIDER` | ✓ | △ | production: `clerk` |
-| `CLERK_SECRET_KEY` | ✓ | △ | 서버 전용 |
-| `VITE_CLERK_PUBLISHABLE_KEY` | ✓(빌드) | — | 클라이언트 번들 |
-| `SUPABASE_URL` | ✓ | ✓ | |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✓ | ✓ | 서버/Worker 전용 |
-| `LEMONSQUEEZY_*` | ✓ | — | 결제·웹훅 |
-| `ANALYSIS_WORKER_MODE` | ✓ | ✓ | production katago: **`external`** |
-| `ANALYSIS_ENGINE` | ✓ | ✓ | `mock` \| `katago` |
-| `KATATALK_ALLOW_MOCK_ANALYSIS` | ✓ | ✓ | production mock 허용 플래그 |
-| `KATATALK_LLM_COMMENTARY_*` | ○ | — | provider adapter용, 기본 disabled |
-| `ANALYSIS_WORKER_ID` | — | ○ | lease 식별(미설정 시 자동 생성) |
-| `ANALYSIS_CLAIM_STALE_SECONDS` | ○ | ✓ | 기본 900 |
-| `ANALYSIS_WORKER_HEARTBEAT_SECONDS` | ○ | ✓ | 기본 60 |
-| `KATAGO_*` | ✗ | ✓ | Worker(또는 로컬 통합 dev) |
-| `DEEP_SEARCH_PLAN_*` | ○ | ○ | plan 후보 수·임계값 |
-| `DATABASE_URL` | ○ | ○ | MySQL users 동기화(선택) |
-| `TOSS_*` | ○ | — | 국내 결제 스켈레톤 |
+| 변수                                   |   Web   | Worker | 설명                                                |
+| -------------------------------------- | :-----: | :----: | --------------------------------------------------- |
+| `NODE_ENV`                             |    ✓    |   ✓    | `production` 시 `validateProductionDeploymentEnv()` |
+| `PORT`                                 |    ✓    |   —    | Railway Web만 (Worker는 별도 start command)         |
+| `APP_BASE_URL`                         |    ✓    |   △    | 결제 redirect; production HTTPS 필수                |
+| `AUTH_PROVIDER` / `VITE_AUTH_PROVIDER` |    ✓    |   △    | production: `clerk`                                 |
+| `CLERK_SECRET_KEY`                     |    ✓    |   △    | 서버 전용                                           |
+| `VITE_CLERK_PUBLISHABLE_KEY`           | ✓(빌드) |   —    | 클라이언트 번들                                     |
+| `SUPABASE_URL`                         |    ✓    |   ✓    |                                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`            |    ✓    |   ✓    | 서버/Worker 전용                                    |
+| `LEMONSQUEEZY_*`                       |    ✓    |   —    | 결제·웹훅                                           |
+| `ANALYSIS_WORKER_MODE`                 |    ✓    |   ✓    | production katago: **`external`**                   |
+| `ANALYSIS_ENGINE`                      |    ✓    |   ✓    | `mock` \| `katago`                                  |
+| `KATATALK_ALLOW_MOCK_ANALYSIS`         |    ✓    |   ✓    | production mock 허용 플래그                         |
+| `KATATALK_LLM_COMMENTARY_*`            |    ○    |   —    | provider adapter용, 기본 disabled                   |
+| `ANALYSIS_WORKER_ID`                   |    —    |   ○    | lease 식별(미설정 시 자동 생성)                     |
+| `ANALYSIS_CLAIM_STALE_SECONDS`         |    ○    |   ✓    | 기본 900                                            |
+| `ANALYSIS_WORKER_HEARTBEAT_SECONDS`    |    ○    |   ✓    | 기본 60                                             |
+| `ANALYSIS_WORKER_CONCURRENCY`          |    —    |   ○    | 기본 1, 최대 4. C2–C4는 strict 공유 세션 필수       |
+| `KATAGO_*`                             |    ✗    |   ✓    | Worker(또는 로컬 통합 dev)                          |
+| `DEEP_SEARCH_PLAN_*`                   |    ○    |   ○    | plan 후보 수·임계값                                 |
+| `DATABASE_URL`                         |    ○    |   ○    | MySQL users 동기화(선택)                            |
+| `TOSS_*`                               |    ○    |   —    | 국내 결제 스켈레톤                                  |
 
 ✓ 필수 · ○ 선택/조건부 · ✗ 넣지 않음 · △ Web과 동일 권장

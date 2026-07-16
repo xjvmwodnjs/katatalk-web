@@ -3,9 +3,8 @@
  */
 
 import {
-  clampRawWinrate01,
   normalizeWinratePerspectiveV1,
-  rawWinrate01ToDisplayPercent,
+  type KatagoConfiguredWinratePerspectiveV1,
   type WinratePerspectiveStatusV1,
 } from "./winratePerspectiveV1";
 
@@ -45,6 +44,8 @@ export type WinrateTimelineV1 = {
   version: typeof WINRATE_TIMELINE_V1_VERSION;
   enabled: boolean;
   source: "katago-analyzeTurns";
+  /** Added after winrate-axis verification; absent on legacy stored results. */
+  winratePerspective?: KatagoConfiguredWinratePerspectiveV1;
   policy: WinrateTimelinePolicyV1;
   totalMoves: number;
   attemptedCount: number;
@@ -68,6 +69,8 @@ export type WinrateTimelineProgressEventV1 = {
   winrate: number | null;
   scoreLead: number | null;
   currentPlayer: "B" | "W" | null;
+  /** Added after winrate-axis verification; absent on legacy progress rows. */
+  winratePerspective?: KatagoConfiguredWinratePerspectiveV1;
   receivedAt: string;
 };
 
@@ -90,7 +93,9 @@ function finiteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-export function isWinrateTimelineProgressEventV1(v: unknown): v is WinrateTimelineProgressEventV1 {
+export function isWinrateTimelineProgressEventV1(
+  v: unknown
+): v is WinrateTimelineProgressEventV1 {
   if (v == null || typeof v !== "object" || Array.isArray(v)) {
     return false;
   }
@@ -104,7 +109,14 @@ export function isWinrateTimelineProgressEventV1(v: unknown): v is WinrateTimeli
     (typeof o.visits === "number" || o.visits === null) &&
     (typeof o.winrate === "number" || o.winrate === null) &&
     (typeof o.scoreLead === "number" || o.scoreLead === null) &&
-    (o.currentPlayer === "B" || o.currentPlayer === "W" || o.currentPlayer === null) &&
+    (o.currentPlayer === "B" ||
+      o.currentPlayer === "W" ||
+      o.currentPlayer === null) &&
+    (o.winratePerspective === undefined ||
+      o.winratePerspective === "black" ||
+      o.winratePerspective === "white" ||
+      o.winratePerspective === "side_to_move" ||
+      o.winratePerspective === "unknown") &&
     typeof o.receivedAt === "string"
   );
 }
@@ -127,7 +139,10 @@ function progressEventTimeMs(receivedAt: string): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-function isNewerProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+function isNewerProgressEventV1(
+  prev: WinrateTimelineProgressEventV1,
+  next: WinrateTimelineProgressEventV1
+): boolean {
   const prevMs = progressEventTimeMs(prev.receivedAt);
   const nextMs = progressEventTimeMs(next.receivedAt);
   if (prevMs == null && nextMs == null) {
@@ -142,7 +157,10 @@ function isNewerProgressEventV1(prev: WinrateTimelineProgressEventV1, next: Winr
   return nextMs >= prevMs;
 }
 
-function shouldReplaceProgressEventV1(prev: WinrateTimelineProgressEventV1, next: WinrateTimelineProgressEventV1): boolean {
+function shouldReplaceProgressEventV1(
+  prev: WinrateTimelineProgressEventV1,
+  next: WinrateTimelineProgressEventV1
+): boolean {
   if (!prev.isDuringSearch && next.isDuringSearch) {
     return false;
   }
@@ -166,7 +184,10 @@ export function timelineMetaForTurnNumber(
   turnNumber: number,
   moves: readonly WinrateTimelineMoveV1[],
   playedMoveGtp: (sgfPoint: string) => string
-): Pick<WinrateTimelinePointV1, "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove"> {
+): Pick<
+  WinrateTimelinePointV1,
+  "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove"
+> {
   const tn = Math.trunc(turnNumber);
   if (tn <= 0) {
     return {
@@ -203,28 +224,40 @@ export function timelineMetaForTurnNumber(
 }
 
 export function buildOkTimelinePointFromRootInfo(
-  meta: Pick<WinrateTimelinePointV1, "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove">,
-  rootInfo: Record<string, unknown>
+  meta: Pick<
+    WinrateTimelinePointV1,
+    "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove"
+  >,
+  rootInfo: Record<string, unknown>,
+  configuredPerspective: KatagoConfiguredWinratePerspectiveV1 = "unknown"
 ): WinrateTimelinePointV1 {
-  const raw01 = clampRawWinrate01(rootInfo.winrate);
-  const displayWinrate = rawWinrate01ToDisplayPercent(raw01);
   const currentPlayer = parseBw(rootInfo.currentPlayer);
-  const perspectiveStatus: WinratePerspectiveStatusV1 =
-    raw01 != null ? "katago_output_only" : "unverified";
+  const perspective = normalizeWinratePerspectiveV1({
+    rawWinrate: rootInfo.winrate,
+    turnIndex: meta.turnIndex,
+    player: meta.player,
+    currentPlayer,
+    playerToMove: currentPlayer,
+    configuredPerspective,
+  });
   return {
     ...meta,
     status: "ok",
-    rawWinrate: raw01,
-    displayWinrate,
-    scoreLead: finiteNumber(rootInfo.scoreLead) ?? finiteNumber(rootInfo.scoreMean),
+    rawWinrate: perspective.rawWinrate,
+    displayWinrate: perspective.normalized.displayWinrate,
+    scoreLead:
+      finiteNumber(rootInfo.scoreLead) ?? finiteNumber(rootInfo.scoreMean),
     visits: finiteNumber(rootInfo.visits),
     currentPlayer,
-    perspectiveStatus,
+    perspectiveStatus: perspective.normalized.status,
   };
 }
 
 export function buildFailedTimelinePoint(
-  meta: Pick<WinrateTimelinePointV1, "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove">,
+  meta: Pick<
+    WinrateTimelinePointV1,
+    "turnIndex" | "turnNumber" | "movesBeforeCount" | "player" | "playedMove"
+  >,
   errorCode: string,
   errorMessage: string
 ): WinrateTimelinePointV1 {
@@ -248,8 +281,8 @@ export function summarizeWinrateTimelineV1(points: WinrateTimelinePointV1[]): {
   partialFailure: boolean;
   allFailed: boolean;
 } {
-  const completedCount = points.filter((p) => p.status === "ok").length;
-  const failedCount = points.filter((p) => p.status === "failed").length;
+  const completedCount = points.filter(p => p.status === "ok").length;
+  const failedCount = points.filter(p => p.status === "failed").length;
   const attemptedCount = points.length;
   const allFailed = attemptedCount > 0 && completedCount === 0;
   const partialFailure = failedCount > 0 && completedCount > 0;

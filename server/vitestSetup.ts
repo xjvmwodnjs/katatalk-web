@@ -82,11 +82,15 @@ function analysisJobsTableBuilder() {
       return Promise.resolve({ error: null });
     },
     update(patch: Record<string, unknown>) {
-      const filters: Array<{ col: string; val: unknown }> = [];
+      const filters: Array<{ kind: "eq" | "in" | "is"; col: string; val: unknown }> = [];
       function rowMatches(existing: Record<string, unknown>): boolean {
         for (const f of filters) {
           const cur = existing[f.col];
-          if (f.col === "attempt_count") {
+          if (f.kind === "in") {
+            if (!Array.isArray(f.val) || !f.val.includes(cur)) return false;
+          } else if (f.kind === "is") {
+            if ((cur ?? null) !== f.val) return false;
+          } else if (f.col === "attempt_count") {
             if (Number(cur) !== Number(f.val)) return false;
           } else if (cur !== f.val) {
             return false;
@@ -102,7 +106,7 @@ function analysisJobsTableBuilder() {
           return leaseSelectMode ? { data: [], error: null } : { error: null };
         }
         const ex = existing as Record<string, unknown>;
-        if (filters.length === 1 && filters[0].col === "id") {
+        if (filters.length === 1 && filters[0].kind === "eq" && filters[0].col === "id") {
           Object.assign(existing, patch, { updated_at: isoNow() });
           return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
         }
@@ -114,7 +118,15 @@ function analysisJobsTableBuilder() {
       }
       const tail = {
         eq(col: string, val: unknown) {
-          filters.push({ col, val });
+          filters.push({ kind: "eq", col, val });
+          return tail;
+        },
+        in(col: string, values: unknown[]) {
+          filters.push({ kind: "in", col, val: values });
+          return tail;
+        },
+        is(col: string, val: unknown) {
+          filters.push({ kind: "is", col, val });
           return tail;
         },
         select() {
@@ -126,7 +138,7 @@ function analysisJobsTableBuilder() {
       };
       return {
         eq(col: string, val: unknown) {
-          filters.push({ col, val });
+          filters.push({ kind: "eq", col, val });
           return tail;
         },
       };

@@ -12,18 +12,34 @@ import {
   KATATALK_UI_LANG_EVENT,
 } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, User, LogIn, UserPlus, Crown, LogOut } from "lucide-react";
+import { ArrowLeft, User, LogIn, UserPlus, Crown, LogOut, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Link, useLocation } from "wouter";
-import { MOCK_DATA, TRANSLATIONS, Language, type AnalysisReport } from "@/lib/mockData";
-import type { AnalysisJobGetResponse, WinrateTimelineProgressResponseV1 } from "@shared/analysisJob";
+import { Link } from "wouter";
+import {
+  MOCK_DATA,
+  TRANSLATIONS,
+  Language,
+  type AnalysisReport,
+} from "@/lib/mockData";
+import type {
+  AnalysisJobGetResponse,
+  WinrateTimelineProgressResponseV1,
+} from "@shared/analysisJob";
 import {
   isKatagoWorkerV1ResultPayload,
   normalizeAnalysisJobStatus,
   parseStoredAnalysisJobResult,
 } from "@shared/analysisJob";
 import { getAnalyzeAuthHeaders } from "@/lib/analyzeAuthHeaders";
-import { readAnalysisJobIdFromSearch } from "@/lib/analysisJobDeepLink";
+import {
+  buildAnalysisJobSearch,
+  buildSearchWithoutAnalysisJob,
+  clearStoredAnalysisJobId,
+  readAnalysisJobIdFromSearch,
+  readStoredAnalysisJobId,
+  searchHasBillingStatus,
+  writeStoredAnalysisJobId,
+} from "@/lib/analysisJobDeepLink";
 import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import LanguageSelector from "@/components/LanguageSelector";
 import type { KatagoWorkerV1ResultData } from "@/components/KatagoWorkerV1ResultPanel";
@@ -35,24 +51,64 @@ import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewMod
 
 type View = "upload" | "loading" | "result";
 
-const POLL_INTERVAL_MS = 450;
-const POLL_MAX_MS = 120_000;
+const POLL_INTERVAL_MS = 1_000;
+const TIMELINE_POLL_INTERVAL_MS = 2_000;
+const RATE_LIMIT_BACKOFF_MS = 5_000;
+const POLL_MAX_MS = 20 * 60_000;
+const ANALYSIS_POLL_TIMEOUT_NAME = "AnalysisPollTimeout";
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
 
+function buildAnalysisPollTimeoutError(lang: Language): Error {
+  const message =
+    lang === "ko"
+      ? "분석이 아직 진행 중입니다. 이 결과 링크를 열어두거나 나중에 다시 확인해 주세요."
+      : lang === "en"
+        ? "The analysis is still running. Keep this result link or check it again later."
+        : lang === "zh"
+          ? "分析仍在进行中。请保留此结果链接，稍后再查看。"
+          : "解析はまだ実行中です。この結果リンクを残して、あとで再確認してください。";
+  const err = new Error(message);
+  err.name = ANALYSIS_POLL_TIMEOUT_NAME;
+  return err;
+}
+
+function isAnalysisPollTimeout(error: unknown): error is Error {
+  return error instanceof Error && error.name === ANALYSIS_POLL_TIMEOUT_NAME;
+}
+
+function analysisStillRunningTitle(lang: Language): string {
+  return lang === "ko"
+    ? "분석이 계속 진행 중입니다."
+    : lang === "en"
+      ? "Analysis is still running."
+      : lang === "zh"
+        ? "分析仍在进行中。"
+        : "解析はまだ実行中です。";
+}
+
 export default function Home() {
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
-  const [, setLocation] = useLocation();
   const [lang, setLang] = useState<Language>(() => readStoredUiLang());
   const [view, setView] = useState<View>("upload");
   const [report, setReport] = useState<AnalysisReport>(MOCK_DATA);
-  const [katagoWorkerV1Result, setKatagoWorkerV1Result] = useState<KatagoWorkerV1ResultData | null>(null);
+  const [katagoWorkerV1Result, setKatagoWorkerV1Result] =
+    useState<KatagoWorkerV1ResultData | null>(null);
   const [jobProgress, setJobProgress] = useState(0);
-  const [jobStatus, setJobStatus] = useState<AnalysisJobGetResponse["status"] | "idle">("idle");
-  const [timelineProgressSeries, setTimelineProgressSeries] = useState<AnalysisResultWinratePointV1[]>([]);
-  const [timelineProgressStats, setTimelineProgressStats] = useState<{ completedCount: number; totalPoints: number | null }>({
+  const [jobStatus, setJobStatus] = useState<
+    AnalysisJobGetResponse["status"] | "idle"
+  >("idle");
+  const [resultJobId, setResultJobId] = useState<string | null>(null);
+  const [deletingResultData, setDeletingResultData] = useState(false);
+  const [timelineProgressSeries, setTimelineProgressSeries] = useState<
+    AnalysisResultWinratePointV1[]
+  >([]);
+  const [timelineProgressStats, setTimelineProgressStats] = useState<{
+    completedCount: number;
+    totalPoints: number | null;
+  }>({
     completedCount: 0,
     totalPoints: null,
   });
@@ -73,17 +129,61 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
-  async function pollTimelineProgress(jobId: string): Promise<void> {
-    const res = await fetch(`/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`, {
-      credentials: "include",
-      headers: { ...(await getAnalyzeAuthHeaders()) },
-    });
-    if (!res.ok) {
-      return;
+  function browserStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
     }
-    const body = (await res.json().catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
+  }
+
+  function replaceCurrentSearch(search: string): void {
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname || "/"}${search}${window.location.hash}`
+    );
+  }
+
+  function rememberActiveAnalysisJob(jobId: string): void {
+    writeStoredAnalysisJobId(browserStorage(), jobId);
+    replaceCurrentSearch(buildAnalysisJobSearch(window.location.search, jobId));
+  }
+
+  function forgetActiveAnalysisJob(jobId?: string): void {
+    const storage = browserStorage();
+    if (jobId) {
+      const storedJobId = readStoredAnalysisJobId(storage);
+      if (storedJobId && storedJobId !== jobId) {
+        return;
+      }
+    }
+    clearStoredAnalysisJobId(storage);
+  }
+
+  function clearAnalysisJobFromUrl(): void {
+    replaceCurrentSearch(buildSearchWithoutAnalysisJob(window.location.search));
+  }
+
+  async function pollTimelineProgress(jobId: string): Promise<boolean> {
+    const res = await fetch(
+      `/api/analyze/${encodeURIComponent(jobId)}/timeline-progress`,
+      {
+        credentials: "include",
+        headers: { ...(await getAnalyzeAuthHeaders()) },
+      }
+    );
+    if (res.status === 404) {
+      return false;
+    }
+    if (!res.ok) {
+      return true;
+    }
+    const body = (await res
+      .json()
+      .catch(() => null)) as WinrateTimelineProgressResponseV1 | null;
     if (!body?.success || !Array.isArray(body.points)) {
-      return;
+      return true;
     }
     const series: AnalysisResultWinratePointV1[] = [];
     for (const p of body.points) {
@@ -96,33 +196,51 @@ export default function Home() {
         player: null,
         currentPlayer: p.currentPlayer,
         playerToMove: p.currentPlayer,
+        configuredPerspective: p.winratePerspective,
       });
       series.push({
         turnIndex: p.turnIndex,
         player: null,
         rawWinrate: perspective.rawWinrate,
         displayWinrate: perspective.normalized.displayWinrate,
-        displayPerspective: "katago_output",
+        displayPerspective: perspective.rawPerspective,
         currentPlayer: p.currentPlayer,
         playerToMove: p.currentPlayer,
-        confidence: "provisional",
+        confidence:
+          perspective.normalized.status === "verified"
+            ? "verified"
+            : "provisional",
         timelineStatus: p.isDuringSearch ? "partial" : "final",
         perspective,
       });
     }
     series.sort((a, b) => a.turnIndex - b.turnIndex);
     setTimelineProgressSeries(series);
-    setTimelineProgressStats({ completedCount: body.completedCount, totalPoints: body.totalPoints });
+    setTimelineProgressStats({
+      completedCount: body.completedCount,
+      totalPoints: body.totalPoints,
+    });
+    return true;
   }
 
   useEffect(() => {
     if (authLoading) return;
-    const jobId = readAnalysisJobIdFromSearch(window.location.search);
+    const search = window.location.search;
+    const jobIdFromUrl = readAnalysisJobIdFromSearch(search);
+    const storedJobId =
+      !jobIdFromUrl && !searchHasBillingStatus(search)
+        ? readStoredAnalysisJobId(browserStorage())
+        : null;
+    const jobId = jobIdFromUrl ?? storedJobId;
     if (!jobId) return;
+    if (!jobIdFromUrl && storedJobId) {
+      replaceCurrentSearch(buildAnalysisJobSearch(search, storedJobId));
+    }
 
     let cancelled = false;
     pollAbortRef.current = false;
     setKatagoWorkerV1Result(null);
+    setResultJobId(null);
     setTimelineProgressSeries([]);
     setTimelineProgressStats({ completedCount: 0, totalPoints: null });
     setJobProgress(0);
@@ -133,21 +251,35 @@ export default function Home() {
       try {
         if (!isAuthenticated) {
           throw new Error(
-            lang === "ko" ? "결과를 보려면 로그인이 필요합니다." :
-            lang === "en" ? "Please log in to view this analysis result." :
-            lang === "zh" ? "请登录后查看分析结果。" : "解析結果を見るにはログインが必要です。"
+            lang === "ko"
+              ? "결과를 보려면 로그인이 필요합니다."
+              : lang === "en"
+                ? "Please log in to view this analysis result."
+                : lang === "zh"
+                  ? "请登录后查看分析结果。"
+                  : "解析結果を見るにはログインが必要です。"
           );
         }
 
         const deadline = Date.now() + POLL_MAX_MS;
+        let timelineProgressAvailable = true;
+        let nextTimelineProgressAt = 0;
         while (!cancelled && !pollAbortRef.current && Date.now() < deadline) {
-          const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
-            credentials: "include",
-            headers: { ...(await getAnalyzeAuthHeaders()) },
-          });
+          const pollRes = await fetch(
+            `/api/analyze/${encodeURIComponent(jobId)}`,
+            {
+              credentials: "include",
+              headers: { ...(await getAnalyzeAuthHeaders()) },
+            }
+          );
           const pollBody = (await pollRes.json().catch(() => ({}))) as
             | AnalysisJobGetResponse
             | { success?: false; message?: string };
+
+          if (pollRes.status === 429) {
+            await sleep(RATE_LIMIT_BACKOFF_MS);
+            continue;
+          }
 
           if (!pollRes.ok || pollBody.success === false) {
             const msg =
@@ -158,11 +290,18 @@ export default function Home() {
           }
 
           const job = pollBody as AnalysisJobGetResponse;
-          const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
+          const normalizedStatus = normalizeAnalysisJobStatus(
+            String(job.status)
+          );
           setJobStatus(normalizedStatus);
           setJobProgress(typeof job.progress === "number" ? job.progress : 0);
-          if (normalizedStatus === "queued" || normalizedStatus === "running") {
-            await pollTimelineProgress(jobId);
+          if (
+            (normalizedStatus === "queued" || normalizedStatus === "running") &&
+            timelineProgressAvailable &&
+            Date.now() >= nextTimelineProgressAt
+          ) {
+            timelineProgressAvailable = await pollTimelineProgress(jobId);
+            nextTimelineProgressAt = Date.now() + TIMELINE_POLL_INTERVAL_MS;
           }
 
           if (normalizedStatus === "completed") {
@@ -176,12 +315,16 @@ export default function Home() {
               setKatagoWorkerV1Result(null);
               setReport(parsed as AnalysisReport);
             }
+            forgetActiveAnalysisJob(jobId);
+            setResultJobId(jobId);
             setView("result");
             setJobStatus("idle");
             return;
           }
 
           if (normalizedStatus === "failed") {
+            forgetActiveAnalysisJob(jobId);
+            clearAnalysisJobFromUrl();
             throw new Error(job.error?.message ?? "Analysis job failed.");
           }
 
@@ -189,21 +332,29 @@ export default function Home() {
         }
 
         if (!cancelled && !pollAbortRef.current) {
-          throw new Error(
-            lang === "ko" ? "분석 작업 시간이 초과되었습니다." :
-            lang === "en" ? "Analysis timed out. Please try again." :
-            lang === "zh" ? "分析超时，请重试。" : "分析がタイムアウトしました。もう一度お試しください。"
-          );
+          throw buildAnalysisPollTimeoutError(lang);
         }
       } catch (error: any) {
         if (cancelled) return;
+        if (isAnalysisPollTimeout(error)) {
+          setView("loading");
+          setJobStatus(prev => (prev === "idle" ? "running" : prev));
+          toast.message(analysisStillRunningTitle(lang), {
+            description: error.message,
+          });
+          return;
+        }
         setView("upload");
         setJobStatus("idle");
         setJobProgress(0);
         toast.error(
-          lang === "ko" ? "분석 결과를 불러오지 못했습니다." :
-          lang === "en" ? "Could not load the analysis result." :
-          lang === "zh" ? "无法加载分析结果。" : "解析結果を読み込めませんでした。",
+          lang === "ko"
+            ? "분석 결과를 불러오지 못했습니다."
+            : lang === "en"
+              ? "Could not load the analysis result."
+              : lang === "zh"
+                ? "无法加载分析结果。"
+                : "解析結果を読み込めませんでした。",
           { description: error.message }
         );
       }
@@ -241,11 +392,15 @@ export default function Home() {
         return;
       }
 
-      const baselineStored = sessionStorage.getItem("katatalk_billing_baseline_credits");
+      const baselineStored = sessionStorage.getItem(
+        "katatalk_billing_baseline_credits"
+      );
       sessionStorage.removeItem("katatalk_billing_baseline_credits");
 
       const hadStoredBaseline =
-        baselineStored != null && baselineStored !== "" && !Number.isNaN(Number(baselineStored));
+        baselineStored != null &&
+        baselineStored !== "" &&
+        !Number.isNaN(Number(baselineStored));
 
       async function readCredits(): Promise<number | null> {
         const r = await fetch("/api/credits/me", {
@@ -276,7 +431,10 @@ export default function Home() {
 
       const REFILL_LOOKBACK_MS = 15 * 60 * 1000;
 
-      function hasRecentRefill(logs: CreditLogLite[], withinMs: number): boolean {
+      function hasRecentRefill(
+        logs: CreditLogLite[],
+        withinMs: number
+      ): boolean {
         const now = Date.now();
         for (const log of logs) {
           if (log.type !== "refill") continue;
@@ -292,7 +450,9 @@ export default function Home() {
 
       const c0 = await readCredits();
       if (cancelled || c0 === null) {
-        toast.error(bt.billingCreditsCheckFail, { description: bt.pricingCheckoutFailedDesc });
+        toast.error(bt.billingCreditsCheckFail, {
+          description: bt.pricingCheckoutFailedDesc,
+        });
         await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
         return;
@@ -301,7 +461,9 @@ export default function Home() {
       if (!hadStoredBaseline) {
         const logsEarly = await readCreditLogs();
         if (hasRecentRefill(logsEarly, REFILL_LOOKBACK_MS)) {
-          toast.success(bt.billingPaidTitle, { description: bt.billingCreditMaybeAppliedDesc });
+          toast.success(bt.billingPaidTitle, {
+            description: bt.billingCreditMaybeAppliedDesc,
+          });
           await utils.profile.getSubscription.invalidate();
           window.history.replaceState({}, "", window.location.pathname || "/");
           return;
@@ -316,7 +478,9 @@ export default function Home() {
       }
 
       if (c0 > baseline) {
-        toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+        toast.success(bt.billingPaidTitle, {
+          description: bt.billingCreditsAppliedNotice,
+        });
         await utils.profile.getSubscription.invalidate();
         window.history.replaceState({}, "", window.location.pathname || "/");
         return;
@@ -327,7 +491,9 @@ export default function Home() {
         await sleep(POLL_MS);
         const c = await readCredits();
         if (c !== null && c > baseline) {
-          toast.success(bt.billingPaidTitle, { description: bt.billingCreditsAppliedNotice });
+          toast.success(bt.billingPaidTitle, {
+            description: bt.billingCreditsAppliedNotice,
+          });
           await utils.profile.getSubscription.invalidate();
           window.history.replaceState({}, "", window.location.pathname || "/");
           return;
@@ -360,10 +526,14 @@ export default function Home() {
   }, [isAuthenticated, utils, lang]);
 
   // Fetch subscription info if authenticated
-  const { data: subscription } = trpc.profile.getSubscription.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
-  const creditBalance = subscription?.creditBalance ?? subscription?.remainingAnalysisCount ?? 0;
+  const { data: subscription } = trpc.profile.getSubscription.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+    }
+  );
+  const creditBalance =
+    subscription?.creditBalance ?? subscription?.remainingAnalysisCount ?? 0;
 
   const handleLogin = () => {
     window.location.href = getLoginUrl();
@@ -382,9 +552,14 @@ export default function Home() {
   const handleAnalyzeRequest = async (file: File) => {
     if (!isAuthenticated) {
       toast.error(t.loginRequired, {
-        description: lang === "ko" ? "기보 분석은 로그인 후 이용 가능합니다." :
-          lang === "en" ? "Please log in to use the analysis feature." :
-          lang === "zh" ? "请登录后使用分析功能。" : "分析機能をご利用いただくにはログインが必要です。",
+        description:
+          lang === "ko"
+            ? "기보 분석은 로그인 후 이용 가능합니다."
+            : lang === "en"
+              ? "Please log in to use the analysis feature."
+              : lang === "zh"
+                ? "请登录后使用分析功能。"
+                : "分析機能をご利用いただくにはログインが必要です。",
         action: {
           label: t.login,
           onClick: handleLogin,
@@ -414,15 +589,22 @@ export default function Home() {
 
     if (file.size > MAX_SGF_FILE_BYTES) {
       toast.error(
-        lang === "ko" ? "파일이 너무 큽니다." :
-        lang === "en" ? "File is too large." :
-        lang === "zh" ? "文件太大。" : "ファイルが大きすぎます。",
+        lang === "ko"
+          ? "파일이 너무 큽니다."
+          : lang === "en"
+            ? "File is too large."
+            : lang === "zh"
+              ? "文件太大。"
+              : "ファイルが大きすぎます。",
         {
           description:
-            lang === "ko" ? `SGF는 최대 ${MAX_SGF_FILE_BYTES / (1024 * 1024)}MB까지 업로드할 수 있습니다.` :
-            lang === "en" ? `SGF uploads are limited to ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB.` :
-            lang === "zh" ? `SGF 文件最大 ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB。` :
-            `SGFは最大${MAX_SGF_FILE_BYTES / (1024 * 1024)}MBまでです。`,
+            lang === "ko"
+              ? `SGF는 최대 ${MAX_SGF_FILE_BYTES / (1024 * 1024)}MB까지 업로드할 수 있습니다.`
+              : lang === "en"
+                ? `SGF uploads are limited to ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB.`
+                : lang === "zh"
+                  ? `SGF 文件最大 ${MAX_SGF_FILE_BYTES / (1024 * 1024)} MB。`
+                  : `SGFは最大${MAX_SGF_FILE_BYTES / (1024 * 1024)}MBまでです。`,
         }
       );
       return;
@@ -430,6 +612,7 @@ export default function Home() {
 
     pollAbortRef.current = false;
     setKatagoWorkerV1Result(null);
+    setResultJobId(null);
     setTimelineProgressSeries([]);
     setTimelineProgressStats({ completedCount: 0, totalPoints: null });
     setJobProgress(0);
@@ -447,7 +630,7 @@ export default function Home() {
         body: formData,
       });
 
-      const createPayload = await response.json().catch(() => ({})) as {
+      const createPayload = (await response.json().catch(() => ({}))) as {
         success?: boolean;
         jobId?: string;
         status?: string;
@@ -457,17 +640,26 @@ export default function Home() {
         remainingCredits?: number;
       };
 
-      if (response.status === 402 || createPayload.code === "INSUFFICIENT_CREDITS") {
+      if (
+        response.status === 402 ||
+        createPayload.code === "INSUFFICIENT_CREDITS"
+      ) {
         throw new Error(
-          typeof createPayload.message === "string" && createPayload.message.trim()
+          typeof createPayload.message === "string" &&
+          createPayload.message.trim()
             ? createPayload.message
             : "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해 주세요."
         );
       }
 
-      if (!response.ok || createPayload.success === false || !createPayload.jobId) {
+      if (
+        !response.ok ||
+        createPayload.success === false ||
+        !createPayload.jobId
+      ) {
         const msg =
-          typeof createPayload.message === "string" && createPayload.message.trim()
+          typeof createPayload.message === "string" &&
+          createPayload.message.trim()
             ? createPayload.message
             : !response.ok
               ? response.status === 401
@@ -485,17 +677,28 @@ export default function Home() {
       }
 
       const jobId = createPayload.jobId;
+      rememberActiveAnalysisJob(jobId);
       const deadline = Date.now() + POLL_MAX_MS;
+      let timelineProgressAvailable = true;
+      let nextTimelineProgressAt = 0;
 
       while (!pollAbortRef.current && Date.now() < deadline) {
-        const pollRes = await fetch(`/api/analyze/${encodeURIComponent(jobId)}`, {
-          credentials: "include",
-          headers: { ...(await getAnalyzeAuthHeaders()) },
-        });
+        const pollRes = await fetch(
+          `/api/analyze/${encodeURIComponent(jobId)}`,
+          {
+            credentials: "include",
+            headers: { ...(await getAnalyzeAuthHeaders()) },
+          }
+        );
 
         const pollBody = (await pollRes.json().catch(() => ({}))) as
           | AnalysisJobGetResponse
           | { success?: false; message?: string };
+
+        if (pollRes.status === 429) {
+          await sleep(RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
 
         if (!pollRes.ok || pollBody.success === false) {
           const msg =
@@ -509,8 +712,13 @@ export default function Home() {
         const normalizedStatus = normalizeAnalysisJobStatus(String(job.status));
         setJobStatus(normalizedStatus);
         setJobProgress(typeof job.progress === "number" ? job.progress : 0);
-        if (normalizedStatus === "queued" || normalizedStatus === "running") {
-          await pollTimelineProgress(jobId);
+        if (
+          (normalizedStatus === "queued" || normalizedStatus === "running") &&
+          timelineProgressAvailable &&
+          Date.now() >= nextTimelineProgressAt
+        ) {
+          timelineProgressAvailable = await pollTimelineProgress(jobId);
+          nextTimelineProgressAt = Date.now() + TIMELINE_POLL_INTERVAL_MS;
         }
 
         if (normalizedStatus === "completed") {
@@ -524,17 +732,25 @@ export default function Home() {
             setKatagoWorkerV1Result(null);
             setReport(parsed as AnalysisReport);
           }
+          forgetActiveAnalysisJob(jobId);
+          setResultJobId(jobId);
           setView("result");
           setJobStatus("idle");
           toast.success(
-            lang === "ko" ? "분석이 완료되었습니다!" :
-            lang === "en" ? "Analysis complete!" :
-            lang === "zh" ? "分析完成！" : "分析が完了しました！"
+            lang === "ko"
+              ? "분석이 완료되었습니다!"
+              : lang === "en"
+                ? "Analysis complete!"
+                : lang === "zh"
+                  ? "分析完成！"
+                  : "分析が完了しました！"
           );
           return;
         }
 
         if (normalizedStatus === "failed") {
+          forgetActiveAnalysisJob(jobId);
+          clearAnalysisJobFromUrl();
           throw new Error(job.error?.message ?? "Analysis job failed.");
         }
 
@@ -544,26 +760,71 @@ export default function Home() {
       if (pollAbortRef.current) {
         return;
       }
-      throw new Error(
-        lang === "ko" ? "분석 작업 시간이 초과되었습니다." :
-        lang === "en" ? "Analysis timed out. Please try again." :
-        lang === "zh" ? "分析超时，请重试。" : "分析がタイムアウトしました。もう一度お試しください。"
-      );
+      throw buildAnalysisPollTimeoutError(lang);
     } catch (error: any) {
+      if (isAnalysisPollTimeout(error)) {
+        setView("loading");
+        setJobStatus(prev => (prev === "idle" ? "running" : prev));
+        toast.message(analysisStillRunningTitle(lang), {
+          description: error.message,
+        });
+        return;
+      }
       setView("upload");
       setJobStatus("idle");
       setJobProgress(0);
       toast.error(
-        lang === "ko" ? "분석 중 오류가 발생했습니다." :
-        lang === "en" ? "An error occurred during analysis." :
-        lang === "zh" ? "分析过程中发生错误。" : "分析中にエラーが発生しました。",
+        lang === "ko"
+          ? "분석 중 오류가 발생했습니다."
+          : lang === "en"
+            ? "An error occurred during analysis."
+            : lang === "zh"
+              ? "分析过程中发生错误。"
+              : "分析中にエラーが発生しました。",
         { description: error.message }
       );
     }
   };
 
+  const handleDeleteResultData = async () => {
+    if (!resultJobId || deletingResultData) return;
+    const confirmed = window.confirm(
+      lang === "ko"
+        ? "이 분석의 기보 원문과 결과를 삭제할까요? 삭제한 데이터는 복구할 수 없습니다."
+        : "Delete this analysis source and result? Deleted data cannot be restored."
+    );
+    if (!confirmed) return;
+
+    setDeletingResultData(true);
+    try {
+      const response = await fetch(`/api/analyze/${encodeURIComponent(resultJobId)}/data`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { ...(await getAnalyzeAuthHeaders()) },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `Delete failed (${response.status})`);
+      }
+      setKatagoWorkerV1Result(null);
+      setResultJobId(null);
+      clearAnalysisJobFromUrl();
+      setView("upload");
+      toast.success(lang === "ko" ? "분석 데이터가 삭제되었습니다." : "Analysis data deleted.");
+    } catch (error) {
+      toast.error(lang === "ko" ? "분석 데이터를 삭제하지 못했습니다." : "Could not delete analysis data.", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setDeletingResultData(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen" style={{ background: "oklch(0.13 0.005 285)" }}>
+    <div
+      className="min-h-screen"
+      style={{ background: "oklch(0.13 0.005 285)" }}
+    >
       {/* ─── Top Navigation Bar ─── */}
       <header
         className="sticky top-0 z-40 border-b"
@@ -579,7 +840,9 @@ export default function Home() {
             <div className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition-opacity">
               <div
                 className="w-7 h-7 rounded-md flex items-center justify-center"
-                style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)" }}
+                style={{
+                  background: "linear-gradient(135deg, #C9A84C, #8B6914)",
+                }}
               >
                 <span
                   className="text-xs font-bold text-black"
@@ -602,16 +865,26 @@ export default function Home() {
             {isAuthenticated ? (
               <>
                 {/* User Profile Badge */}
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                <div
+                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
                 >
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center"
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center"
                     style={{ background: "rgba(201, 168, 76, 0.2)" }}
                   >
                     <User className="w-3.5 h-3.5 text-amber-400" />
                   </div>
-                  <span className="text-xs font-medium text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-                    {authLoading && isAuthenticated && !(user?.name || user?.email)
+                  <span
+                    className="text-xs font-medium text-amber-200"
+                    style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                  >
+                    {authLoading &&
+                    isAuthenticated &&
+                    !(user?.name || user?.email)
                       ? "…"
                       : user?.name || user?.email || "User"}
                   </span>
@@ -637,7 +910,10 @@ export default function Home() {
                   onClick={handleLogout}
                   type="button"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
-                  style={{ color: "#cbd5e1", fontFamily: "'Noto Sans KR', sans-serif" }}
+                  style={{
+                    color: "#cbd5e1",
+                    fontFamily: "'Noto Sans KR', sans-serif",
+                  }}
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   {t.logout}
@@ -650,7 +926,10 @@ export default function Home() {
                   onClick={handleLogin}
                   type="button"
                   className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
-                  style={{ color: "#cbd5e1", fontFamily: "'Noto Sans KR', sans-serif" }}
+                  style={{
+                    color: "#cbd5e1",
+                    fontFamily: "'Noto Sans KR', sans-serif",
+                  }}
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   {t.login}
@@ -712,7 +991,10 @@ export default function Home() {
             )}
 
             {/* Divider */}
-            <div className="w-px h-5 mx-1" style={{ background: "rgba(255,255,255,0.1)" }} />
+            <div
+              className="w-px h-5 mx-1"
+              style={{ background: "rgba(255,255,255,0.1)" }}
+            />
 
             {/* Language Selector */}
             <LanguageSelector
@@ -739,7 +1021,10 @@ export default function Home() {
                   boxShadow: "0 0 0 1px rgba(0,0,0,0.04) inset",
                 }}
               >
-                <div className="text-sm text-amber-50 font-medium" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                <div
+                  className="text-sm text-amber-50 font-medium"
+                  style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                >
                   {lang === "ko"
                     ? "기보 분석은 로그인한 뒤 이용할 수 있습니다."
                     : lang === "en"
@@ -769,9 +1054,14 @@ export default function Home() {
               isAuthenticated={isAuthenticated}
               onLoginRequired={() => {
                 toast.error(t.loginRequired, {
-                  description: lang === "ko" ? "기보 분석은 로그인 후 이용 가능합니다." :
-                    lang === "en" ? "Please log in to use the analysis feature." :
-                    lang === "zh" ? "请登录后使用分析功能。" : "分析機能をご利用いただくにはログインが必要です。",
+                  description:
+                    lang === "ko"
+                      ? "기보 분석은 로그인 후 이용 가능합니다."
+                      : lang === "en"
+                        ? "Please log in to use the analysis feature."
+                        : lang === "zh"
+                          ? "请登录后使用分析功能。"
+                          : "分析機能をご利用いただくにはログインが必要です。",
                   action: {
                     label: t.login,
                     onClick: handleLogin,
@@ -793,15 +1083,24 @@ export default function Home() {
                   <div className="flex items-center gap-3">
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center"
-                      style={{ background: "rgba(201, 168, 76, 0.15)", border: "1px solid rgba(201, 168, 76, 0.3)" }}
+                      style={{
+                        background: "rgba(201, 168, 76, 0.15)",
+                        border: "1px solid rgba(201, 168, 76, 0.3)",
+                      }}
                     >
                       <User className="w-4 h-4 text-amber-400" />
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                      <div
+                        className="text-xs text-slate-500"
+                        style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                      >
                         {t.profilePlan}
                       </div>
-                      <div className="text-sm font-semibold text-amber-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                      <div
+                        className="text-sm font-semibold text-amber-200"
+                        style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                      >
                         {lang === "ko"
                           ? `보유 크레딧 ${creditBalance}`
                           : lang === "en"
@@ -813,14 +1112,23 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-slate-500" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+                    <div
+                      className="text-xs text-slate-500"
+                      style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                    >
                       {t.profileRemaining}
                     </div>
                     <div
                       className="text-lg font-bold text-amber-300"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
-                      {lang === "ko" ? "1 분석 = 1" : lang === "en" ? "1 analysis = 1" : lang === "zh" ? "1 次分析 = 1" : "1 解析 = 1"}
+                      {lang === "ko"
+                        ? "1 분석 = 1"
+                        : lang === "en"
+                          ? "1 analysis = 1"
+                          : lang === "zh"
+                            ? "1 次分析 = 1"
+                            : "1 解析 = 1"}
                     </div>
                   </div>
                 </div>
@@ -834,14 +1142,19 @@ export default function Home() {
               {/* Animated Go stone ring */}
               <div className="w-24 h-24 rounded-full border-4 border-amber-400/30 animate-pulse" />
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full animate-spin"
+                <div
+                  className="w-12 h-12 rounded-full animate-spin"
                   style={{
-                    background: "conic-gradient(from 0deg, transparent 0%, #C9A84C 50%, transparent 100%)",
+                    background:
+                      "conic-gradient(from 0deg, transparent 0%, #C9A84C 50%, transparent 100%)",
                   }}
                 />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-8 h-8 rounded-full" style={{ background: "oklch(0.13 0.005 285)" }} />
+                <div
+                  className="w-8 h-8 rounded-full"
+                  style={{ background: "oklch(0.13 0.005 285)" }}
+                />
               </div>
             </div>
             <h3
@@ -850,7 +1163,10 @@ export default function Home() {
             >
               {t.analyzing}
             </h3>
-            <p className="text-sm text-slate-400 text-center max-w-sm" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+            <p
+              className="text-sm text-slate-400 text-center max-w-sm"
+              style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+            >
               {jobStatus === "queued"
                 ? lang === "ko"
                   ? "분석 작업이 대기열에 올라갔습니다. 곧 시작합니다…"
@@ -887,7 +1203,9 @@ export default function Home() {
               className="mt-2 text-xs text-slate-500 text-center font-mono"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
             >
-              {jobStatus !== "idle" ? `${jobStatus} · ${Math.round(jobProgress)}%` : ""}
+              {jobStatus !== "idle"
+                ? `${jobStatus} · ${Math.round(jobProgress)}%`
+                : ""}
             </p>
             <div className="mt-6 w-full max-w-3xl">
               <AnalysisWinratePanel
@@ -905,7 +1223,7 @@ export default function Home() {
               />
             </div>
             <div className="mt-6 flex gap-1.5">
-              {[0, 1, 2, 3, 4].map((i) => (
+              {[0, 1, 2, 3, 4].map(i => (
                 <div
                   key={i}
                   className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
@@ -917,10 +1235,13 @@ export default function Home() {
         ) : (
           <>
             {/* Back to Upload button */}
-            <div className="pt-6">
+            <div className="pt-6 flex items-center justify-between gap-3">
               <button
                 onClick={() => {
                   setKatagoWorkerV1Result(null);
+                  setResultJobId(null);
+                  forgetActiveAnalysisJob();
+                  clearAnalysisJobFromUrl();
                   setView("upload");
                 }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-white/5"
@@ -933,21 +1254,46 @@ export default function Home() {
                 <ArrowLeft className="w-4 h-4" />
                 {t.backToUpload}
               </button>
+              {resultJobId && (
+                <button
+                  type="button"
+                  onClick={handleDeleteResultData}
+                  disabled={deletingResultData}
+                  aria-label={lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"}
+                  title={lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ borderColor: "rgba(251,113,133,0.35)" }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
 
             {/* Analysis Results — ViewModel v1 (KataGo / mock-legacy / unknown) */}
             <div className="py-6 md:py-10">
-              <AnalysisResultView data={katagoWorkerV1Result ?? (report as unknown)} lang={lang} />
+              <AnalysisResultView
+                data={katagoWorkerV1Result ?? (report as unknown)}
+                lang={lang}
+              />
             </div>
           </>
         )}
 
         {/* Footer */}
-        <footer className="py-8 border-t text-center" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          <p className="text-xs text-slate-600" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+        <footer
+          className="py-8 border-t text-center"
+          style={{ borderColor: "rgba(255,255,255,0.06)" }}
+        >
+          <p
+            className="text-xs text-slate-600"
+            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          >
             {t.footerPowered}
           </p>
-          <p className="text-xs text-slate-700 mt-1" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+          <p
+            className="text-xs text-slate-700 mt-1"
+            style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+          >
             {t.footerDisclaimer}
           </p>
         </footer>

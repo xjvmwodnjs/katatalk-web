@@ -76,7 +76,10 @@ describe("winratePerspectiveV1", () => {
 
   it("normalizeWinratePerspectiveV1 is unverified for invalid raw types", () => {
     for (const raw of [null, undefined, "0.5", true, NaN, Infinity] as const) {
-      const p = normalizeWinratePerspectiveV1({ rawWinrate: raw, turnIndex: 1 });
+      const p = normalizeWinratePerspectiveV1({
+        rawWinrate: raw,
+        turnIndex: 1,
+      });
       expect(p.normalized.status).toBe("unverified");
       expect(p.normalized.displayWinrate).toBeNull();
       expect(p.rawWinrate).toBeNull();
@@ -92,6 +95,67 @@ describe("winratePerspectiveV1", () => {
     expect(invalid.normalized.status).not.toBe("verified");
   });
 
+  it("converts a configured black or white axis into complementary values", () => {
+    const black = normalizeWinratePerspectiveV1({
+      rawWinrate: 0.64,
+      configuredPerspective: "black",
+    });
+    expect(black.rawPerspective).toBe("black");
+    expect(black.normalized).toMatchObject({
+      status: "verified",
+      blackWinrate: 64,
+      whiteWinrate: 36,
+      displayWinrate: 64,
+      displayLabelKey: "blackWinrate",
+    });
+
+    const white = normalizeWinratePerspectiveV1({
+      rawWinrate: 0.64,
+      configuredPerspective: "white",
+    });
+    expect(white.rawPerspective).toBe("white");
+    expect(white.normalized).toMatchObject({
+      status: "verified",
+      blackWinrate: 36,
+      whiteWinrate: 64,
+      displayWinrate: 36,
+      displayLabelKey: "blackWinrate",
+    });
+  });
+
+  it("converts side-to-move only with explicit current-player evidence", () => {
+    const blackToMove = normalizeWinratePerspectiveV1({
+      rawWinrate: 0.7,
+      configuredPerspective: "side_to_move",
+      currentPlayer: "B",
+    });
+    expect(blackToMove.normalized).toMatchObject({
+      status: "verified",
+      blackWinrate: 70,
+      whiteWinrate: 30,
+    });
+
+    const whiteToMove = normalizeWinratePerspectiveV1({
+      rawWinrate: 0.7,
+      configuredPerspective: "side_to_move",
+      currentPlayer: "W",
+    });
+    expect(whiteToMove.normalized).toMatchObject({
+      status: "verified",
+      blackWinrate: 30,
+      whiteWinrate: 70,
+    });
+
+    const missingSide = normalizeWinratePerspectiveV1({
+      rawWinrate: 0.7,
+      configuredPerspective: "side_to_move",
+      player: "B",
+    });
+    expect(missingSide.normalized.status).toBe("katago_output_only");
+    expect(missingSide.normalized.blackWinrate).toBeNull();
+    expect(missingSide.normalized.whiteWinrate).toBeNull();
+  });
+
   it("missing currentPlayer/playerToMove does not throw", () => {
     expect(() =>
       normalizeWinratePerspectiveV1({ rawWinrate: 0.5, turnIndex: 2 })
@@ -102,14 +166,24 @@ describe("winratePerspectiveV1", () => {
   });
 
   it("WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1 is documented and non-empty", () => {
-    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.length).toBeGreaterThan(3);
-    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(/verified/i);
-    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(/rootInfo/i);
+    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.length).toBeGreaterThan(
+      3
+    );
+    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(
+      /verified/i
+    );
+    expect(WINRATE_VERIFIED_PROMOTION_REQUIREMENTS_V1.join(" ")).toMatch(
+      /rootInfo/i
+    );
   });
 
   it("WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1 lists formula options only", () => {
-    expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.length).toBeGreaterThanOrEqual(3);
-    expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.join(" ")).toMatch(/blackWinrate/i);
+    expect(
+      WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.length
+    ).toBeGreaterThanOrEqual(3);
+    expect(WINRATE_BLACK_WHITE_CONVERSION_CANDIDATES_V1.join(" ")).toMatch(
+      /blackWinrate/i
+    );
   });
 
   it("shape-only synthetic fixtures (no KataGo axis claim) normalize with null B/W", () => {
@@ -136,19 +210,38 @@ describe("winratePerspectiveV1", () => {
 
   it("translateWinrateDisplayLabelKey resolves katagoOutputWinrate", () => {
     for (const lang of ["ko", "en", "ja", "zh"] as const) {
-      const label = translateWinrateDisplayLabelKey("katagoOutputWinrate", lang);
+      const label = translateWinrateDisplayLabelKey(
+        "katagoOutputWinrate",
+        lang
+      );
       expect(label.length).toBeGreaterThan(0);
       expect(uiTextContainsForbiddenLabel(label, lang)).toBe(false);
       expect(label).toBe(getAnalysisResultUiStrings(lang).winrateYAxis);
     }
   });
 
+  it("translates verified black and white axis labels", () => {
+    for (const lang of ["ko", "en", "ja", "zh"] as const) {
+      const black = translateWinrateDisplayLabelKey("blackWinrate", lang);
+      const white = translateWinrateDisplayLabelKey("whiteWinrate", lang);
+      expect(black.length).toBeGreaterThan(0);
+      expect(white.length).toBeGreaterThan(0);
+      expect(black).not.toBe(white);
+      expect(uiTextContainsForbiddenLabel(black, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(white, lang)).toBe(false);
+    }
+  });
+
   it("winrate UI strings do not assert black/white fixed winrate", () => {
     for (const lang of ["ko", "en", "ja", "zh"] as const) {
       const t = getAnalysisResultUiStrings(lang);
-      expect(uiTextContainsForbiddenLabel(t.winratePerspectiveNote, lang)).toBe(false);
+      expect(uiTextContainsForbiddenLabel(t.winratePerspectiveNote, lang)).toBe(
+        false
+      );
       expect(uiTextContainsForbiddenLabel(t.winrateYAxis, lang)).toBe(false);
-      expect(t.winrateYAxis.toLowerCase()).not.toMatch(/black.?winrate|white.?winrate/);
+      expect(t.winrateYAxis.toLowerCase()).not.toMatch(
+        /black.?winrate|white.?winrate/
+      );
     }
   });
 });
@@ -171,11 +264,43 @@ describe("buildAnalysisResultViewModel winrate perspective", () => {
     if (vm.kind !== "katago-worker-v1") {
       return;
     }
-    const pt = vm.graph.winrateSeries.find((p) => p.turnIndex === 10);
+    const pt = vm.graph.winrateSeries.find(p => p.turnIndex === 10);
     expect(pt?.perspective.normalized.blackWinrate).toBeNull();
     expect(pt?.perspective.normalized.whiteWinrate).toBeNull();
     expect(pt?.displayWinrate).toBe(pt?.perspective.normalized.displayWinrate);
     expect(pt?.rawWinrate).toBe(0.48);
-    expect(pt?.perspective.normalized.displayLabelKey).toBe("katagoOutputWinrate");
+    expect(pt?.perspective.normalized.displayLabelKey).toBe(
+      "katagoOutputWinrate"
+    );
+  });
+
+  it("promotes recorded BLACK config metadata and real root currentPlayer evidence", () => {
+    const vm = buildAnalysisResultViewModel({
+      source: "katago-worker-v1",
+      ok: true,
+      engine: { winratePerspective: "black" },
+      turnAnalyses: [
+        {
+          status: "ok",
+          turnIndex: 10,
+          player: "B",
+          playedMove: "Q16",
+          katago: { rootInfo: { currentPlayer: "B" } },
+          moveSummary: { played: { move: "Q16", winrate: 0.48 } },
+        },
+      ],
+    });
+    if (vm.kind !== "katago-worker-v1") {
+      throw new Error("expected katago view model");
+    }
+    const point = vm.graph.winrateSeries[0];
+    expect(point?.displayPerspective).toBe("black");
+    expect(point?.confidence).toBe("verified");
+    expect(point?.perspective.normalized).toMatchObject({
+      status: "verified",
+      blackWinrate: 48,
+      whiteWinrate: 52,
+      displayLabelKey: "blackWinrate",
+    });
   });
 });

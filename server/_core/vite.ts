@@ -3,8 +3,27 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+import { createServer as createViteServer, type InlineConfig, type UserConfig } from "vite";
 import viteConfig from "../../vite.config";
+
+type ViteConfigFactory = (env: {
+  command: "serve";
+  mode: string;
+  isSsrBuild: boolean;
+  isPreview: boolean;
+}) => UserConfig | Promise<UserConfig>;
+
+async function resolveServerViteConfig(): Promise<InlineConfig> {
+  const env = {
+    command: "serve" as const,
+    mode: process.env.NODE_ENV === "production" ? "production" : "development",
+    isSsrBuild: false,
+    isPreview: false,
+  };
+  const config =
+    typeof viteConfig === "function" ? (viteConfig as ViteConfigFactory)(env) : viteConfig;
+  return (await Promise.resolve(config)) as InlineConfig;
+}
 
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
@@ -13,10 +32,14 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  const resolvedViteConfig = await resolveServerViteConfig();
   const vite = await createViteServer({
-    ...viteConfig,
+    ...resolvedViteConfig,
     configFile: false,
-    server: serverOptions,
+    server: {
+      ...(resolvedViteConfig.server ?? {}),
+      ...serverOptions,
+    },
     appType: "custom",
   });
 

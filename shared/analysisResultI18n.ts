@@ -4,11 +4,16 @@
  */
 
 import type { SgfPlaybackWarningV1 } from "./sgfPlaybackV1";
-import type { AnalysisLearningEventSourceV1, AnalysisLearningEventTypeV1 } from "./analysisLearningEventsV1";
+import type {
+  AnalysisLearningEventSourceV1,
+  AnalysisLearningEventTypeV1,
+} from "./analysisLearningEventsV1";
 
 export type AnalysisResultLang = "ko" | "en" | "ja" | "zh";
 
-export function normalizeAnalysisResultLang(lang: string | null | undefined): AnalysisResultLang {
+export function normalizeAnalysisResultLang(
+  lang: string | null | undefined
+): AnalysisResultLang {
   const l = (lang ?? "ko").toLowerCase();
   if (l === "en" || l === "ja" || l === "zh" || l === "ko") {
     return l;
@@ -16,7 +21,10 @@ export function normalizeAnalysisResultLang(lang: string | null | undefined): An
   return "ko";
 }
 
-function interp(template: string, params?: Record<string, string | number>): string {
+function interp(
+  template: string,
+  params?: Record<string, string | number>
+): string {
   if (!params) {
     return template;
   }
@@ -33,7 +41,10 @@ const FORBIDDEN_BY_LANG: Record<AnalysisResultLang, readonly string[]> = {
 };
 
 /** UI 노출 금지 단어 포함 여부 — 언어 지정 시에도 ko/en/ja/zh 금지어를 모두 검사(교차 노출 방지) */
-export function uiTextContainsForbiddenLabel(text: string, _lang?: AnalysisResultLang): boolean {
+export function uiTextContainsForbiddenLabel(
+  text: string,
+  _lang?: AnalysisResultLang
+): boolean {
   const t = text.trim();
   if (!t) {
     return false;
@@ -156,7 +167,10 @@ export function internalReferenceSignalLabel(lang: AnalysisResultLang): string {
   return INTERNAL_SIGNAL[lang];
 }
 
-export function mapReasonPhraseForUi(reason: string, lang: AnalysisResultLang): string {
+export function mapReasonPhraseForUi(
+  reason: string,
+  lang: AnalysisResultLang
+): string {
   const r = reason.trim();
   const legacy = LEGACY_KO_PHRASES[r];
   if (legacy) {
@@ -308,7 +322,10 @@ const SGF_WARN: Record<
   },
 };
 
-export function translateSgfPlaybackWarning(warning: SgfPlaybackWarningV1, lang: AnalysisResultLang): string {
+export function translateSgfPlaybackWarning(
+  warning: SgfPlaybackWarningV1,
+  lang: AnalysisResultLang
+): string {
   const row = SGF_WARN[warning.code];
   if (!row) {
     return warning.code;
@@ -334,6 +351,12 @@ const VM_WARN: Record<string, Record<AnalysisResultLang, string>> = {
     en: "Unsupported result format.",
     ja: "未対応の結果形式です。",
     zh: "不支持的结果格式。",
+  },
+  katago_quality_warning: {
+    ko: "일부 KataGo 보조 분석 신호가 부족합니다: {qualityCode}",
+    en: "Some auxiliary KataGo analysis signals are limited: {qualityCode}",
+    ja: "一部の KataGo 補助解析シグナルが不足しています: {qualityCode}",
+    zh: "部分 KataGo 辅助分析信号不足：{qualityCode}",
   },
 };
 
@@ -369,7 +392,10 @@ const PLACEHOLDER: Record<string, Record<AnalysisResultLang, string>> = {
   },
 };
 
-export function translatePlaceholderMessageKey(key: string, lang: AnalysisResultLang): string {
+export function translatePlaceholderMessageKey(
+  key: string,
+  lang: AnalysisResultLang
+): string {
   const row = PLACEHOLDER[key];
   if (!row) {
     return key;
@@ -446,7 +472,10 @@ const LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
   },
 };
 
-export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang): string {
+export function translateCandidateLabelKey(
+  key: string,
+  lang: AnalysisResultLang
+): string {
   const row = LABEL_KEYS[key];
   if (!row) {
     return key;
@@ -454,7 +483,10 @@ export function translateCandidateLabelKey(key: string, lang: AnalysisResultLang
   return row[lang];
 }
 
-const LEARNING_EVENT_CHIP_PREFIX: Record<AnalysisLearningEventTypeV1, Record<AnalysisResultLang, string>> = {
+const LEARNING_EVENT_CHIP_PREFIX: Record<
+  AnalysisLearningEventTypeV1,
+  Record<AnalysisResultLang, string>
+> = {
   review_candidate: { ko: "검토", en: "Review", ja: "検討", zh: "复核" },
   flow_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
   response_candidate: { ko: "응수", en: "Response", ja: "応手", zh: "应手" },
@@ -462,40 +494,116 @@ const LEARNING_EVENT_CHIP_PREFIX: Record<AnalysisLearningEventTypeV1, Record<Ana
   high_bsi_candidate: { ko: "신호", en: "Signal", ja: "信号", zh: "信号" },
   deep_search_candidate: { ko: "추가", en: "Further", ja: "追加", zh: "追加" },
   winrate_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
-  score_lead_shift_candidate: { ko: "흐름", en: "Flow", ja: "流れ", zh: "走势" },
+  score_lead_shift_candidate: {
+    ko: "흐름",
+    en: "Flow",
+    ja: "流れ",
+    zh: "走势",
+  },
 };
 
-export function translateLearningEventChipPrefix(eventType: AnalysisLearningEventTypeV1, lang: AnalysisResultLang): string {
-  return LEARNING_EVENT_CHIP_PREFIX[eventType]?.[lang] ?? LEARNING_EVENT_CHIP_PREFIX.review_candidate[lang];
+export function translateLearningEventChipPrefix(
+  eventType: AnalysisLearningEventTypeV1,
+  lang: AnalysisResultLang
+): string {
+  return (
+    LEARNING_EVENT_CHIP_PREFIX[eventType]?.[lang] ??
+    LEARNING_EVENT_CHIP_PREFIX.review_candidate[lang]
+  );
 }
 
-const LEARNING_EVENT_SOURCE_LABELS: Record<AnalysisLearningEventSourceV1, Record<AnalysisResultLang, string>> = {
-  turnAnalyses: { ko: "수순 분석", en: "Turn analysis", ja: "手順解析", zh: "手数分析" },
-  deepSearchPlan: { ko: "추가 분석 계획", en: "Further analysis plan", ja: "追加解析計画", zh: "追加分析计划" },
-  deepSearchResults: { ko: "추가 분석 결과", en: "Further analysis result", ja: "追加解析結果", zh: "追加分析结果" },
-  adiV1: { ko: "ADI 신호", en: "ADI signal", ja: "ADI シグナル", zh: "ADI 信号" },
-  bsiV1: { ko: "BSI 신호", en: "BSI signal", ja: "BSI シグナル", zh: "BSI 信号" },
-  winrateTimelineV1: { ko: "승률 흐름", en: "Winrate flow", ja: "勝率推移", zh: "胜率走势" },
-  learningEventsV1: { ko: "검토 후보", en: "Review candidate", ja: "検討候補", zh: "复核候选" },
-  embedded: { ko: "저장된 검토 후보", en: "Stored review candidate", ja: "保存済み検討候補", zh: "已存复核候选" },
+const LEARNING_EVENT_SOURCE_LABELS: Record<
+  AnalysisLearningEventSourceV1,
+  Record<AnalysisResultLang, string>
+> = {
+  turnAnalyses: {
+    ko: "수순 분석",
+    en: "Turn analysis",
+    ja: "手順解析",
+    zh: "手数分析",
+  },
+  deepSearchPlan: {
+    ko: "추가 분석 계획",
+    en: "Further analysis plan",
+    ja: "追加解析計画",
+    zh: "追加分析计划",
+  },
+  deepSearchResults: {
+    ko: "추가 분석 결과",
+    en: "Further analysis result",
+    ja: "追加解析結果",
+    zh: "追加分析结果",
+  },
+  adiV1: {
+    ko: "ADI 신호",
+    en: "ADI signal",
+    ja: "ADI シグナル",
+    zh: "ADI 信号",
+  },
+  bsiV1: {
+    ko: "BSI 신호",
+    en: "BSI signal",
+    ja: "BSI シグナル",
+    zh: "BSI 信号",
+  },
+  winrateTimelineV1: {
+    ko: "승률 흐름",
+    en: "Winrate flow",
+    ja: "勝率推移",
+    zh: "胜率走势",
+  },
+  learningEventsV1: {
+    ko: "검토 후보",
+    en: "Review candidate",
+    ja: "検討候補",
+    zh: "复核候选",
+  },
+  embedded: {
+    ko: "저장된 검토 후보",
+    en: "Stored review candidate",
+    ja: "保存済み検討候補",
+    zh: "已存复核候选",
+  },
 };
 
-export function translateLearningEventSourceLabel(source: string, lang: AnalysisResultLang): string {
-  const row = LEARNING_EVENT_SOURCE_LABELS[source as AnalysisLearningEventSourceV1];
+export function translateLearningEventSourceLabel(
+  source: string,
+  lang: AnalysisResultLang
+): string {
+  const row =
+    LEARNING_EVENT_SOURCE_LABELS[source as AnalysisLearningEventSourceV1];
   return row?.[lang] ?? INTERNAL_SIGNAL[lang];
 }
 
 /** Winrate chart axis labels — keyed by `WinrateNormalizedV1.displayLabelKey` */
-const WINRATE_DISPLAY_LABEL_KEYS: Record<string, Record<AnalysisResultLang, string>> = {
+const WINRATE_DISPLAY_LABEL_KEYS: Record<
+  string,
+  Record<AnalysisResultLang, string>
+> = {
   katagoOutputWinrate: {
     ko: "KataGo 기준 승률 (%)",
     en: "KataGo output winrate (%)",
     ja: "KataGo 出力の勝率 (%)",
     zh: "KataGo 输出胜率 (%)",
   },
+  blackWinrate: {
+    ko: "흑 승률 (%)",
+    en: "Black winrate (%)",
+    ja: "黒の勝率 (%)",
+    zh: "黑方胜率 (%)",
+  },
+  whiteWinrate: {
+    ko: "백 승률 (%)",
+    en: "White winrate (%)",
+    ja: "白の勝率 (%)",
+    zh: "白方胜率 (%)",
+  },
 };
 
-export function translateWinrateDisplayLabelKey(key: string, lang: AnalysisResultLang): string {
+export function translateWinrateDisplayLabelKey(
+  key: string,
+  lang: AnalysisResultLang
+): string {
   const row = WINRATE_DISPLAY_LABEL_KEYS[key];
   if (!row) {
     return key;
@@ -688,11 +796,13 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateTitle: "승률 / 흐름",
     winrateYAxis: "KataGo 기준 승률 (%)",
     winrateEmpty: "표시할 승률 추이가 없습니다.",
-    winrateToggleNote: "흑/백 관점 전환 — 준비 중",
+    winrateToggleNote:
+      "검증된 관점 정보가 없어 흑/백 전환을 사용할 수 없습니다.",
     winrateCollapse: "그래프 접기",
     winrateExpand: "그래프 펼치기",
     winratePerspectiveNote: "KataGo 출력 관점이며 흑/백 고정 해석이 아닙니다.",
-    winrateFullTimelineNote: "메인라인 전체 수순 흐름(KataGo timeline 분석 출력).",
+    winrateFullTimelineNote:
+      "메인라인 전체 수순 흐름(KataGo timeline 분석 출력).",
     winrateProgressLabel: "승률 그래프 분석 중",
     winrateClickHint: "점을 눌러 해당 수순을 선택할 수 있습니다.",
     chartAriaTurn: "수",
@@ -716,7 +826,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     variationTurn: "수순",
     variationPlayed: "실전수",
     variationCandidate: "후보수",
-    variationPvDisclaimer: "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
+    variationPvDisclaimer:
+      "참고 변화(PV)이며 유일한 진행으로 단정하지 않습니다.",
     variationShowOnBoard: "참고도 보기",
     variationSelectedOnBoard: "참고도 표시 중",
     variationNoDisplayable: "표시할 참고도 없음",
@@ -726,16 +837,23 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI 분석 메모",
     analysisMemoSelectCandidate: "검토 후보를 선택하면 해설이 표시됩니다.",
     analysisMemoCandidate: "이 수순은 KataGo 기준으로 검토할 만한 후보입니다.",
-    analysisMemoLearningEvent: "이 장면은 여러 내부 신호가 겹쳐 검토 후보로 선택되었습니다.",
-    analysisMemoDeepSearchEvidence: "Deep Search 결과가 있는 경우 추가 근거로 반영했습니다.",
-    analysisMemoVariation: "선택한 참고도는 바둑판 위의 반투명 번호로 표시됩니다.",
-    analysisMemoPvCaution: "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
-    analysisMemoSignalCaution: "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
+    analysisMemoLearningEvent:
+      "이 장면은 여러 내부 신호가 겹쳐 검토 후보로 선택되었습니다.",
+    analysisMemoDeepSearchEvidence:
+      "Deep Search 결과가 있는 경우 추가 근거로 반영했습니다.",
+    analysisMemoVariation:
+      "선택한 참고도는 바둑판 위의 반투명 번호로 표시됩니다.",
+    analysisMemoPvCaution:
+      "참고도는 하나의 가능성이며, 단일 진행으로 보지 않습니다.",
+    analysisMemoSignalCaution:
+      "BSI/ADI는 내부 참고 신호이며 수순의 확정 판단이 아닙니다.",
     analysisMemoNoLlM: "LLM 자연어 해설은 아직 실행하지 않습니다.",
     productPrefixDecisive: "결정",
     productPrefixReview: "검토",
-    productSummaryDecisive: "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.",
-    productSummaryTimeline: "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.",
+    productSummaryDecisive:
+      "패자 관점에서 수치 근거가 확인된 결정적 장면 후보입니다.",
+    productSummaryTimeline:
+      "승률 흐름 변화가 있어 함께 확인할 학습 장면 후보입니다.",
     productSummaryLearning: "여러 분석 신호가 겹쳐 검토 후보로 선택되었습니다.",
     productSummaryDefault: "결정론적 분석 근거로 만든 복기 참고 메모입니다.",
     productBulletScoreLoss: "집 차이 변화 후보",
@@ -768,12 +886,14 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     tryPlayEnter: "놓아보기",
     tryPlayUndo: "무르기",
     tryPlayReset: "초기화",
-    tryPlayNotice: "화면에서만 놓아보는 기능이며, KataGo 재분석은 수행하지 않습니다.",
+    tryPlayNotice:
+      "화면에서만 놓아보는 기능이며, KataGo 재분석은 수행하지 않습니다.",
   },
   en: {
     summaryStatusComplete: "Analysis complete",
     summaryTitle: "Analysis summary",
-    betaNote: "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
+    betaNote:
+      "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
     blackPlayer: "Black",
     whitePlayer: "White",
     gameResult: "Result",
@@ -796,7 +916,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     boardTitle: "Board",
     boardBadge: "View only · v1",
     boardPhGrid: "No SGF text — board cannot be shown.",
-    boardSnapshotHint: "Mainline position up to the selected move (no placing stones).",
+    boardSnapshotHint:
+      "Mainline position up to the selected move (no placing stones).",
     boardAriaSnapshot: "Go board position snapshot",
     boardViewOnlyNote: "View only — no moves or variation browsing.",
     navAriaToolbar: "Move navigation",
@@ -820,11 +941,14 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateTitle: "Winrate / flow",
     winrateYAxis: "KataGo output winrate (%)",
     winrateEmpty: "No winrate series to display.",
-    winrateToggleNote: "Black/white perspective — coming soon",
+    winrateToggleNote:
+      "Black/white switching requires verified perspective metadata.",
     winrateCollapse: "Collapse graph",
     winrateExpand: "Expand graph",
-    winratePerspectiveNote: "Shown as KataGo output; not fixed as black-only or white-only winrate.",
-    winrateFullTimelineNote: "Full mainline flow (KataGo timeline analysis output).",
+    winratePerspectiveNote:
+      "Shown as KataGo output; not fixed as black-only or white-only winrate.",
+    winrateFullTimelineNote:
+      "Full mainline flow (KataGo timeline analysis output).",
     winrateProgressLabel: "Winrate graph analyzing",
     winrateClickHint: "Click a point to select that move index.",
     chartAriaTurn: "Move",
@@ -848,7 +972,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     variationTurn: "Move",
     variationPlayed: "Played",
     variationCandidate: "Candidate",
-    variationPvDisclaimer: "Reference PV only — not a single authoritative continuation.",
+    variationPvDisclaimer:
+      "Reference PV only — not a single authoritative continuation.",
     variationShowOnBoard: "Show reference",
     variationSelectedOnBoard: "Reference shown",
     variationNoDisplayable: "No reference to show",
@@ -857,19 +982,29 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     reviewBackToMainline: "Back to mainline",
     analysisMemoTitle: "AI analysis memo",
     analysisMemoSelectCandidate: "Select a review candidate to show the memo.",
-    analysisMemoCandidate: "This move index is worth reviewing under KataGo output.",
-    analysisMemoLearningEvent: "This position was selected because multiple internal signals overlap.",
-    analysisMemoDeepSearchEvidence: "Deep Search results are reflected as additional evidence when available.",
-    analysisMemoVariation: "The selected reference line is shown as faded numbered markers on the board.",
-    analysisMemoPvCaution: "The reference line is one possible continuation, not a single answer.",
-    analysisMemoSignalCaution: "BSI/ADI are internal reference signals, not final judgments.",
+    analysisMemoCandidate:
+      "This move index is worth reviewing under KataGo output.",
+    analysisMemoLearningEvent:
+      "This position was selected because multiple internal signals overlap.",
+    analysisMemoDeepSearchEvidence:
+      "Deep Search results are reflected as additional evidence when available.",
+    analysisMemoVariation:
+      "The selected reference line is shown as faded numbered markers on the board.",
+    analysisMemoPvCaution:
+      "The reference line is one possible continuation, not a single answer.",
+    analysisMemoSignalCaution:
+      "BSI/ADI are internal reference signals, not final judgments.",
     analysisMemoNoLlM: "LLM commentary is not running yet.",
     productPrefixDecisive: "Key",
     productPrefixReview: "Review",
-    productSummaryDecisive: "This key review candidate is supported by deterministic numeric signals.",
-    productSummaryTimeline: "This learning scene candidate was selected with winrate-flow context.",
-    productSummaryLearning: "This position was selected because several analysis signals overlapped.",
-    productSummaryDefault: "This deterministic memo is a review aid, not a final judgment.",
+    productSummaryDecisive:
+      "This key review candidate is supported by deterministic numeric signals.",
+    productSummaryTimeline:
+      "This learning scene candidate was selected with winrate-flow context.",
+    productSummaryLearning:
+      "This position was selected because several analysis signals overlapped.",
+    productSummaryDefault:
+      "This deterministic memo is a review aid, not a final judgment.",
     productBulletScoreLoss: "Score shift candidate",
     productBulletWinrateLoss: "Winrate shift candidate",
     productBulletBsi: "BSI reference signal",
@@ -881,7 +1016,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     productBulletDefault: "Internal reference signal",
     productV2DeterministicBadge: "Deterministic memo",
     productV2ConceptHint: "Conservative concept hint",
-    productV2CandidateComparison: "Played move and recommended candidate difference",
+    productV2CandidateComparison:
+      "Played move and recommended candidate difference",
     productV2ScoreLoss: "Score shift",
     productV2WinrateLoss: "Winrate shift",
     productV2PvReference: "Reference line",
@@ -905,7 +1041,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
   ja: {
     summaryStatusComplete: "解析完了",
     summaryTitle: "分析サマリ",
-    betaNote: "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
+    betaNote:
+      "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
     blackPlayer: "黒",
     whitePlayer: "白",
     gameResult: "結果",
@@ -939,7 +1076,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     navTurnCounter: "{current} / {total}",
     navSliderAria: "手数スライダー",
     navKeyboardHint: "←/→ 手数 · Home/End 最初/最後（閲覧のみ）",
-    navEmptyMainline: "メインラインの手がありません — 手数ナビは使用できません。",
+    navEmptyMainline:
+      "メインラインの手がありません — 手数ナビは使用できません。",
     boardGhostLegend: "半透明マーカー: 参考候補手",
     boardGhostLegendFallback: "半透明マーカー: 参考座標",
     boardGhostPvLegend: "選択した参考手順",
@@ -952,11 +1090,14 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateTitle: "勝率 / 推移",
     winrateYAxis: "KataGo 出力の勝率 (%)",
     winrateEmpty: "表示できる勝率系列がありません。",
-    winrateToggleNote: "黒白視点の切替 — 準備中",
+    winrateToggleNote:
+      "検証済みの視点情報がないため、黒白を切り替えられません。",
     winrateCollapse: "グラフを閉じる",
     winrateExpand: "グラフを開く",
-    winratePerspectiveNote: "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
-    winrateFullTimelineNote: "メインライン全手の推移（KataGo timeline 分析出力）。",
+    winratePerspectiveNote:
+      "KataGo 出力の視点であり、黒または白の固定解釈ではありません。",
+    winrateFullTimelineNote:
+      "メインライン全手の推移（KataGo timeline 分析出力）。",
     winrateProgressLabel: "勝率グラフ解析中",
     winrateClickHint: "点をクリックして手数を選べます。",
     chartAriaTurn: "手",
@@ -980,7 +1121,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     variationTurn: "手数",
     variationPlayed: "実戦手",
     variationCandidate: "候補手",
-    variationPvDisclaimer: "参考用の変化（PV）であり、単一の断定手順としては扱いません。",
+    variationPvDisclaimer:
+      "参考用の変化（PV）であり、単一の断定手順としては扱いません。",
     variationShowOnBoard: "参考を表示",
     variationSelectedOnBoard: "参考を表示中",
     variationNoDisplayable: "表示する参考なし",
@@ -990,17 +1132,23 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoTitle: "AI 分析メモ",
     analysisMemoSelectCandidate: "検討候補を選択するとメモを表示します。",
     analysisMemoCandidate: "この手数は KataGo 出力上、検討対象として扱えます。",
-    analysisMemoLearningEvent: "この場面は複数の内部シグナルが重なったため検討候補に選ばれました。",
-    analysisMemoDeepSearchEvidence: "Deep Search 結果がある場合は追加根拠として反映しています。",
+    analysisMemoLearningEvent:
+      "この場面は複数の内部シグナルが重なったため検討候補に選ばれました。",
+    analysisMemoDeepSearchEvidence:
+      "Deep Search 結果がある場合は追加根拠として反映しています。",
     analysisMemoVariation: "選択した参考図は碁盤上の半透明番号で表示されます。",
-    analysisMemoPvCaution: "参考図は一つの可能性であり、単一の進行とは見なしません。",
-    analysisMemoSignalCaution: "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
+    analysisMemoPvCaution:
+      "参考図は一つの可能性であり、単一の進行とは見なしません。",
+    analysisMemoSignalCaution:
+      "BSI/ADI は内部参照シグナルであり、最終判断ではありません。",
     analysisMemoNoLlM: "LLM の自然言語解説はまだ実行しません。",
     productPrefixDecisive: "重要",
     productPrefixReview: "検討",
-    productSummaryDecisive: "決定的場面の候補として、数値シグナルで確認された場面です。",
+    productSummaryDecisive:
+      "決定的場面の候補として、数値シグナルで確認された場面です。",
     productSummaryTimeline: "勝率の流れも参考にした学習場面の候補です。",
-    productSummaryLearning: "複数の分析シグナルが重なったため検討候補に選ばれました。",
+    productSummaryLearning:
+      "複数の分析シグナルが重なったため検討候補に選ばれました。",
     productSummaryDefault: "決定的な判定ではなく、復習用の参考メモです。",
     productBulletScoreLoss: "地合い差の変化候補",
     productBulletWinrateLoss: "勝率変化の候補",
@@ -1037,7 +1185,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
   zh: {
     summaryStatusComplete: "分析完成",
     summaryTitle: "分析摘要",
-    betaNote: "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
+    betaNote:
+      "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
     blackPlayer: "黑",
     whitePlayer: "白",
     gameResult: "结果",
@@ -1084,7 +1233,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     winrateTitle: "胜率 / 走势",
     winrateYAxis: "KataGo 输出胜率 (%)",
     winrateEmpty: "没有可显示的胜率序列。",
-    winrateToggleNote: "黑/白视角 — 准备中",
+    winrateToggleNote: "缺少已验证的视角信息，无法切换黑白胜率。",
     winrateCollapse: "收起图表",
     winrateExpand: "展开图表",
     winratePerspectiveNote: "为 KataGo 输出视角，不作黑方或白方固定解读。",
@@ -1123,7 +1272,8 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
     analysisMemoSelectCandidate: "选择复核候选后会显示备忘。",
     analysisMemoCandidate: "此手数可作为 KataGo 输出下的复核候选。",
     analysisMemoLearningEvent: "该局面因多个内部信号重合而被选为复核候选。",
-    analysisMemoDeepSearchEvidence: "如有 Deep Search 结果，会作为追加依据纳入。",
+    analysisMemoDeepSearchEvidence:
+      "如有 Deep Search 结果，会作为追加依据纳入。",
     analysisMemoVariation: "所选参考图会以半透明编号标记显示在棋盘上。",
     analysisMemoPvCaution: "参考图只是一种可能，不应视为唯一进程。",
     analysisMemoSignalCaution: "BSI/ADI 是内部参考信号，并非最终判断。",

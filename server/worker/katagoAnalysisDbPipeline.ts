@@ -10,7 +10,9 @@ import {
   isLegacyMockResultPayload,
   sanitizeAnalysisJobErrorMessage,
 } from "../analysisEngineDeterminism";
+import { assertKatagoResultQualityForCompletion } from "../katagoResultQualityGate";
 import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
+import type { AnalysisWorkerJobOutcome } from "./analysisJobOutcome";
 
 type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
 
@@ -46,7 +48,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
   language: string;
   lease?: AnalysisJobProcessingLease | null;
   onJobFailed?: () => void | Promise<void>;
-}): Promise<void> {
+}): Promise<AnalysisWorkerJobOutcome> {
   const { jobId, row, fileName, language, lease, onJobFailed } = args;
   try {
     const content = typeof row.sgf_content === "string" ? row.sgf_content : null;
@@ -61,16 +63,16 @@ export async function runKatagoAnalysisDbPipeline(args: {
       });
       if (!r.ok) {
         console.warn("[katagoAnalysisDbPipeline] lease_lost skip missing_sgf failed/refund", { jobId });
-        return;
+        return "lease_lost";
       }
       await onJobFailed?.();
-      return;
+      return "failed";
     }
 
     const pr = await updateJobForPipeline(jobId, lease, { status: "running", progress: 15 });
     if (!pr.ok) {
       console.warn("[katagoAnalysisDbPipeline] lease_lost skip katago run", { jobId });
-      return;
+      return "lease_lost";
     }
 
     let leaseLostDuringRun = false;
@@ -136,7 +138,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
       console.warn("[katagoAnalysisDbPipeline] heartbeat uncertain before post-run; skip completed (job stays running)", {
         jobId,
       });
-      return;
+      return "lease_lost";
     }
 
     if (lease) {
@@ -151,13 +153,13 @@ export async function runKatagoAnalysisDbPipeline(args: {
           jobId,
           err: postErr instanceof Error ? postErr.message : postErr,
         });
-        return;
+        return "lease_lost";
       }
     }
 
     if (leaseLostDuringRun || heartbeatUncertain) {
       console.warn("[katagoAnalysisDbPipeline] lease_lost or heartbeat uncertain; skip post-analyze write", { jobId });
-      return;
+      return "lease_lost";
     }
 
     if (row.is_mock === true) {
@@ -170,6 +172,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
     if (rObj.source !== "katago-worker-v1" || rObj.isMock === true) {
       throw new Error("KATAGO_OUTPUT_INVALID: result must be katago-worker-v1 with isMock=false");
     }
+    assertKatagoResultQualityForCompletion(result);
 
     const cr = await updateJobForPipeline(jobId, lease, {
       status: "completed",
@@ -182,7 +185,9 @@ export async function runKatagoAnalysisDbPipeline(args: {
     });
     if (!cr.ok) {
       console.warn("[katagoAnalysisDbPipeline] lease_lost skip completed write", { jobId });
+      return "lease_lost";
     }
+    return "completed";
   } catch (e) {
     const message = sanitizeAnalysisJobErrorMessage(
       e instanceof Error ? e.message : "Unknown error"
@@ -198,7 +203,7 @@ export async function runKatagoAnalysisDbPipeline(args: {
       });
       if (!fr.ok) {
         console.warn("[katagoAnalysisDbPipeline] lease_lost skip failed write/refund", { jobId });
-        return;
+        return "lease_lost";
       }
     } catch (patchErr) {
       console.error("[katagoAnalysisDbPipeline] failed to persist failure state", patchErr);
@@ -208,5 +213,6 @@ export async function runKatagoAnalysisDbPipeline(args: {
     } catch (refundErr) {
       console.error("[katagoAnalysisDbPipeline] onJobFailed refund error", refundErr);
     }
+    return "failed";
   }
 }

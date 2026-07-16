@@ -113,6 +113,53 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(body.userId).toBe("user_a");
   });
 
+  it("GET /api/credits/logs redacts internal payment ledger fields", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const logsSpy = vi.spyOn(creditService, "getCreditLogs").mockResolvedValue([
+      {
+        id: "00000000-0000-0000-0000-00000000feed",
+        user_id: "user_a",
+        amount: 20,
+        type: "refill",
+        description: "Lemon Squeezy credits (starter)",
+        stripe_event_id: "stripe-event-should-not-leak",
+        stripe_session_id: "stripe-session-should-not-leak",
+        payment_provider: "lemonsqueezy",
+        payment_event_id: "payment-event-should-not-leak",
+        payment_order_id: "payment-order-should-not-leak",
+        payment_checkout_id: "payment-checkout-should-not-leak",
+        analysis_job_id: null,
+        idempotency_key: "payment:lemonsqueezy:secret-order",
+        metadata: { internal: "metadata-should-not-leak" },
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/credits/logs`, {
+        headers: { Authorization: "Bearer fake" },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { logs?: Array<Record<string, unknown>> };
+      expect(body.logs).toEqual([
+        {
+          amount: 20,
+          type: "refill",
+          description: "Lemon Squeezy credits (starter)",
+          payment_provider: "lemonsqueezy",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+      const raw = JSON.stringify(body);
+      expect(raw).not.toContain("secret-order");
+      expect(raw).not.toContain("payment-event-should-not-leak");
+      expect(raw).not.toContain("payment-order-should-not-leak");
+      expect(raw).not.toContain("metadata-should-not-leak");
+    } finally {
+      logsSpy.mockRestore();
+    }
+  });
+
   it("GET /api/analyze/:jobId returns 403 for another user's job (no sgf_content leak)", async () => {
     const jobId = "job-ownership-http-test";
     const otherUserSgf = "(;OTHER_USER_SGF_SECRET_MARKER[pd])";

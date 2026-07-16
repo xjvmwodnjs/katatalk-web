@@ -12,7 +12,7 @@
 
 ## 1. Local Smoke Profiles
 
-아래 profile은 Web/Worker를 모두 재시작한 뒤 적용한다. KataGo path 값은 각 로컬 환경에서만 설정하고 문서/로그에 남기지 않는다.
+아래 profile은 Web/Worker를 모두 재시작한 뒤 적용한다. KataGo path 값은 각 로컬 환경에서만 설정하고 문서/로그에 남기지 않는다. 모든 실분석 Worker에는 실제 cfg의 `reportAnalysisWinratesAs`와 같은 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED` 값을 설정한다.
 
 ### 1.1 빠른 UI Smoke
 
@@ -65,26 +65,79 @@ KATAGO_DEEP_SEARCH_MAX_CANDIDATES=1
 KATAGO_DEEP_SEARCH_VISITS=800
 ```
 
+### 1.4 공유 KataGo C4 용량 Gate
+
+목적: 한 Worker/KataGo process가 서로 다른 job 4개를 공유 처리할 때 queue p95 30초, engine/E2E p95 120초, 품질 warning/failure 0을 확인한다. Deep Search와 timeline을 켜면 Worker startup guard가 C4를 거부한다.
+
+```env
+ANALYSIS_ENGINE=katago
+ANALYSIS_WORKER_MODE=external
+ANALYSIS_WORKER_CONCURRENCY=4
+KATATALK_ALLOW_MOCK_ANALYSIS=false
+KATAGO_MAX_VISITS=200
+KATAGO_MULTI_TURN_MAX=6
+KATAGO_PERSISTENT_ROOT_ENABLED=true
+KATAGO_PERSISTENT_ROOT_STRICT=true
+KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS=600000
+KATAGO_PERSISTENT_MULTI_TURN_ENABLED=true
+KATAGO_PERSISTENT_MULTI_TURN_STRICT=true
+KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=1
+KATAGO_WINRATE_TIMELINE_ENABLED=false
+KATAGO_DEEP_SEARCH_ENABLED=false
+```
+
+```bash
+corepack pnpm katago:product-suite -- --customer-fixtures --concurrency 4 --strict-warnings --max-successful-p95-ms 120000 --max-queue-p95-ms 30000 --max-end-to-end-p95-ms 120000 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0
+```
+
+두 wave mini-soak와 whole-system memory/throughput gate도 실행한다. 실제 staging에서는 30~60분 반복과 Worker RSS/GPU VRAM telemetry로 확장한다.
+
+```bash
+corepack pnpm katago:product-suite -- --customer-fixtures --repeat 2 --concurrency 4 --strict-warnings --max-successful-p95-ms 120000 --max-queue-p95-ms 120000 --max-end-to-end-p95-ms 180000 --min-throughput-jobs-per-minute 1 --max-peak-used-delta-mib 4096 --min-free-memory-mib 1024 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0
+```
+
+실제 staging에서는 합성 fixture 명령에 더해 실제 manifest corpus를 burst로 실행하고 Worker CPU/RSS/GPU memory, Supabase claim wait, 실패·환불을 함께 기록한다.
+
 ## 2. Local Smoke Procedure
+
+먼저 선택한 profile env와 로컬 `KATAGO_*` path 를 적용한 터미널에서 제품 경로 스모크를 실행한다. 이 명령은 raw stdout 확인을 넘어 실제 `analyzeSgfKatago` 결과, BSI/ADI 요약, Deep Search 요약, `qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 남긴다.
+
+```bash
+corepack pnpm katago:product-smoke -- <local-smoke-game.sgf>
+corepack pnpm katago:product-smoke -- <local-smoke-game.sgf> --strict-warnings
+corepack pnpm katago:product-suite -- --default-fixtures
+corepack pnpm katago:product-suite -- --extended-fixtures
+corepack pnpm katago:product-suite -- --customer-fixtures --strict-warnings
+corepack pnpm katago:product-suite -- --extended-fixtures --repeat 3
+corepack pnpm katago:persistent-benchmark -- --customer-fixtures
+corepack pnpm katago:product-suite -- --corpus-dir .local/katago-corpus --strict-warnings
+corepack pnpm katago:product-suite -- --corpus-dir .local/katago-corpus --strict-warnings --max-successful-p95-ms 120000 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0
+corepack pnpm katago:product-suite -- <local-smoke-game-1.sgf> <local-smoke-game-2.sgf>
+```
+
+2026-07-09 기준 로컬 product suite 결과는 `docs/katago-product-benchmark-2026-07-09.md`에 기록되어 있고, 런타임 구조 결정은 `docs/katago-runtime-architecture-2026-07-09.md`에 별도 기록되어 있다. `.tmp/katago-suite/` 산출물과 `.local/katago-corpus/` 실제 SGF corpus는 커밋하지 않는다.
+
+신규 product suite report는 성공 분석 duration `p50`/`p90`/`p95`, expected-pass failure rate, quality warning/failure row count를 포함한다. `--max-*` gate 옵션을 지정하면 기준 초과 시 suite가 실패(exit code 1)한다. staging 또는 private corpus 측정에서는 이 요약값과 gate 통과 여부를 smoke report에 함께 남긴다.
 
 1. 기존 Web/Worker 프로세스를 모두 종료한다.
 2. Web 터미널에서 선택한 profile env를 설정하고 `corepack pnpm dev`를 실행한다.
 3. Worker 터미널에서 동일한 분석 policy env와 로컬 KataGo path env를 설정하고 `corepack pnpm dev:worker`를 실행한다.
 4. Web/Worker 로그에서 `ANALYSIS_ENGINE=katago`, `ANALYSIS_WORKER_MODE=external`이 반영됐는지 확인한다.
-5. `KATATALK_ALLOW_MOCK_ANALYSIS=false` 또는 미설정 상태를 확인한다.
-6. `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정 상태를 확인한다.
-7. 일반 SGF를 업로드한다.
-8. `analysis_jobs`에 completed job이 생성되는지 확인한다.
-9. DB result에서 `result.source=katago-worker-v1`을 확인한다.
-10. `GET /api/analyze/:jobId` 또는 화면 응답에서 `meta.mock=false`를 확인한다.
-11. `/?jobId=<completedJobId>`로 deep link 접속한다.
-12. board가 표시되는지 확인한다.
-13. winrate graph가 표시되는지 확인한다.
-14. Product Review 후보 chip이 표시되는지 확인한다.
-15. 후보 선택 시 AI memo가 deterministic Product Review 문구를 표시하는지 확인한다.
-16. 참고도 보기 / PV overlay를 확인한다.
-17. try-play 진입, 착수, undo, reset을 확인한다.
-18. viewport `390x844`, `430x932`, `1440x900`에서 깨짐이 없는지 확인한다.
+5. Worker startup log에서 정규화된 승률 관점과 `source=config`를 확인한다. cfg와 기대값이 다를 때 startup 실패가 정상이다.
+6. `KATATALK_ALLOW_MOCK_ANALYSIS=false` 또는 미설정 상태를 확인한다.
+7. `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정 상태를 확인한다.
+8. 일반 SGF를 업로드한다.
+9. `analysis_jobs`에 completed job이 생성되는지 확인한다.
+10. DB result에서 `result.source=katago-worker-v1`과 검증된 `result.engine.winratePerspective`를 확인한다.
+11. `GET /api/analyze/:jobId` 또는 화면 응답에서 `meta.mock=false`를 확인한다.
+12. `/?jobId=<completedJobId>`로 deep link 접속한다.
+13. board가 표시되는지 확인한다.
+14. winrate graph의 흑/백 토글과 축 라벨이 함께 전환되는지 확인한다.
+15. Product Review 후보 chip이 표시되는지 확인한다.
+16. 후보 선택 시 AI memo가 deterministic Product Review 문구를 표시하는지 확인한다.
+17. 참고도 보기 / PV overlay를 확인한다.
+18. try-play 진입, 착수, undo, reset을 확인한다.
+19. viewport `390x844`, `430x932`, `1440x900`에서 깨짐이 없는지 확인한다.
 
 권장 SGF fixture는 `docs/smoke-checklist.md`의 "LearningEvents Smoke SGF Fixture"를 우선 사용한다. 너무 짧은 SGF는 후보가 final position만 남을 수 있어 Product Review chip 확인에 부적합하다.
 
@@ -112,7 +165,7 @@ CI/Linux runner에서 브라우저 OS dependency가 없으면 아래 명령을 �
 corepack pnpm exec playwright install --with-deps chromium
 ```
 
-이 E2E는 synthetic `katago-worker-v1` completed result fixture를 사용하며 실제 LLM, 결제, KataGo, DB schema/migration을 호출하지 않는다. 검증 viewport는 `390x844`, `430x932`, `1440x900`이다.
+이 E2E는 synthetic `katago-worker-v1` completed result fixture를 사용하며 실제 LLM, 결제, KataGo, DB schema/migration을 호출하지 않는다. 검증 viewport는 `390x844`, `430x932`, `1440x900`이며 검증된 흑/백 승률 토글과 SVG 축 라벨 전환을 포함한다.
 
 ## 3. Product Review UI Deep Link Smoke
 
@@ -142,18 +195,40 @@ corepack pnpm exec playwright install --with-deps chromium
 6. live 결제 호출은 하지 않는다. 결제 smoke는 라우팅/비노출 확인까지만 한다.
 7. `APP_BASE_URL`은 staging 도메인이다. localhost 값이면 production 검증에 막힐 수 있다.
 
-### 4.2 Worker Service
+### 4.2 Automated Web/API Smoke
 
-1. Worker에만 `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`를 설정한다.
+대상: 배포된 Web/API 공개 HTTPS URL.
+
+기본 smoke는 live 결제나 분석 job을 생성하지 않는다. `/healthz`, `/readyz`, 익명 크레딧 조회 차단, 익명 checkout 생성 차단, 익명 분석 결과 조회 차단만 확인한다.
+
+```bash
+corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+```
+
+인증된 staging 전용 계정의 잔액 조회까지 확인하려면 아래처럼 실행한다. 이 단계도 checkout은 만들지 않는다.
+
+```bash
+SMOKE_AUTH_TOKEN=<redacted> corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+```
+
+Lemon checkout URL 생성까지 확인하는 smoke는 실제 결제 세션을 만들 수 있으므로 staging 전용 계정과 별도 승인 하에서만 실행한다. 카드 결제 완료나 webhook grant 검증은 이 자동 smoke에 포함하지 않는다.
+
+```bash
+SMOKE_AUTH_TOKEN=<redacted> SMOKE_CREATE_CHECKOUT=true corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+```
+
+### 4.3 Worker Service
+
+1. Worker에만 `KATAGO_BINARY_PATH`, `KATAGO_CONFIG_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`를 설정한다.
 2. `ANALYSIS_ENGINE=katago`.
 3. `ANALYSIS_WORKER_MODE=external`.
 4. `KATATALK_ALLOW_MOCK_ANALYSIS=false` 또는 미설정.
 5. `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정.
-6. Worker 로그에 secret/path 원문이 출력되지 않는지 확인한다.
+6. Worker 로그에 secret/path 원문이 출력되지 않고 정규화된 승률 관점과 `source=config`만 기록되는지 확인한다.
 7. queued job을 claim한 뒤 `queued -> running -> completed` 상태 전이가 되는지 확인한다.
 8. failed job 발생 시 기존 refund 경로가 동작하는지 staging 전용 결제/credit 데이터로만 확인한다.
 
-### 4.3 Supabase Migration 006/007 확인
+### 4.4 Supabase Migration 006/007 확인
 
 대상 파일:
 
@@ -209,3 +284,15 @@ order by column_name;
 - Product Review UI 확인 결과
 - viewport 결과
 - 실패 원인과 재시도 여부
+
+
+### 4.5 Worker Preflight
+
+Run this command inside the staging Worker runtime before starting `worker:analysis`. It does not claim jobs or connect to the queue. It validates required KataGo paths as regular files, parses the configured winrate perspective, probes the KataGo backend, and enforces the GPU policy.
+
+```bash
+corepack pnpm worker:preflight
+```
+### 4.6 Worker Liveness
+
+Apply Supabase migrations through `008_analysis_worker_observability.sql` before deploying the external Worker. Configure the same high-entropy `OPS_STATUS_TOKEN` on Web and protected `SMOKE_OPS_TOKEN` in the staging GitHub Environment. With the Worker running, verify authenticated `GET /ops/analysis-worker-health` reports `status: "live"` for the expected engine. Stop the Worker and verify it becomes `stale` only after `ANALYSIS_WORKER_STATUS_STALE_SECONDS`; this must not change `/healthz` or `/readyz`.

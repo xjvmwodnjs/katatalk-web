@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from "./_core/sdk";
 import { getSupabaseAdmin } from "./_core/supabaseAdmin";
+import { analysisDataRetentionUntil, readAnalysisDataRetentionDays } from "./analysisDataRetention";
 
 const DEFAULT_ANALYSIS_COST = 1;
 
@@ -289,6 +290,8 @@ export type AnalysisJobDbRow = {
   sgf_content?: string | null;
   sgf_sha256?: string | null;
   sgf_size_bytes?: number | null;
+  data_purged_at?: string | null;
+  data_retention_until?: string | null;
   /** 마이그레이션 007 — worker claim lease */
   locked_at?: string | null;
   locked_by?: string | null;
@@ -332,6 +335,7 @@ export async function insertAnalysisJobQueued(args: {
 }): Promise<void> {
   const sb = getSupabaseAdmin();
   const isMock = args.isMock ?? true;
+  const dataRetentionUntil = analysisDataRetentionUntil(readAnalysisDataRetentionDays());
   const { error } = await sb.from("analysis_jobs").insert({
     id: args.jobId,
     user_id: args.profileId,
@@ -345,6 +349,7 @@ export async function insertAnalysisJobQueued(args: {
     sgf_content: args.sgfContent,
     sgf_sha256: args.sgfSha256,
     sgf_size_bytes: args.sgfSizeBytes,
+    data_retention_until: dataRetentionUntil,
   });
   if (error) {
     throw new Error(error.message);
@@ -384,6 +389,52 @@ export async function updateAnalysisJobRow(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function purgeFinalAnalysisJobData(args: {
+  jobId: string;
+  profileId: string;
+}): Promise<{ ok: true } | { ok: false; reason: "NOT_FINAL_OR_NOT_OWNER" }> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .update({
+      file_name: null,
+      sgf_content: null,
+      sgf_sha256: null,
+      sgf_size_bytes: null,
+      result: null,
+      data_purged_at: new Date().toISOString(),
+    })
+    .eq("id", args.jobId)
+    .eq("user_id", args.profileId)
+    .in("status", ["completed", "failed"])
+    .is("data_purged_at", null)
+    .select("id");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return Array.isArray(data) && data.length > 0
+    ? { ok: true }
+    : { ok: false, reason: "NOT_FINAL_OR_NOT_OWNER" };
+}
+
+export async function purgeExpiredAnalysisJobData(args?: {
+  limit?: number;
+  dryRun?: boolean;
+}): Promise<{ jobId: string; purged: boolean }[]> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.rpc("purge_expired_analysis_job_data", {
+    p_limit: args?.limit ?? 100,
+    p_dry_run: args?.dryRun !== false,
+  });
+  if (error) throw new Error(error.message);
+  if (!Array.isArray(data)) return [];
+  return data.flatMap(row => {
+    if (!row || typeof row !== "object") return [];
+    const value = row as { job_id?: unknown; purged?: unknown };
+    return typeof value.job_id === "string" ? [{ jobId: value.job_id, purged: value.purged === true }] : [];
+  });
 }
 
 /** `ANALYSIS_WORKER_HEARTBEAT_SECONDS` (기본 60). running lease 갱신 주기 하한·상한(초). */

@@ -41,6 +41,7 @@ import {
   ensureWalletWithSignupBonus,
   getAnalysisJobRow,
   insertAnalysisJobQueued,
+  purgeFinalAnalysisJobData,
   refundCreditIfJobFailed,
   spendCreditForAnalysisJob,
   walletSubjectFromAuthUser,
@@ -259,6 +260,59 @@ analyzeRouter.get(
     res.json(payload);
   })();
 });
+
+analyzeRouter.delete(
+  "/api/analyze/:jobId/data",
+  requireAnalyzeAuth,
+  analyzeGetUserLimit,
+  (req: Request, res: Response) => {
+    void (async () => {
+      const user = req.katatalkUser;
+      const jobId = req.params.jobId;
+      if (!user) {
+        sendUploadError(res, 401, "Authentication is required.");
+        return;
+      }
+      if (!jobId || typeof jobId !== "string") {
+        sendUploadError(res, 400, "Missing job ID.");
+        return;
+      }
+      const profileId = walletSubjectFromAuthUser(user);
+      try {
+        const row = await getAnalysisJobRow(jobId);
+        if (row == null) {
+          res.status(404).json({ success: false, message: "Job not found." });
+          return;
+        }
+        if (row.user_id !== profileId) {
+          res.status(403).json({ success: false, message: "Not allowed to delete this analysis data." });
+          return;
+        }
+        if (row.data_purged_at) {
+          res.status(204).end();
+          return;
+        }
+        if (row.status !== "completed" && row.status !== "failed") {
+          res.status(409).json({ success: false, message: "Analysis data can only be deleted after processing finishes." });
+          return;
+        }
+        const result = await purgeFinalAnalysisJobData({ jobId, profileId });
+        if (!result.ok) {
+          res.status(409).json({ success: false, message: "Analysis data could not be deleted in its current state." });
+          return;
+        }
+        res.status(204).end();
+      } catch (error) {
+        if (error instanceof SupabaseAdminUnavailableError) {
+          sendUploadError(res, 503, "Analysis data deletion requires Supabase server configuration.");
+          return;
+        }
+        console.error("[analyze] purge analysis data", error);
+        sendUploadError(res, 500, "Could not delete analysis data.");
+      }
+    })();
+  }
+);
 
 analyzeRouter.post(
   "/api/analyze",

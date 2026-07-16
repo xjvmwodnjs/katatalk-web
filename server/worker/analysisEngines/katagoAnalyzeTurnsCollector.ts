@@ -1,5 +1,6 @@
 import { extractJsonObjectsFromKatagoStdout } from "./katagoRawParser";
 import type { WinrateTimelineProgressEventV1 } from "@shared/winrateTimelineV1";
+import type { KatagoConfiguredWinratePerspectiveV1 } from "@shared/winratePerspectiveV1";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
@@ -14,7 +15,9 @@ function parseTurnNumber(v: unknown): number | null {
 }
 
 /** KataGo final analysis line: `isDuringSearch === false` only (field must be present). */
-export function isKatagoFinalAnalyzeTurnResponse(obj: Record<string, unknown>): boolean {
+export function isKatagoFinalAnalyzeTurnResponse(
+  obj: Record<string, unknown>
+): boolean {
   return obj.isDuringSearch === false;
 }
 
@@ -22,7 +25,9 @@ export function isKatagoFinalAnalyzeTurnResponse(obj: Record<string, unknown>): 
  * Collect final responses keyed by turnNumber (last wins per turn).
  * Does not use `id` for matching.
  */
-export function collectFinalResponsesByTurnNumber(stdout: string): Map<number, Record<string, unknown>> {
+export function collectFinalResponsesByTurnNumber(
+  stdout: string
+): Map<number, Record<string, unknown>> {
   const byTurn = new Map<number, Record<string, unknown>>();
   for (const raw of extractJsonObjectsFromKatagoStdout(stdout)) {
     if (!isPlainObject(raw)) {
@@ -67,7 +72,8 @@ function parseBw(v: unknown): "B" | "W" | null {
 export function katagoAnalyzeTurnResponseToProgressEventV1(
   obj: unknown,
   jobId: string,
-  receivedAt = new Date().toISOString()
+  receivedAt = new Date().toISOString(),
+  winratePerspective: KatagoConfiguredWinratePerspectiveV1 = "unknown"
 ): WinrateTimelineProgressEventV1 | null {
   if (!isPlainObject(obj)) {
     return null;
@@ -88,6 +94,7 @@ export function katagoAnalyzeTurnResponseToProgressEventV1(
     winrate: finiteNumber(root.winrate),
     scoreLead: finiteNumber(root.scoreLead) ?? finiteNumber(root.scoreMean),
     currentPlayer: parseBw(root.currentPlayer),
+    winratePerspective,
     receivedAt,
   };
 }

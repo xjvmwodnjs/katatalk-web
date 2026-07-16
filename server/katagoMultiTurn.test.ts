@@ -10,10 +10,20 @@ import {
   readKatagoMultiTurnMaxFrom,
   readKatagoMultiTurnMaxVisitsFrom,
   readKatagoMultiTurnQueryTimeoutMsFrom,
+  readKatagoPersistentMultiTurnEnabledFrom,
+  readKatagoPersistentMultiTurnPerJobConcurrencyFrom,
+  readKatagoPersistentMultiTurnStrictFrom,
   readKatagoTimeoutMsFrom,
 } from "./worker/analysisEngines/config";
-import { runMultiTurnKatagoRawV1 } from "./worker/analysisEngines/katagoMultiTurnRun";
-import { buildAnalysisPlanV1FromParsed, selectCandidatesForMultiTurnAnalysis, sliceMovesBeforeTurnIndex } from "./analysisPlan";
+import {
+  runMultiTurnKatagoRawV1,
+  type KatagoMultiTurnPersistentSession,
+} from "./worker/analysisEngines/katagoMultiTurnRun";
+import {
+  buildAnalysisPlanV1FromParsed,
+  selectCandidatesForMultiTurnAnalysis,
+  sliceMovesBeforeTurnIndex,
+} from "./analysisPlan";
 import * as creditService from "./creditService";
 import type { AnalysisJobDbRow } from "./creditService";
 import { runKatagoAnalysisDbPipeline } from "./worker/katagoAnalysisDbPipeline";
@@ -60,30 +70,106 @@ describe("readKatagoMultiTurnMaxFrom", () => {
     expect(readKatagoMaxVisitsFrom({ KATAGO_MAX_VISITS: "999999" })).toBe(5000);
 
     expect(readKatagoTimeoutMsFrom({})).toBe(120_000);
-    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000" })).toBe(120_000);
-    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000ms" })).toBe(120_000);
-    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "0" })).toBe(120_000);
-    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "100" })).toBe(30_000);
-    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "9999999" })).toBe(900_000);
+    expect(
+      readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000" })
+    ).toBe(120_000);
+    expect(
+      readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "120000ms" })
+    ).toBe(120_000);
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "0" })).toBe(
+      120_000
+    );
+    expect(readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "100" })).toBe(
+      30_000
+    );
+    expect(
+      readKatagoTimeoutMsFrom({ KATAGO_ANALYSIS_TIMEOUT_MS: "9999999" })
+    ).toBe(900_000);
 
-    expect(readKatagoMultiTurnMaxFrom({ KATAGO_MULTI_TURN_MAX: "1000" })).toBe(100);
+    expect(readKatagoMultiTurnMaxFrom({ KATAGO_MULTI_TURN_MAX: "1000" })).toBe(
+      100
+    );
     expect(readKatagoMultiTurnMaxFrom({ KATAGO_MULTI_TURN_MAX: "6x" })).toBe(6);
 
-    expect(readKatagoMultiTurnMaxVisitsFrom({ KATAGO_MULTI_TURN_MAX_VISITS: "7000" }, 200)).toBe(5000);
-    expect(readKatagoMultiTurnMaxVisitsFrom({ KATAGO_MULTI_TURN_MAX_VISITS: "200abc" }, 300)).toBe(300);
+    expect(
+      readKatagoMultiTurnMaxVisitsFrom(
+        { KATAGO_MULTI_TURN_MAX_VISITS: "7000" },
+        200
+      )
+    ).toBe(5000);
+    expect(
+      readKatagoMultiTurnMaxVisitsFrom(
+        { KATAGO_MULTI_TURN_MAX_VISITS: "200abc" },
+        300
+      )
+    ).toBe(300);
     expect(readKatagoMultiTurnMaxVisitsFrom({}, 7000)).toBe(5000);
 
-    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "100" })).toBe(30_000);
-    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "9999999" })).toBe(900_000);
-    expect(readKatagoMultiTurnQueryTimeoutMsFrom({ KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "30000abc" })).toBe(120_000);
+    expect(
+      readKatagoMultiTurnQueryTimeoutMsFrom({
+        KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "100",
+      })
+    ).toBe(30_000);
+    expect(
+      readKatagoMultiTurnQueryTimeoutMsFrom({
+        KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "9999999",
+      })
+    ).toBe(900_000);
+    expect(
+      readKatagoMultiTurnQueryTimeoutMsFrom({
+        KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS: "30000abc",
+      })
+    ).toBe(120_000);
 
-    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "100" }, 2)).toBe(30_000);
-    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "9999999" }, 2)).toBe(900_000);
-    expect(readKatagoMultiTurnBatchTimeoutMsFrom({ KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "30000abc" }, 2)).toBe(240_000);
+    expect(
+      readKatagoMultiTurnBatchTimeoutMsFrom(
+        { KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "100" },
+        2
+      )
+    ).toBe(30_000);
+    expect(
+      readKatagoMultiTurnBatchTimeoutMsFrom(
+        { KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "9999999" },
+        2
+      )
+    ).toBe(900_000);
+    expect(
+      readKatagoMultiTurnBatchTimeoutMsFrom(
+        { KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS: "30000abc" },
+        2
+      )
+    ).toBe(240_000);
+
+    expect(readKatagoPersistentMultiTurnEnabledFrom({})).toBe(false);
+    expect(
+      readKatagoPersistentMultiTurnEnabledFrom({
+        KATAGO_PERSISTENT_MULTI_TURN_ENABLED: "true",
+      })
+    ).toBe(true);
+    expect(readKatagoPersistentMultiTurnStrictFrom({})).toBe(false);
+    expect(
+      readKatagoPersistentMultiTurnStrictFrom({
+        KATAGO_PERSISTENT_MULTI_TURN_STRICT: "1",
+      })
+    ).toBe(true);
+    expect(readKatagoPersistentMultiTurnPerJobConcurrencyFrom({})).toBe(6);
+    expect(
+      readKatagoPersistentMultiTurnPerJobConcurrencyFrom({
+        KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY: "1",
+      })
+    ).toBe(1);
+    expect(
+      readKatagoPersistentMultiTurnPerJobConcurrencyFrom({
+        KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY: "99",
+      })
+    ).toBe(16);
   });
 });
 
-function validResponseObject(id: string, playedMove: string): Record<string, unknown> {
+function validResponseObject(
+  id: string,
+  playedMove: string
+): Record<string, unknown> {
   return {
     id,
     rootInfo: { winrate: 0.52, scoreLead: 0.4 },
@@ -92,6 +178,47 @@ function validResponseObject(id: string, playedMove: string): Record<string, unk
       { move: playedMove, winrate: 0.52 },
       { move: "Q3", winrate: 0.51 },
     ],
+  };
+}
+
+function validPersistentSession(
+  parsed: ReturnType<typeof parseMinimalSgfForSmoke>,
+  opts?: { rejectQuery?: (queryIndex: number) => boolean }
+): {
+  session: KatagoMultiTurnPersistentSession;
+  queryCount: () => number;
+  closeCount: () => number;
+} {
+  let queries = 0;
+  let closes = 0;
+  return {
+    session: {
+      stderrTail: "",
+      analyzeLine: async ({ expectedId }) => {
+        queries += 1;
+        if (opts?.rejectQuery?.(queries)) {
+          throw new Error(`PERSISTENT_QUERY_FAILED_${String(queries)}`);
+        }
+        const match = /--turn-(\d+)--/.exec(expectedId);
+        const turnIndex = match ? Number(match[1]) : 0;
+        const playedMove = sliceMovesBeforeTurnIndex(
+          parsed,
+          turnIndex
+        ).playedMoveGtp;
+        const rawObject = validResponseObject(expectedId, playedMove);
+        return {
+          id: expectedId,
+          rawLine: JSON.stringify(rawObject),
+          rawObject,
+          durationMs: 1,
+        };
+      },
+      close: async () => {
+        closes += 1;
+      },
+    },
+    queryCount: () => queries,
+    closeCount: () => closes,
   };
 }
 
@@ -120,20 +247,27 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
           setImmediate(() => {
-            const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
-            const responses = lines.map((line) => {
+            const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
+            const responses = lines.map(line => {
               const q = JSON.parse(line) as { id: string };
               const m = /--turn-(\d+)--/.exec(q.id);
               const turn = m ? Number(m[1]) : 0;
-              const played = sliceMovesBeforeTurnIndex(parsed, turn).playedMoveGtp;
+              const played = sliceMovesBeforeTurnIndex(
+                parsed,
+                turn
+              ).playedMoveGtp;
               return validResponseObject(q.id, played);
             });
-            out.end(`${responses.map((r) => JSON.stringify(r)).join("\n")}\n`, "utf8");
+            out.end(
+              `${responses.map(r => JSON.stringify(r)).join("\n")}\n`,
+              "utf8"
+            );
             err.end();
             proc.emit("close", 0, null);
           });
@@ -169,13 +303,221 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       partialFailure: false,
     });
     expect(turnAnalyses).toHaveLength(2);
-    expect(turnAnalyses.every((t) => t.status === "ok")).toBe(true);
-    const t20 = turnAnalyses.find((t) => t.turnIndex === 20);
+    expect(turnAnalyses.every(t => t.status === "ok")).toBe(true);
+    const t20 = turnAnalyses.find(t => t.turnIndex === 20);
     expect(t20?.status).toBe("ok");
     if (t20?.status === "ok") {
       expect(t20.query.movesBeforeCount).toBe(19);
       expect(t20.comparisonReady.playedMoveFoundInCandidates).toBe(true);
     }
+  });
+
+  it("uses one persistent session for all selected turns", async () => {
+    process.env.KATAGO_MULTI_TURN_MAX = "2";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT = "true";
+
+    const sgf = buildSgfWithNMoves(25);
+    const parsed = parseMinimalSgfForSmoke(sgf);
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    const mock = validPersistentSession(parsed);
+
+    const { turnAnalyses, multiTurnAnalysis } = await runMultiTurnKatagoRawV1({
+      parsed,
+      plan,
+      jobId: "persistent-multi-success",
+      sgfSha256: "1".repeat(64),
+      sgfSizeBytes: 100,
+      env: process.env,
+      persistentSession: mock.session,
+      spawnFn: () => {
+        throw new Error("spawn path must not run");
+      },
+    });
+
+    expect(turnAnalyses.every(entry => entry.status === "ok")).toBe(true);
+    expect(mock.queryCount()).toBe(2);
+    expect(mock.closeCount()).toBe(0);
+    expect(multiTurnAnalysis).toMatchObject({
+      executionMode: "persistent",
+      persistentAttemptedCount: 2,
+      persistentFailedCount: 0,
+      fallbackAttemptedCount: 0,
+      completedCount: 2,
+      failedCount: 0,
+    });
+  });
+
+  it("bounds persistent queries in flight for one job", async () => {
+    process.env.KATAGO_MULTI_TURN_MAX = "3";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY = "1";
+
+    const parsed = parseMinimalSgfForSmoke(buildSgfWithNMoves(45));
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    let active = 0;
+    let maxActive = 0;
+    let queryCount = 0;
+    const session: KatagoMultiTurnPersistentSession = {
+      stderrTail: "",
+      analyzeLine: async ({ expectedId }) => {
+        queryCount += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        active -= 1;
+        const match = /--turn-(\d+)--/.exec(expectedId);
+        const turnIndex = match ? Number(match[1]) : 0;
+        const playedMove = sliceMovesBeforeTurnIndex(
+          parsed,
+          turnIndex
+        ).playedMoveGtp;
+        const rawObject = validResponseObject(expectedId, playedMove);
+        return {
+          id: expectedId,
+          rawLine: JSON.stringify(rawObject),
+          rawObject,
+          durationMs: 5,
+        };
+      },
+      close: async () => undefined,
+    };
+
+    const { multiTurnAnalysis } = await runMultiTurnKatagoRawV1({
+      parsed,
+      plan,
+      jobId: "persistent-multi-bounded",
+      sgfSha256: "4".repeat(64),
+      sgfSizeBytes: 100,
+      env: process.env,
+      persistentSession: session,
+    });
+
+    expect(queryCount).toBe(3);
+    expect(maxActive).toBe(1);
+    expect(multiTurnAnalysis.completedCount).toBe(3);
+  });
+
+  it("retries only failed turns without closing the shared persistent session", async () => {
+    process.env.KATAGO_BINARY_PATH = "/fake/katago";
+    process.env.KATAGO_CONFIG_PATH = "/fake/c.cfg";
+    process.env.KATAGO_MODEL_PATH = "/fake/m.gz";
+    process.env.KATAGO_MULTI_TURN_MAX = "2";
+    process.env.KATAGO_MULTI_TURN_BATCH = "1";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT = "false";
+
+    const sgf = buildSgfWithNMoves(25);
+    const parsed = parseMinimalSgfForSmoke(sgf);
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    const persistent = validPersistentSession(parsed, {
+      rejectQuery: queryIndex => queryIndex === 2,
+    });
+    let fallbackSpawnCount = 0;
+    const fallbackSpawn: SpawnFn = () => {
+      fallbackSpawnCount += 1;
+      const proc = new EventEmitter() as ChildProcess;
+      const out = new PassThrough();
+      const err = new PassThrough();
+      let stdinBuffer = "";
+      const stdin = new Writable({
+        write(chunk: Buffer | string, _encoding, callback) {
+          stdinBuffer +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          callback();
+        },
+        final(callback) {
+          setImmediate(() => {
+            const responses = stdinBuffer
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .map(line => {
+                const query = JSON.parse(line) as { id: string };
+                const match = /--turn-(\d+)--/.exec(query.id);
+                const turnIndex = match ? Number(match[1]) : 0;
+                const playedMove = sliceMovesBeforeTurnIndex(
+                  parsed,
+                  turnIndex
+                ).playedMoveGtp;
+                return validResponseObject(query.id, playedMove);
+              });
+            out.end(`${responses.map(JSON.stringify).join("\n")}\n`, "utf8");
+            err.end();
+            proc.emit("close", 0, null);
+          });
+          callback();
+        },
+      });
+      proc.stdin = stdin;
+      proc.stdout = out;
+      proc.stderr = err;
+      return proc;
+    };
+
+    const { turnAnalyses, multiTurnAnalysis } = await runMultiTurnKatagoRawV1({
+      parsed,
+      plan,
+      jobId: "persistent-multi-fallback",
+      sgfSha256: "2".repeat(64),
+      sgfSizeBytes: 100,
+      env: process.env,
+      persistentSession: persistent.session,
+      spawnFn: fallbackSpawn,
+    });
+
+    expect(turnAnalyses.every(entry => entry.status === "ok")).toBe(true);
+    expect(turnAnalyses.filter(entry => entry.fallbackUsed)).toHaveLength(1);
+    expect(persistent.closeCount()).toBe(0);
+    expect(fallbackSpawnCount).toBe(1);
+    expect(multiTurnAnalysis).toMatchObject({
+      executionMode: "persistent_fallback_batch",
+      persistentAttemptedCount: 2,
+      persistentFailedCount: 1,
+      fallbackAttemptedCount: 1,
+      completedCount: 2,
+      failedCount: 0,
+    });
+  });
+
+  it("does not spawn fallback when persistent multi-turn strict mode is on", async () => {
+    process.env.KATAGO_MULTI_TURN_MAX = "2";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT = "true";
+
+    const sgf = buildSgfWithNMoves(25);
+    const parsed = parseMinimalSgfForSmoke(sgf);
+    const plan = buildAnalysisPlanV1FromParsed(parsed);
+    const persistent = validPersistentSession(parsed, {
+      rejectQuery: () => true,
+    });
+    let spawnCount = 0;
+
+    const { turnAnalyses, multiTurnAnalysis } = await runMultiTurnKatagoRawV1({
+      parsed,
+      plan,
+      jobId: "persistent-multi-strict",
+      sgfSha256: "3".repeat(64),
+      sgfSizeBytes: 100,
+      env: process.env,
+      persistentSession: persistent.session,
+      spawnFn: () => {
+        spawnCount += 1;
+        throw new Error("strict mode must not spawn fallback");
+      },
+    });
+
+    expect(turnAnalyses.every(entry => entry.status === "failed")).toBe(true);
+    expect(spawnCount).toBe(0);
+    expect(persistent.closeCount()).toBe(0);
+    expect(multiTurnAnalysis).toMatchObject({
+      executionMode: "persistent",
+      persistentAttemptedCount: 2,
+      persistentFailedCount: 2,
+      fallbackAttemptedCount: 0,
+      completedCount: 0,
+      failedCount: 2,
+    });
   });
 
   it("records failed entries when stdout has no matching id", async () => {
@@ -252,17 +594,24 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
           setImmediate(() => {
-            const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
+            const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
             const q0 = JSON.parse(lines[0]!) as { id: string };
             const m = /--turn-(\d+)--/.exec(q0.id);
             const turn = m ? Number(m[1]) : 0;
-            const played = sliceMovesBeforeTurnIndex(parsed, turn).playedMoveGtp;
-            out.end(`${JSON.stringify(validResponseObject(q0.id, played))}\n`, "utf8");
+            const played = sliceMovesBeforeTurnIndex(
+              parsed,
+              turn
+            ).playedMoveGtp;
+            out.end(
+              `${JSON.stringify(validResponseObject(q0.id, played))}\n`,
+              "utf8"
+            );
             err.end();
             proc.emit("close", 0, null);
           });
@@ -287,11 +636,15 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       spawnFn: mockSpawn,
     });
 
-    expect(turnAnalyses.filter((t) => t.status === "ok")).toHaveLength(1);
-    expect(turnAnalyses.filter((t) => t.status === "failed")).toHaveLength(1);
-    expect(turnAnalyses.some((t) => t.status === "failed" && t.error.includes("KATAGO_MULTI_TURN_MISSING_ID"))).toBe(
-      true
-    );
+    expect(turnAnalyses.filter(t => t.status === "ok")).toHaveLength(1);
+    expect(turnAnalyses.filter(t => t.status === "failed")).toHaveLength(1);
+    expect(
+      turnAnalyses.some(
+        t =>
+          t.status === "failed" &&
+          t.error.includes("KATAGO_MULTI_TURN_MISSING_ID")
+      )
+    ).toBe(true);
     expect(multiTurnAnalysis.partialFailure).toBe(true);
     expect(multiTurnAnalysis.allFailed).toBe(false);
   });
@@ -312,12 +665,13 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
           setImmediate(() => {
-            const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
+            const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
             const q0 = JSON.parse(lines[0]!) as { id: string };
             const dup = validResponseObject(q0.id, "pd");
             out.end(`${JSON.stringify(dup)}\n${JSON.stringify(dup)}\n`, "utf8");
@@ -345,10 +699,14 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       spawnFn: mockSpawn,
     });
 
-    expect(turnAnalyses.every((t) => t.status === "failed")).toBe(true);
-    expect(turnAnalyses.every((t) => t.status === "failed" && t.error.includes("KATAGO_MULTI_TURN_DUPLICATE_ID"))).toBe(
-      true
-    );
+    expect(turnAnalyses.every(t => t.status === "failed")).toBe(true);
+    expect(
+      turnAnalyses.every(
+        t =>
+          t.status === "failed" &&
+          t.error.includes("KATAGO_MULTI_TURN_DUPLICATE_ID")
+      )
+    ).toBe(true);
     expect(multiTurnAnalysis.allFailed).toBe(true);
   });
 
@@ -368,17 +726,21 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
           setImmediate(() => {
-            const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
-            const responses = lines.map((line) => {
+            const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
+            const responses = lines.map(line => {
               const q = JSON.parse(line) as { id: string };
               const m = /--turn-(\d+)--/.exec(q.id);
               const turn = m ? Number(m[1]) : 0;
-              const played = sliceMovesBeforeTurnIndex(parsed, turn).playedMoveGtp;
+              const played = sliceMovesBeforeTurnIndex(
+                parsed,
+                turn
+              ).playedMoveGtp;
               return validResponseObject(q.id, played);
             });
             const extra = {
@@ -386,7 +748,10 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
               rootInfo: { winrate: 0.5, scoreLead: 0 },
               moveInfos: [{ move: "A1", winrate: 0.5 }],
             };
-            out.end(`${responses.map((r) => JSON.stringify(r)).join("\n")}\n${JSON.stringify(extra)}\n`, "utf8");
+            out.end(
+              `${responses.map(r => JSON.stringify(r)).join("\n")}\n${JSON.stringify(extra)}\n`,
+              "utf8"
+            );
             err.end();
             proc.emit("close", 0, null);
           });
@@ -411,7 +776,7 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       spawnFn: mockSpawn,
     });
 
-    expect(turnAnalyses.every((t) => t.status === "ok")).toBe(true);
+    expect(turnAnalyses.every(t => t.status === "ok")).toBe(true);
     expect(multiTurnAnalysis.unknownResponseIdCount).toBe(1);
   });
 
@@ -431,21 +796,31 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
           setImmediate(() => {
-            const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
-            const responses = lines.map((line) => {
+            const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
+            const responses = lines.map(line => {
               const q = JSON.parse(line) as { id: string };
               const m = /--turn-(\d+)--/.exec(q.id);
               const turn = m ? Number(m[1]) : 0;
-              const played = sliceMovesBeforeTurnIndex(parsed, turn).playedMoveGtp;
+              const played = sliceMovesBeforeTurnIndex(
+                parsed,
+                turn
+              ).playedMoveGtp;
               return validResponseObject(q.id, played);
             });
-            const noId = { rootInfo: { winrate: 0.1, scoreLead: 0 }, moveInfos: [{ move: "B1", winrate: 0.1 }] };
-            out.end(`${JSON.stringify(noId)}\n${responses.map((r) => JSON.stringify(r)).join("\n")}\n`, "utf8");
+            const noId = {
+              rootInfo: { winrate: 0.1, scoreLead: 0 },
+              moveInfos: [{ move: "B1", winrate: 0.1 }],
+            };
+            out.end(
+              `${JSON.stringify(noId)}\n${responses.map(r => JSON.stringify(r)).join("\n")}\n`,
+              "utf8"
+            );
             err.end();
             proc.emit("close", 0, null);
           });
@@ -470,7 +845,7 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
       spawnFn: mockSpawn,
     });
 
-    expect(turnAnalyses.every((t) => t.status === "ok")).toBe(true);
+    expect(turnAnalyses.every(t => t.status === "ok")).toBe(true);
     expect(multiTurnAnalysis.completedCount).toBe(2);
   });
 
@@ -598,6 +973,7 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     process.env.KATAGO_BINARY_PATH = "/fake/katago";
     process.env.KATAGO_CONFIG_PATH = "/fake/c.cfg";
     process.env.KATAGO_MODEL_PATH = "/fake/m.gz";
+    process.env.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED = "BLACK";
     process.env.KATAGO_MULTI_TURN_MAX = "2";
     process.env.KATAGO_MAX_VISITS = "30";
 
@@ -611,7 +987,8 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
       let stdinBuf = "";
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinBuf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinBuf +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
@@ -627,15 +1004,23 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
                 "utf8"
               );
             } else {
-              const lines = stdinBuf.split("\n").filter((l) => l.trim().length > 0);
-              const responses = lines.map((line) => {
+              const lines = stdinBuf
+                .split("\n")
+                .filter(l => l.trim().length > 0);
+              const responses = lines.map(line => {
                 const q = JSON.parse(line) as { id: string };
                 const m = /--turn-(\d+)--/.exec(q.id);
                 const turn = m ? Number(m[1]) : 0;
-                const played = sliceMovesBeforeTurnIndex(parsed, turn).playedMoveGtp;
+                const played = sliceMovesBeforeTurnIndex(
+                  parsed,
+                  turn
+                ).playedMoveGtp;
                 return validResponseObject(q.id, played);
               });
-              out.end(`${responses.map((r) => JSON.stringify(r)).join("\n")}\n`, "utf8");
+              out.end(
+                `${responses.map(r => JSON.stringify(r)).join("\n")}\n`,
+                "utf8"
+              );
             }
             err.end();
             proc.emit("close", 0, null);
@@ -662,7 +1047,9 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
 
     expect(spawnCalls).toBe(2);
     expect(Array.isArray(result.turnAnalyses)).toBe(true);
-    expect((result.turnAnalyses as { length: number }).length).toBeLessThanOrEqual(2);
+    expect(
+      (result.turnAnalyses as { length: number }).length
+    ).toBeLessThanOrEqual(2);
     expect(result.multiTurnAnalysis).toMatchObject({
       version: "multi-turn-katago-analysis-v1",
       candidateCount: 2,
@@ -673,20 +1060,30 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
       allFailed: false,
       partialFailure: false,
     });
-    const algo = result.algorithmStage as { notYetImplemented?: string[]; implemented?: string[] };
+    const algo = result.algorithmStage as {
+      notYetImplemented?: string[];
+      implemented?: string[];
+    };
     expect(algo.implemented).toContain("bsi_v1");
     expect(algo.implemented).toContain("deep_search_plan_v1");
     expect(algo.implemented).toContain("deep_search_results_v1");
-    expect((result as { deepSearchPlan?: { version?: string } }).deepSearchPlan?.version).toBe(
-      "deep-search-plan-v1"
-    );
-    const ds = result as { deepSearchResults?: { enabled?: boolean; version?: string } };
+    expect(
+      (result as { deepSearchPlan?: { version?: string } }).deepSearchPlan
+        ?.version
+    ).toBe("deep-search-plan-v1");
+    const ds = result as {
+      deepSearchResults?: { enabled?: boolean; version?: string };
+    };
     expect(ds.deepSearchResults?.version).toBe("deep-search-results-v1");
     expect(ds.deepSearchResults?.enabled).toBe(false);
     expect(algo.notYetImplemented).not.toContain("bsi");
     expect(algo.notYetImplemented).toContain("llm_commentary");
-    expect((result as { bsiV1?: { version?: string } }).bsiV1?.version).toBe("bsi-v1");
-    expect((result as { adiV1?: { version?: string } }).adiV1?.version).toBe("adi-v1");
+    expect((result as { bsiV1?: { version?: string } }).bsiV1?.version).toBe(
+      "bsi-v1"
+    );
+    expect((result as { adiV1?: { version?: string } }).adiV1?.version).toBe(
+      "adi-v1"
+    );
     expect(JSON.stringify(result)).not.toMatch(/"llm_commentary"\s*:/i);
   });
 
@@ -694,6 +1091,7 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     process.env.KATAGO_BINARY_PATH = "/fake/katago";
     process.env.KATAGO_CONFIG_PATH = "/fake/c.cfg";
     process.env.KATAGO_MODEL_PATH = "/fake/m.gz";
+    process.env.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED = "BLACK";
     process.env.KATAGO_MULTI_TURN_MAX = "1";
 
     let spawnCalls = 0;
@@ -743,7 +1141,11 @@ describe("analyzeSgfKatago multi-turn integration (mock spawn)", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect((result.turnAnalyses as { status: string }[]).every((t) => t.status === "failed")).toBe(true);
+    expect(
+      (result.turnAnalyses as { status: string }[]).every(
+        t => t.status === "failed"
+      )
+    ).toBe(true);
     expect(result.multiTurnAnalysis).toMatchObject({
       allFailed: true,
       completedCount: 0,
@@ -762,8 +1164,12 @@ describe("runKatagoAnalysisDbPipeline primary failure + refund", () => {
   });
 
   it("invokes onJobFailed when analyzeSgfKatago rejects (primary path)", async () => {
-    vi.spyOn(creditService, "updateAnalysisJobRow").mockResolvedValue(undefined);
-    const analyzeSpy = vi.spyOn(analysisEngines, "analyzeSgfKatago").mockRejectedValue(new Error("KATAGO_PRIMARY_FAIL"));
+    vi.spyOn(creditService, "updateAnalysisJobRow").mockResolvedValue(
+      undefined
+    );
+    const analyzeSpy = vi
+      .spyOn(analysisEngines, "analyzeSgfKatago")
+      .mockRejectedValue(new Error("KATAGO_PRIMARY_FAIL"));
     const onJobFailed = vi.fn().mockResolvedValue(undefined);
 
     const row: AnalysisJobDbRow = {
@@ -796,9 +1202,9 @@ describe("runKatagoAnalysisDbPipeline primary failure + refund", () => {
 
     expect(analyzeSpy).toHaveBeenCalled();
     expect(onJobFailed).toHaveBeenCalled();
-    const failedUpdate = vi.mocked(creditService.updateAnalysisJobRow).mock.calls.find(
-      (c) => (c[1] as { status?: string }).status === "failed"
-    );
+    const failedUpdate = vi
+      .mocked(creditService.updateAnalysisJobRow)
+      .mock.calls.find(c => (c[1] as { status?: string }).status === "failed");
     expect(failedUpdate).toBeDefined();
   });
 });

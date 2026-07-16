@@ -9,10 +9,10 @@ export function getAnalysisEngineName(): AnalysisEngineName {
 }
 
 /** ANALYSIS_ENGINE=katago 일 때 worker 기동 전 검증 */
-export function assertKatagoPathsConfiguredOrThrow(): void {
-  const bin = process.env.KATAGO_BINARY_PATH?.trim();
-  const cfg = process.env.KATAGO_CONFIG_PATH?.trim();
-  const model = process.env.KATAGO_MODEL_PATH?.trim();
+export function assertKatagoPathsConfiguredOrThrow(env: NodeJS.ProcessEnv = process.env): void {
+  const bin = env.KATAGO_BINARY_PATH?.trim();
+  const cfg = env.KATAGO_CONFIG_PATH?.trim();
+  const model = env.KATAGO_MODEL_PATH?.trim();
   if (!bin || !cfg || !model) {
     throw new Error(
       "운영/워커 기동 실패: ANALYSIS_ENGINE=katago 인데 KATAGO_BINARY_PATH, KATAGO_CONFIG_PATH, KATAGO_MODEL_PATH 중 일부가 비어 있습니다."
@@ -33,6 +33,20 @@ function parseStrictPositiveInt(raw: string | undefined): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+function parseBool(raw: string | undefined, fallback: boolean): boolean {
+  const t = raw?.trim().toLowerCase();
+  if (!t) {
+    return fallback;
+  }
+  if (t === "true" || t === "1" || t === "yes" || t === "on") {
+    return true;
+  }
+  if (t === "false" || t === "0" || t === "no" || t === "off") {
+    return false;
+  }
+  return fallback;
+}
+
 export function readKatagoMaxVisitsFrom(env: NodeJS.ProcessEnv): number {
   const n = parseStrictPositiveInt(env.KATAGO_MAX_VISITS);
   return n != null && n > 0 ? clampInt(n, 1, 5000) : 200;
@@ -51,6 +65,46 @@ export function readKatagoTimeoutMs(): number {
   return readKatagoTimeoutMsFrom(process.env);
 }
 
+export function readKatagoPersistentRootEnabledFrom(
+  env: NodeJS.ProcessEnv
+): boolean {
+  return parseBool(env.KATAGO_PERSISTENT_ROOT_ENABLED, false);
+}
+
+export function readKatagoPersistentRootStrictFrom(
+  env: NodeJS.ProcessEnv
+): boolean {
+  return parseBool(env.KATAGO_PERSISTENT_ROOT_STRICT, false);
+}
+
+export function readKatagoPersistentMultiTurnEnabledFrom(
+  env: NodeJS.ProcessEnv
+): boolean {
+  return parseBool(env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED, false);
+}
+
+export function readKatagoPersistentMultiTurnStrictFrom(
+  env: NodeJS.ProcessEnv
+): boolean {
+  return parseBool(env.KATAGO_PERSISTENT_MULTI_TURN_STRICT, false);
+}
+
+export function readKatagoPersistentMultiTurnPerJobConcurrencyFrom(
+  env: NodeJS.ProcessEnv
+): number {
+  const n = parseStrictPositiveInt(
+    env.KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY
+  );
+  return n != null && n > 0 ? clampInt(n, 1, 16) : 6;
+}
+
+export function readKatagoPersistentRootIdleCloseMsFrom(
+  env: NodeJS.ProcessEnv
+): number {
+  const n = parseStrictPositiveInt(env.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS);
+  return n != null && n > 0 ? clampInt(n, 1_000, 900_000) : 60_000;
+}
+
 /** multi-turn 후보 최대 개수 (0이면 multi-turn 생략). 기본 6 */
 export function readKatagoMultiTurnMaxFrom(env: NodeJS.ProcessEnv): number {
   const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_MAX);
@@ -58,23 +112,37 @@ export function readKatagoMultiTurnMaxFrom(env: NodeJS.ProcessEnv): number {
 }
 
 /** 미설정 시 `readKatagoMaxVisitsFrom` 과 동일 */
-export function readKatagoMultiTurnMaxVisitsFrom(env: NodeJS.ProcessEnv, fallbackMax: number): number {
+export function readKatagoMultiTurnMaxVisitsFrom(
+  env: NodeJS.ProcessEnv,
+  fallbackMax: number
+): number {
   const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_MAX_VISITS);
-  return n != null && n > 0 ? clampInt(n, 1, 5000) : clampInt(fallbackMax, 1, 5000);
+  return n != null && n > 0
+    ? clampInt(n, 1, 5000)
+    : clampInt(fallbackMax, 1, 5000);
 }
 
 /** 한 줄(한 수순) 분석에 쓰는 타임아웃. 미설정 시 전체 분석과 동일 */
-export function readKatagoMultiTurnQueryTimeoutMsFrom(env: NodeJS.ProcessEnv): number {
+export function readKatagoMultiTurnQueryTimeoutMsFrom(
+  env: NodeJS.ProcessEnv
+): number {
   const n = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_QUERY_TIMEOUT_MS);
-  return n != null && n > 0 ? clampInt(n, 30_000, 900_000) : readKatagoTimeoutMsFrom(env);
+  return n != null && n > 0
+    ? clampInt(n, 30_000, 900_000)
+    : readKatagoTimeoutMsFrom(env);
 }
 
 /**
  * stdin 에 여러 JSON 줄을 한 번에 보낼 때의 배치 타임아웃.
  * 미설정 시 `max(KATAGO_ANALYSIS_TIMEOUT_MS, perQuery * 줄수)` 상한 900000ms.
  */
-export function readKatagoMultiTurnBatchTimeoutMsFrom(env: NodeJS.ProcessEnv, lineCount: number): number {
-  const explicit = parseStrictPositiveInt(env.KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS);
+export function readKatagoMultiTurnBatchTimeoutMsFrom(
+  env: NodeJS.ProcessEnv,
+  lineCount: number
+): number {
+  const explicit = parseStrictPositiveInt(
+    env.KATAGO_MULTI_TURN_BATCH_TIMEOUT_MS
+  );
   if (explicit != null && explicit > 0) {
     return clampInt(explicit, 30_000, 900_000);
   }

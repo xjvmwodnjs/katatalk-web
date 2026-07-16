@@ -7,6 +7,7 @@ import {
   analyzeSgfKatagoStub,
   analyzeSgfMock,
   assertKatagoPathsConfiguredOrThrow,
+  closeSharedPersistentRootSessionForTests,
   getAnalysisEngineName,
 } from "./worker/analysisEngines";
 import type { SpawnFn } from "./worker/analysisEngines/katagoSmokeRun";
@@ -69,6 +70,101 @@ function makeMockKatagoSpawn(opts: {
   };
 }
 
+function makePersistentKatagoSpawn(
+  opts: {
+    failFirstQuery?: boolean;
+    stderr?: string;
+  } = {}
+): {
+  spawn: SpawnFn;
+  getSpawnCount: () => number;
+  getQueryCount: () => number;
+} {
+  let spawnCount = 0;
+  let queryCount = 0;
+
+  const spawn: SpawnFn = (_cmd, args, _o) => {
+    spawnCount += 1;
+    expect(args.includes("-sgf")).toBe(false);
+    expect(args[0]).toBe("analysis");
+
+    const proc = new EventEmitter() as ChildProcess;
+    const out = new PassThrough();
+    const err = new PassThrough();
+    let buffer = "";
+
+    function respondToLine(line: string): void {
+      if (!line.trim()) {
+        return;
+      }
+      queryCount += 1;
+      if (opts.failFirstQuery === true && queryCount === 1) {
+        setImmediate(() => {
+          proc.emit("error", new Error("mock persistent root failure"));
+        });
+        return;
+      }
+      const parsed = JSON.parse(line) as { id?: string };
+      const response = {
+        id: parsed.id ?? `mock-${String(queryCount)}`,
+        rootInfo: { winrate: 0.55, scoreLead: 1.1 },
+        moveInfos: [{ move: "Q16", winrate: 0.56 }],
+      };
+      setImmediate(() => {
+        out.write(`${JSON.stringify(response)}\n`, "utf8");
+      });
+    }
+
+    const stdin = new Writable({
+      write(chunk: Buffer | string, _enc, cb) {
+        buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        for (;;) {
+          const newline = buffer.indexOf("\n");
+          if (newline < 0) {
+            break;
+          }
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          respondToLine(line);
+        }
+        cb();
+      },
+      final(cb) {
+        if (buffer.trim()) {
+          respondToLine(buffer);
+          buffer = "";
+        }
+        setImmediate(() => {
+          out.end();
+          err.end(opts.stderr ?? "", "utf8");
+          proc.emit("close", 0, null);
+        });
+        cb();
+      },
+    });
+
+    proc.stdin = stdin;
+    proc.stdout = out;
+    proc.stderr = err;
+    proc.kill = ((signal?: NodeJS.Signals | number) => {
+      setImmediate(() => {
+        out.end();
+        err.end(opts.stderr ?? "", "utf8");
+        proc.emit("close", 0, signal ?? null);
+      });
+      return true;
+    }) as ChildProcess["kill"];
+
+    return proc;
+  };
+
+  return {
+    spawn,
+    getSpawnCount: () => spawnCount,
+    getQueryCount: () => queryCount,
+  };
+}
+
 describe("analysis engines config", () => {
   const saved = { ...process.env };
 
@@ -123,19 +219,75 @@ describe("analyzeSgfKatago (worker v1)", () => {
   let stdinCaptured = "";
 
   beforeEach(() => {
+    process.env.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED = "BLACK";
     process.env.KATAGO_MULTI_TURN_MAX = "0";
+    process.env.KATAGO_DEEP_SEARCH_ENABLED = "false";
+    process.env.KATAGO_WINRATE_TIMELINE_ENABLED = "false";
+    delete process.env.KATAGO_PERSISTENT_ROOT_ENABLED;
+    delete process.env.KATAGO_PERSISTENT_ROOT_STRICT;
+    delete process.env.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS;
+    delete process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED;
+    delete process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await closeSharedPersistentRootSessionForTests();
     process.env.KATAGO_BINARY_PATH = saved.KATAGO_BINARY_PATH;
     process.env.KATAGO_CONFIG_PATH = saved.KATAGO_CONFIG_PATH;
     process.env.KATAGO_MODEL_PATH = saved.KATAGO_MODEL_PATH;
     process.env.KATAGO_MAX_VISITS = saved.KATAGO_MAX_VISITS;
     process.env.KATAGO_ANALYSIS_TIMEOUT_MS = saved.KATAGO_ANALYSIS_TIMEOUT_MS;
+    if (saved.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED === undefined) {
+      delete process.env.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED;
+    } else {
+      process.env.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED =
+        saved.KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED;
+    }
     if (saved.KATAGO_MULTI_TURN_MAX === undefined) {
       delete process.env.KATAGO_MULTI_TURN_MAX;
     } else {
       process.env.KATAGO_MULTI_TURN_MAX = saved.KATAGO_MULTI_TURN_MAX;
+    }
+    if (saved.KATAGO_DEEP_SEARCH_ENABLED === undefined) {
+      delete process.env.KATAGO_DEEP_SEARCH_ENABLED;
+    } else {
+      process.env.KATAGO_DEEP_SEARCH_ENABLED = saved.KATAGO_DEEP_SEARCH_ENABLED;
+    }
+    if (saved.KATAGO_WINRATE_TIMELINE_ENABLED === undefined) {
+      delete process.env.KATAGO_WINRATE_TIMELINE_ENABLED;
+    } else {
+      process.env.KATAGO_WINRATE_TIMELINE_ENABLED =
+        saved.KATAGO_WINRATE_TIMELINE_ENABLED;
+    }
+    if (saved.KATAGO_PERSISTENT_ROOT_ENABLED === undefined) {
+      delete process.env.KATAGO_PERSISTENT_ROOT_ENABLED;
+    } else {
+      process.env.KATAGO_PERSISTENT_ROOT_ENABLED =
+        saved.KATAGO_PERSISTENT_ROOT_ENABLED;
+    }
+    if (saved.KATAGO_PERSISTENT_ROOT_STRICT === undefined) {
+      delete process.env.KATAGO_PERSISTENT_ROOT_STRICT;
+    } else {
+      process.env.KATAGO_PERSISTENT_ROOT_STRICT =
+        saved.KATAGO_PERSISTENT_ROOT_STRICT;
+    }
+    if (saved.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS === undefined) {
+      delete process.env.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS;
+    } else {
+      process.env.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS =
+        saved.KATAGO_PERSISTENT_ROOT_IDLE_CLOSE_MS;
+    }
+    if (saved.KATAGO_PERSISTENT_MULTI_TURN_ENABLED === undefined) {
+      delete process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED;
+    } else {
+      process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED =
+        saved.KATAGO_PERSISTENT_MULTI_TURN_ENABLED;
+    }
+    if (saved.KATAGO_PERSISTENT_MULTI_TURN_STRICT === undefined) {
+      delete process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT;
+    } else {
+      process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT =
+        saved.KATAGO_PERSISTENT_MULTI_TURN_STRICT;
     }
     stdinCaptured = "";
   });
@@ -174,7 +326,8 @@ describe("analyzeSgfKatago (worker v1)", () => {
       const err = new PassThrough();
       const stdin = new Writable({
         write(chunk: Buffer | string, _enc, cb) {
-          stdinCaptured += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          stdinCaptured +=
+            typeof chunk === "string" ? chunk : chunk.toString("utf8");
           cb();
         },
         final(cb) {
@@ -207,28 +360,181 @@ describe("analyzeSgfKatago (worker v1)", () => {
 
     expect(r.source).toBe("katago-worker-v1");
     expect(r.ok).toBe(true);
-    expect((r.engine as { maxVisits: number }).maxVisits).toBe(40);
+    expect(r.engine as Record<string, unknown>).toMatchObject({
+      maxVisits: 40,
+      winratePerspective: "black",
+      winratePerspectiveSource: "expected_only",
+    });
+    expect(r.katagoRootBlackWinrate).toBe(52);
+    expect(r.katagoRootWhiteWinrate).toBe(48);
+    const phases = (
+      r.engine as {
+        phaseDurationsMs?: Record<string, number | null>;
+      }
+    ).phaseDurationsMs;
+    expect(phases).toMatchObject({
+      totalBeforeQualityGate: expect.any(Number),
+      rootStage: expect.any(Number),
+      multiTurn: expect.any(Number),
+      signalPlanning: expect.any(Number),
+      deepSearch: expect.any(Number),
+      winrateTimeline: expect.any(Number),
+    });
     expect(r.top_mistakes).toEqual([]);
-    const algo = r.algorithmStage as { notYetImplemented: string[]; implemented?: string[] };
+    const algo = r.algorithmStage as {
+      notYetImplemented: string[];
+      implemented?: string[];
+    };
     expect(algo.implemented).toContain("bsi_v1");
     expect(algo.notYetImplemented).not.toContain("bsi");
     expect(algo.implemented).toContain("deep_search_results_v1");
     expect(algo.notYetImplemented).toContain("llm_commentary");
-    const ds = r.deepSearchResults as { enabled?: boolean; version?: string } | undefined;
+    const ds = r.deepSearchResults as
+      | { enabled?: boolean; version?: string }
+      | undefined;
     expect(ds?.version).toBe("deep-search-results-v1");
     expect(ds?.enabled).toBe(false);
 
-    const q = JSON.parse(stdinCaptured.trim()) as { maxVisits: number; moves: [string, string][] };
+    const q = JSON.parse(stdinCaptured.trim()) as {
+      maxVisits: number;
+      moves: [string, string][];
+    };
     expect(q.maxVisits).toBe(40);
     expect(q.moves).toEqual([
       ["B", "Q16"],
       ["W", "D16"],
     ]);
 
-    const kat = r.katago as { hasWinrate: boolean; hasScoreLead: boolean; moveInfosCount: number };
+    const kat = r.katago as {
+      hasWinrate: boolean;
+      hasScoreLead: boolean;
+      moveInfosCount: number;
+    };
     expect(kat.hasWinrate).toBe(true);
     expect(kat.hasScoreLead).toBe(true);
     expect(kat.moveInfosCount).toBe(1);
+  });
+
+  it("reuses one persistent root KataGo process when enabled", async () => {
+    process.env.KATAGO_BINARY_PATH = "/x/katago";
+    process.env.KATAGO_CONFIG_PATH = "/x/cfg";
+    process.env.KATAGO_MODEL_PATH = "/x/model";
+    process.env.KATAGO_MAX_VISITS = "40";
+    process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "8000";
+    process.env.KATAGO_MULTI_TURN_MAX = "0";
+    process.env.KATAGO_PERSISTENT_ROOT_ENABLED = "true";
+
+    const mock = makePersistentKatagoSpawn();
+
+    const first = (await analyzeSgfKatago({
+      jobId: "persistent-job-1",
+      sgfContent: sgf,
+      language: "ko",
+      maxVisits: 40,
+      fileName: "g1.sgf",
+      __testSpawnFn: mock.spawn,
+    })) as Record<string, unknown>;
+    const second = (await analyzeSgfKatago({
+      jobId: "persistent-job-2",
+      sgfContent: sgf,
+      language: "ko",
+      maxVisits: 40,
+      fileName: "g2.sgf",
+      __testSpawnFn: mock.spawn,
+    })) as Record<string, unknown>;
+
+    expect(mock.getSpawnCount()).toBe(1);
+    expect(mock.getQueryCount()).toBe(2);
+    expect(
+      (first.engine as { rootAnalysisMode?: string }).rootAnalysisMode
+    ).toBe("persistent");
+    expect(
+      (second.engine as { rootAnalysisMode?: string }).rootAnalysisMode
+    ).toBe("persistent");
+    expect(
+      (first.algorithmStage as { implemented?: string[] }).implemented
+    ).toContain("persistent_root_katago_v1");
+  });
+
+  it("reuses the root process for persistent multi-turn queries", async () => {
+    process.env.KATAGO_BINARY_PATH = "/x/katago";
+    process.env.KATAGO_CONFIG_PATH = "/x/cfg";
+    process.env.KATAGO_MODEL_PATH = "/x/model";
+    process.env.KATAGO_MAX_VISITS = "40";
+    process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "8000";
+    process.env.KATAGO_MULTI_TURN_MAX = "2";
+    process.env.KATAGO_PERSISTENT_ROOT_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_ROOT_STRICT = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_ENABLED = "true";
+    process.env.KATAGO_PERSISTENT_MULTI_TURN_STRICT = "true";
+
+    const mock = makePersistentKatagoSpawn();
+    const result = (await analyzeSgfKatago({
+      jobId: "persistent-root-and-multi-job",
+      sgfContent: sgf,
+      language: "ko",
+      maxVisits: 40,
+      fileName: "persistent-all.sgf",
+      __testSpawnFn: mock.spawn,
+    })) as Record<string, unknown>;
+
+    const multiTurn = result.multiTurnAnalysis as {
+      executionMode?: string;
+      attemptedCount: number;
+      persistentAttemptedCount?: number;
+      persistentFailedCount?: number;
+      fallbackAttemptedCount?: number;
+      completedCount: number;
+    };
+    expect(mock.getSpawnCount()).toBe(1);
+    expect(multiTurn.attemptedCount).toBeGreaterThan(0);
+    expect(mock.getQueryCount()).toBe(1 + multiTurn.attemptedCount);
+    expect(
+      (result.engine as { multiTurnAnalysisMode?: string })
+        .multiTurnAnalysisMode
+    ).toBe("persistent");
+    expect(multiTurn).toMatchObject({
+      executionMode: "persistent",
+      persistentAttemptedCount: multiTurn.attemptedCount,
+      persistentFailedCount: 0,
+      fallbackAttemptedCount: 0,
+      completedCount: multiTurn.attemptedCount,
+    });
+    expect(
+      (result.algorithmStage as { implemented?: string[] }).implemented
+    ).toContain("persistent_multi_turn_katago_v1");
+  });
+
+  it("falls back to spawn root when persistent root fails and strict mode is off", async () => {
+    process.env.KATAGO_BINARY_PATH = "/x/katago";
+    process.env.KATAGO_CONFIG_PATH = "/x/cfg";
+    process.env.KATAGO_MODEL_PATH = "/x/model";
+    process.env.KATAGO_MAX_VISITS = "40";
+    process.env.KATAGO_ANALYSIS_TIMEOUT_MS = "8000";
+    process.env.KATAGO_MULTI_TURN_MAX = "0";
+    process.env.KATAGO_PERSISTENT_ROOT_ENABLED = "true";
+
+    const mock = makePersistentKatagoSpawn({ failFirstQuery: true });
+
+    const r = (await analyzeSgfKatago({
+      jobId: "persistent-fallback-job",
+      sgfContent: sgf,
+      language: "ko",
+      maxVisits: 40,
+      fileName: "fallback.sgf",
+      __testSpawnFn: mock.spawn,
+    })) as Record<string, unknown>;
+
+    const engine = r.engine as {
+      rootAnalysisMode?: string;
+      rootAnalysisFallbackReason?: string;
+    };
+    expect(r.ok).toBe(true);
+    expect(mock.getSpawnCount()).toBe(2);
+    expect(engine.rootAnalysisMode).toBe("persistent_fallback_spawn");
+    expect(engine.rootAnalysisFallbackReason).toContain(
+      "mock persistent root failure"
+    );
   });
 
   it("scoreMean fallback satisfies score requirement", async () => {
@@ -315,7 +621,11 @@ describe("analyzeSgfKatago (worker v1)", () => {
         language: "ko",
         maxVisits: 10,
         fileName: "g.sgf",
-        __testSpawnFn: makeMockKatagoSpawn({ stdout, exitCode: 2, stderr: "fatal error line" }),
+        __testSpawnFn: makeMockKatagoSpawn({
+          stdout,
+          exitCode: 2,
+          stderr: "fatal error line",
+        }),
       })
     ).rejects.toThrow(/KATAGO_EXIT_NONZERO/);
   });
