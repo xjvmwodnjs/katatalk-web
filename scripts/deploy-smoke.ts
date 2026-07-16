@@ -125,7 +125,7 @@ function jsonObject(value: unknown): JsonObject {
 async function checkHealthz(baseUrl: string, timeoutMs: number): Promise<Omit<SmokeCheck, "name">> {
   const { response, json, latencyMs } = await requestJson(baseUrl, "/healthz", timeoutMs);
   const body = jsonObject(json);
-  if (response.status !== 200 || body.ok !== true || body.status !== "ok") {
+  if (response.status !== 200 || body.ok !== true || body.status !== "ready") {
     return fail(`expected 200 ok health, got ${response.status} ${describeJson(json)}`, latencyMs);
   }
   return pass("service is alive", latencyMs);

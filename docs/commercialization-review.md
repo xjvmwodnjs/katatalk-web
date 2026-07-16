@@ -514,3 +514,9 @@ corepack pnpm credits:audit
 - `corepack pnpm ci:secrets`, `corepack pnpm check`, and `corepack pnpm build` all passed. The secret scanner reported no supported secret patterns in repository text files.
 - `corepack pnpm katago:corpus-validate` correctly refused to run without a manifest path. This is not a code failure: the required privacy-reviewed real-game manifest is intentionally absent from the repository. The release gate command is `corepack pnpm katago:corpus-validate -- .local/katago-corpus/manifest.json --require-human-review`.
 - Remaining external evidence is unchanged: approved remote push and GitHub CI, protected staging configuration and smoke run, Supabase migrations 008-010, real KataGo corpus/product-suite evidence, live payment-credit E2E, and legal approval.
+
+### 2026-07-16: release-risk review follow-up
+
+- Corrected the staging smoke readiness contract: `/readyz` intentionally returns `status: "ready"` on a healthy deployment, and `scripts/deploy-smoke.ts` now requires that value rather than the `/healthz` value `"ok"`.
+- Identified a P1 payment-integrity gap: the current analysis credit debit and queued-job insert are separate database operations. The current refund fallback is idempotent but a refund-RPC failure is not durably retried. Before paid release, replace this sequence with one security-definer transactional enqueue-and-debit RPC, add its migration and route tests, and deploy it only after its migration is present.
+- Deployment ordering is now explicitly release-blocking: apply and verify migrations `008 -> 009 -> 010` before the current retention-aware application code. The upcoming atomic enqueue RPC migration must be applied before Web/Worker rollout as well.
