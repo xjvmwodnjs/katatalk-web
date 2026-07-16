@@ -507,3 +507,10 @@ corepack pnpm credits:audit
 - Merge conflicts were limited to `.env.example`, `client/src/pages/Home.tsx`, `docs/env-guide.md`, and `server/analyzeRoute.db.test.ts`. The resolution retained the commercial result/deep-link and winrate-perspective behavior, adopted the current timeline-progress API contract, and exposed the new GPU backend-check configuration keys.
 - Targeted integration validation passed: `server/analyzeRoute.db.test.ts`, `server/worker/katagoBackendDetectionV1.test.ts`, and `server/apiRateLimit.test.ts` (`3` files, `53` tests). `git diff --check` and staged-diff checks passed.
 - The direct `git push -u origin wip/commercialization-readiness-20260716` attempt was blocked by the execution policy because it transfers the full source/docs WIP to an external host. No workaround was attempted, and `origin/master` was not modified. Explicit user approval is required before retrying the push.
+
+### 2026-07-16: local release-gate verification refresh
+
+- `corepack pnpm test:ci` passed on the integrated branch: `77` test files and `733` tests, serialized to avoid synced-workspace contention.
+- `corepack pnpm ci:secrets`, `corepack pnpm check`, and `corepack pnpm build` all passed. The secret scanner reported no supported secret patterns in repository text files.
+- `corepack pnpm katago:corpus-validate` correctly refused to run without a manifest path. This is not a code failure: the required privacy-reviewed real-game manifest is intentionally absent from the repository. The release gate command is `corepack pnpm katago:corpus-validate -- .local/katago-corpus/manifest.json --require-human-review`.
+- Remaining external evidence is unchanged: approved remote push and GitHub CI, protected staging configuration and smoke run, Supabase migrations 008-010, real KataGo corpus/product-suite evidence, live payment-credit E2E, and legal approval.
