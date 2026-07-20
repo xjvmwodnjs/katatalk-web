@@ -23,7 +23,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 ### 공개 유료 출시를 막는 P0 요약
 
-1. 실패 확정·환불 원자 명령과 실제 PostgreSQL CI 게이트는 구현됐지만 원격 CI 및 스테이징 증거가 아직 확정되지 않았다.
+1. 실패 확정·환불 원자 명령과 PostgreSQL CI 게이트는 구현됐고 GitHub Actions에서 통과했다. 실제 Supabase 스테이징 증거는 아직 남아 있다.
 2. Supabase `SECURITY DEFINER` 권한 manifest와 SQL 거절 검사는 구현됐지만 실제 Supabase/PostgREST 스냅샷은 남아 있다.
 3. 프로덕션 의존성 감사에서 현재 34건이 검출되며, 그중 high가 17건이다.
 4. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
@@ -63,7 +63,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | 프로덕션 의존성 감사 | **FAIL** | critical 0, high 17, moderate 15, low 2 |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **구현·CI 검증 대기** | PostgreSQL 16 fresh/upgrade 잡과 실제 DB fixture 추가 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성 gate 31초 통과 |
 
 `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -125,7 +125,7 @@ flowchart LR
 
 ### COM-001. 실패 상태와 환불을 한 트랜잭션으로 묶기
 
-**상태: 검증 중 — 코드 구현 완료, 실제 PostgreSQL 출시 증거 대기 (2026-07-20)**
+**상태: 검증 중 — 코드 및 GitHub PostgreSQL gate 통과, 실제 Supabase 스테이징 출시 증거 대기 (2026-07-20)**
 
 - migration `012`가 job row, 원래 usage, profile, refund ledger를 잠그고 실패 전환과 환불을 한 트랜잭션으로 처리한다.
 - 정확한 `(locked_by, attempt_count)`만 finalization할 수 있고, 응답 유실 후 같은 lease 재호출은 중복 지급 없이 수렴한다.
@@ -164,7 +164,7 @@ flowchart LR
 
 ### COM-002. Supabase 함수 권한을 배포 게이트로 증명하기
 
-**상태: 검증 중 — `013`·권한 manifest·실제 SQL 42501 검사는 구현, 원격 CI와 staging HTTP snapshot 대기 (2026-07-20)**
+**상태: 검증 중 — `013`·권한 manifest·실제 SQL 42501 검사가 GitHub CI 통과, staging HTTP snapshot 대기 (2026-07-20)**
 
 **증거**
 
@@ -264,7 +264,7 @@ flowchart LR
 
 ### COM-006. 마이그레이션을 재현 가능한 단일 경로로 만들기
 
-**상태: 검증 중 — checksum 이력 runner와 PostgreSQL 16 CI fixture 구현, 원격 CI 및 운영 baseline 승인 대기 (2026-07-20)**
+**상태: 검증 중 — checksum 이력 runner와 PostgreSQL 16 CI 통과, 운영 baseline 승인 대기 (2026-07-20)**
 
 **문제**
 
@@ -702,8 +702,8 @@ ops/
 | 순서 | ID | 우선순위 | 작업 | 주 영역 | 선행 조건 | Definition of Done |
 |---:|---|---:|---|---|---|---|
 | 1 | COM-001 | P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중 | DB·Worker | 없음 | fault test와 ledger audit 불일치 0 |
-| 2 | COM-002 | P0 | RPC 권한 manifest/검사 — 구현·CI 검증 대기 | DB·Security | 없음 | anon 거절 및 실제 staging snapshot |
-| 3 | COM-006 | P0 | migration runner/CI — 구현·CI 검증 대기 | DB·DevEx | COM-002 병행 | fresh/upgrade 모두 통과 |
+| 2 | COM-002 | P0 | RPC 권한 manifest/검사 — GitHub CI 통과·staging 대기 | DB·Security | 없음 | 실제 staging catalog/HTTP snapshot |
+| 3 | COM-006 | P0 | migration runner/CI — GitHub CI 통과·baseline 대기 | DB·DevEx | COM-002 병행 | 기존 운영 DB baseline 승인 |
 | 4 | COM-005 | P0 | SGF rules/metadata parser | Analysis | 없음 | golden SGF와 UI 정확성 테스트 |
 | 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
 | 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
@@ -821,7 +821,7 @@ ops/
 
 ### 아직 닫히지 않은 출시 게이트
 
-1. 새 PostgreSQL CI 잡을 실제 GitHub Actions에서 통과시키고 migration manifest, RPC 권한 snapshot, schema checksum artifact를 보존한다.
+1. GitHub Actions에서 통과한 PostgreSQL gate의 migration manifest, RPC 권한 snapshot, schema checksum artifact를 릴리스 증거로 계속 보존한다.
 2. 실제 스테이징 Supabase에서 catalog snapshot과 anon PostgREST RPC 비-2xx 거절을 확인한다. authenticated HTTP 거절은 전용 staging JWT로 별도 검증한다.
 3. 기존 운영 DB의 schema/ACL fingerprint를 검토해 migration history baseline을 승인한다. runner가 이를 자동 추정하게 두지 않는다.
 4. 구 Worker stop/drain → 사전감사/legacy reconciliation → `012`·`013` migration → API → 새 Worker 순서를 스테이징에서 리허설한다.
@@ -829,7 +829,7 @@ ops/
 
 ### 다음 변경 단위
 
-1. **COM-002/006 후속**: GitHub DB gate를 통과시키고 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
+1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
 2. **COM-001 후속**: quarantine 관리자 조회·알림과 승인된 append-only reconciliation command를 만든다.
 3. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
 

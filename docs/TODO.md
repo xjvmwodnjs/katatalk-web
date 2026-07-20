@@ -153,4 +153,4 @@
 
 ## Database migration gate
 
-- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 완료; 실제 GitHub CI 및 staging Supabase HTTP snapshot 검증 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.
+- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 및 GitHub PostgreSQL 16 CI 통과; staging Supabase catalog/HTTP snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.
