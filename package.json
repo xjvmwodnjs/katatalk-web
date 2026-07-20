@@ -26,6 +26,9 @@
     "deploy:smoke": "tsx scripts/deploy-smoke.ts",
     "credits:audit": "tsx scripts/credit-ledger-audit.ts",
     "data:retention": "tsx scripts/analysis-data-retention.ts",
+    "db:migrate:supabase": "node scripts/db/migrate.mjs",
+    "test:db:migrations": "node scripts/db/ci-gate.mjs",
+    "db:legacy-mysql": "drizzle-kit generate && drizzle-kit migrate",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {

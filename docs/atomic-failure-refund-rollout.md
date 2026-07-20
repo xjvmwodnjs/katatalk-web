@@ -1,12 +1,11 @@
 # Atomic analysis failure/refund rollout
 
-This runbook deploys `012_atomic_failure_refund.sql` without allowing an old
+This runbook deploys `012_atomic_failure_refund.sql` and `013_harden_security_definer_functions.sql` without allowing an old
 Worker to create a terminal failed job and a separate, missing refund.
 
 ## Safety rules
 
-- Treat an already-applied numbered migration as immutable. If any environment
-  has applied an earlier `012`, ship corrections as `013` instead of editing it.
+- Treat numbered migrations as immutable and apply them strictly in numeric order: `001` → `002` → … → `013`. If `012` is already applied, ship corrections as `013`; never edit or reorder history.
 - Stop and drain every old analysis Worker before applying the migration.
 - Never repair a wallet with a direct `profiles.credits` update. Reconciliation
   must preserve an append-only ledger entry and its idempotency key.
@@ -74,8 +73,8 @@ reviewed forward-only reconciliation migration.
 2. Stop old Workers and wait until no Worker heartbeat is active. Do not start a
    new claim while the schema changes.
 3. Run the preflight audit and reconcile only verified legacy rows.
-4. Apply migrations through `012` in one transaction and retain the output.
-5. Verify the function owner, `prosecdef`, fixed `search_path`, and ACL. Confirm
+4. Apply migrations `001` → `013` in one transaction and retain the output.
+5. Verify the 11 SECURITY DEFINER functions fixed by `013`: owner, `search_path=pg_catalog`, function ACL, and table ACL. Confirm
    `PUBLIC`, `anon`, and `authenticated` cannot execute either Worker RPC.
 6. Deploy the API with `ANALYSIS_WORKER_MODE=external` and atomic enqueue
    enabled. Production startup rejects unsafe values.
@@ -95,7 +94,7 @@ reviewed forward-only reconciliation migration.
 - Forced errors after profile update, ledger insert, and job update roll back the
   entire transaction.
 - `anon` and `authenticated` HTTP RPC calls are rejected.
-- Fresh `001 -> 012` and upgrade `011 -> 012` both pass.
+- Fresh `001 -> 013` and upgrade `011 -> 012 -> 013` both pass, including schema/ACL equivalence.
 
 ## 4. Quarantine recovery
 

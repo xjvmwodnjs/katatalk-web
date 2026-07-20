@@ -23,12 +23,12 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 ### 공개 유료 출시를 막는 P0 요약
 
-1. 실패 확정·환불 원자 명령은 구현됐지만 실제 PostgreSQL의 동시성·rollback·ACL 증거가 아직 없다.
-2. Supabase `SECURITY DEFINER` 함수의 실제 배포 권한을 증명하는 출시 게이트가 없다.
+1. 실패 확정·환불 원자 명령과 실제 PostgreSQL CI 게이트는 구현됐지만 원격 CI 및 스테이징 증거가 아직 확정되지 않았다.
+2. Supabase `SECURITY DEFINER` 권한 manifest와 SQL 거절 검사는 구현됐지만 실제 Supabase/PostgREST 스냅샷은 남아 있다.
 3. 프로덕션 의존성 감사에서 현재 34건이 검출되며, 그중 high가 17건이다.
 4. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
 5. KataGo 규칙이 일본식으로 고정되어 있으나 SGF의 `RU`를 해석하거나 거부하지 않는다.
-6. 마이그레이션 실행 경로가 단일화되지 않았고 기존 문서에는 위험한 적용 순서가 남아 있다.
+6. 마이그레이션 실행 경로는 단일화했지만 기존 운영 DB의 승인된 history baseline과 스테이징 리허설이 남아 있다.
 7. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
 8. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
 
@@ -46,10 +46,10 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 |---|---:|
 | Git 추적 파일 | 364개 (이번 변경 포함) |
 | TypeScript/TSX | 약 50,290줄 |
-| Vitest 테스트 파일 | 80개 |
-| Vitest 테스트 수 | 762개 |
+| Vitest 테스트 파일 | 81개 |
+| Vitest 테스트 수 | 766개 |
 | Playwright 시나리오 | 9개 |
-| Supabase SQL 마이그레이션 | 12개 (`001`~`012`) |
+| Supabase SQL 마이그레이션 | 13개 (`001`~`013`) |
 | GitHub Actions 워크플로 | 3개 |
 
 ### 실행 검증
@@ -57,13 +57,13 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | 검증 | 결과 | 비고 |
 |---|---:|---|
 | TypeScript `tsc --noEmit` | **PASS** | 컴파일 타입 오류 없음 |
-| Vitest | **PASS** | 80 files / 762 tests |
+| Vitest | **PASS** | 81 files / 766 tests (전체 재실행 통과) |
 | 프로덕션 빌드 | **PASS** | Vite 클라이언트 + API + Worker 번들 |
 | Playwright Chromium | **PASS** | 9/9, 테스트/모의 분석 모드 |
 | 프로덕션 의존성 감사 | **FAIL** | critical 0, high 17, moderate 15, low 2 |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **미검증** | CI에 PostgreSQL 마이그레이션 잡이 없음 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **구현·CI 검증 대기** | PostgreSQL 16 fresh/upgrade 잡과 실제 DB fixture 추가 |
 
 `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -71,7 +71,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 - 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 Manus OAuth, MySQL, Stripe, LLM 중심의 과거 구조를 설명해 현재 Clerk, Supabase, Lemon Squeezy, KataGo Worker 구조와 맞지 않는다.
 - [docs/commercialization-review.md](docs/commercialization-review.md)의 상단 수치와 본문은 현재 저장소와 다르며, 같은 문서의 후반 변경 이력과도 모순된다.
-- [docs/TODO.md](docs/TODO.md)의 마이그레이션 안내에는 `007 → 006` 순서가 남아 있다. `007`이 인자 없는 claim RPC를 제거한 뒤 `006`이 그 옛 시그니처에 revoke/grant를 수행하므로 환경에 따라 실패할 수 있다.
+- [docs/TODO.md](docs/TODO.md)와 [README.md](README.md)의 과거 `007 → 006` 순서는 `001 → 013` 숫자 순서와 단일 runner 안내로 교정했다.
 
 앞으로는 이 `review.md`의 출시 게이트와 백로그를 기준점으로 삼고, 구조 설명은 별도의 최신 `ARCHITECTURE.md`로 다시 작성하는 편이 안전하다.
 
@@ -164,11 +164,14 @@ flowchart LR
 
 ### COM-002. Supabase 함수 권한을 배포 게이트로 증명하기
 
+**상태: 검증 중 — `013`·권한 manifest·실제 SQL 42501 검사는 구현, 원격 CI와 staging HTTP snapshot 대기 (2026-07-20)**
+
 **증거**
 
 - 초기 마이그레이션의 일부 `SECURITY DEFINER` RPC는 PostgreSQL 기본 execute 권한을 그대로 가질 수 있다.
 - [supabase/migrations/006_lock_down_security_definer_rpc.sql](supabase/migrations/006_lock_down_security_definer_rpc.sql)은 이를 뒤늦게 revoke/grant 한다.
 - [supabase/migrations/007_analysis_job_lease_retry.sql](supabase/migrations/007_analysis_job_lease_retry.sql)은 오래된 claim 시그니처를 제거한다.
+- [supabase/migrations/013_harden_security_definer_functions.sql](supabase/migrations/013_harden_security_definer_functions.sql)은 11개 민감 RPC의 owner, `SECURITY DEFINER`, `search_path=pg_catalog`, execute ACL과 직접 table ACL을 전진 수정으로 고정한다.
 
 **위험**
 
@@ -180,6 +183,7 @@ flowchart LR
 - 배포 단계에서 `has_function_privilege` 쿼리로 `PUBLIC/anon/authenticated` 권한이 기대와 같은지 검사한다.
 - service role만 가능한 호출을 anon 토큰으로 시도해 반드시 거절되는 통합 테스트를 만든다.
 - 새 DB에 `001 → 최신` 적용, 운영과 같은 구버전 DB에 `다음 migration` 적용을 CI에서 모두 수행한다.
+- vanilla PostgreSQL에서 `SET ROLE anon/authenticated` 실제 호출이 SQLSTATE `42501`로 거절되는지 검사하고 catalog/ACL snapshot을 artifact로 남긴다.
 
 **완료 조건**
 
@@ -260,11 +264,13 @@ flowchart LR
 
 ### COM-006. 마이그레이션을 재현 가능한 단일 경로로 만들기
 
+**상태: 검증 중 — checksum 이력 runner와 PostgreSQL 16 CI fixture 구현, 원격 CI 및 운영 baseline 승인 대기 (2026-07-20)**
+
 **문제**
 
 - Supabase SQL과 MySQL/Drizzle 흔적이 공존하고, 문서마다 실행 지침이 다르다.
-- PostgreSQL을 실제로 띄워 신규 설치와 순차 업그레이드를 검증하는 CI가 없다.
-- 기존 문서에 `007 → 006`이라는 위험한 순서가 있다.
+- 기존 기준 커밋에는 PostgreSQL을 실제로 띄워 신규 설치와 순차 업그레이드를 검증하는 CI가 없었다.
+- 기존 문서의 `007 → 006` 위험 순서는 현재 숫자 순서로 교정했다.
 
 **개선 뼈대**
 
@@ -272,6 +278,7 @@ flowchart LR
 - migration runner를 하나로 통일하고 숫자 순서를 변경 불가능하게 한다.
 - fresh install, 이전 릴리스 snapshot upgrade, 반복 실행 방지, rollback/recovery 절차를 테스트한다.
 - schema checksum과 적용 이력을 배포 산출물로 보관한다.
+- 기존 앱 schema에 신뢰할 migration history가 없으면 자동 baseline하지 않고 승인된 fingerprint가 생길 때까지 fail-closed 한다.
 
 **완료 조건**
 
@@ -695,8 +702,8 @@ ops/
 | 순서 | ID | 우선순위 | 작업 | 주 영역 | 선행 조건 | Definition of Done |
 |---:|---|---:|---|---|---|---|
 | 1 | COM-001 | P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중 | DB·Worker | 없음 | fault test와 ledger audit 불일치 0 |
-| 2 | COM-002 | P0 | RPC 권한 manifest/검사 | DB·Security | 없음 | anon 거절 및 실제 staging snapshot |
-| 3 | COM-006 | P0 | migration runner/CI | DB·DevEx | COM-002 병행 | fresh/upgrade 모두 통과 |
+| 2 | COM-002 | P0 | RPC 권한 manifest/검사 — 구현·CI 검증 대기 | DB·Security | 없음 | anon 거절 및 실제 staging snapshot |
+| 3 | COM-006 | P0 | migration runner/CI — 구현·CI 검증 대기 | DB·DevEx | COM-002 병행 | fresh/upgrade 모두 통과 |
 | 4 | COM-005 | P0 | SGF rules/metadata parser | Analysis | 없음 | golden SGF와 UI 정확성 테스트 |
 | 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
 | 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
@@ -806,20 +813,23 @@ ops/
 5. **quarantine**: 손상 원장으로 finalization이 거절된 max-attempt job은 durable table에 격리한다. 반복 claim 부하를 막고 동일 lease 복구 성공 때만 `resolved_at`을 기록한다.
 6. **오류 경계**: DB와 API에는 allowlist 사용자 문구만 저장·반환하고, 내부 진단은 구조화 Worker 로그로 분리한다.
 7. **감사 강화**: usage 금액, job별 usage/refund 중복, refund owner/amount, non-failed refund를 fail 등급으로 검출한다.
+8. **권한 전진 수정**: `013`이 11개 민감 RPC의 owner와 `search_path=pg_catalog`, runtime execute/table ACL을 하나의 manifest로 고정한다.
+9. **단일 migration runner**: 숫자 순서, SHA-256 이력, advisory lock, 단일 트랜잭션을 강제하고 이력 없는 기존 schema의 자동 baseline을 거절한다.
+10. **실제 DB CI fixture**: PostgreSQL 16에서 fresh `001 → 013`, `011 → 012 → 013` upgrade, checksum drift, ACL/42501, rollback, quarantine, 두 세션 경쟁, 최종 schema/ACL 동등성을 검사한다.
 
 내부 크레딧은 PostgreSQL 안에서 이동하므로 이번 범위에는 외부 outbox를 추가하지 않았다. 향후 현금 환불이나 외부 지급처럼 트랜잭션 밖의 side effect가 생길 때 durable outbox를 도입한다.
 
 ### 아직 닫히지 않은 출시 게이트
 
-1. 빈 DB `001 → 012`와 운영형 `011 → 012`를 실제 PostgreSQL에 적용하고 SQL 문법·owner·`prosecdef`·`search_path`·ACL을 증명한다.
-2. 두 세션으로 동일 lease replay, stale lease, completion race, legacy refund RPC 경쟁, 응답 유실을 실행해 잔액 증가와 refund row가 정확히 한 번임을 증명한다.
-3. profile update, ledger insert, job update 직후 강제 예외가 모두 rollback되고 quarantine 복구가 반복 재선택 없이 수렴하는지 검증한다.
-4. 구 Worker stop/drain → 사전감사/legacy reconciliation → migration → API → 새 Worker 순서를 스테이징에서 리허설한다. 이미 이전 `012`가 적용된 환경에는 이 파일을 수정해 재적용하지 않고 후속 `013`을 만든다.
+1. 새 PostgreSQL CI 잡을 실제 GitHub Actions에서 통과시키고 migration manifest, RPC 권한 snapshot, schema checksum artifact를 보존한다.
+2. 실제 스테이징 Supabase에서 catalog snapshot과 anon PostgREST RPC 비-2xx 거절을 확인한다. authenticated HTTP 거절은 전용 staging JWT로 별도 검증한다.
+3. 기존 운영 DB의 schema/ACL fingerprint를 검토해 migration history baseline을 승인한다. runner가 이를 자동 추정하게 두지 않는다.
+4. 구 Worker stop/drain → 사전감사/legacy reconciliation → `012`·`013` migration → API → 새 Worker 순서를 스테이징에서 리허설한다.
 5. KataGo crash/timeout, SGF 누락, engine mismatch, leased mock 실패 E2E 후 ledger audit 불일치가 0인지 확인한다.
 
 ### 다음 변경 단위
 
-1. **COM-002/006**: 실제 PostgreSQL migration/ACL CI와 staging snapshot을 만든다.
+1. **COM-002/006 후속**: GitHub DB gate를 통과시키고 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
 2. **COM-001 후속**: quarantine 관리자 조회·알림과 승인된 append-only reconciliation command를 만든다.
 3. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
 

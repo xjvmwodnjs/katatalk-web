@@ -291,7 +291,7 @@ Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 
 - **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다. cfg의 `reportAnalysisWinratesAs`는 정확히 하나여야 하며 운영에서는 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정합니다.
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
-두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004`+`007` 의 `claim_next_analysis_job` RPC 및 `006` SECURITY DEFINER RPC 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(`006` 미적용 시 anon 등에 EXECUTE 가 남을 수 있음 — README「SECURITY DEFINER RPC 권한 검증」).
+두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase migration `001 → 013` 전체와 `013`의 SECURITY DEFINER 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(README「SECURITY DEFINER RPC 권한 검증」·[database migration gate](docs/database-migration-gate.md) 참고).
 
 mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
 
@@ -339,7 +339,7 @@ corepack pnpm credits:audit
 corepack pnpm credits:audit -- --limit=100000
 ```
 
-**최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase 006/007 운영 DB 적용 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
+**최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase `001 → 013` 운영 DB 적용·권한 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
 
 1. 브라우저에서 **GET /** — 정적 홈이 로드되는지
 2. **Clerk 로그인** — 세션 후 홈 복귀
@@ -351,7 +351,7 @@ corepack pnpm credits:audit -- --limit=100000
 
 ### 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (`004`: 초기 `claim_next_analysis_job`, `007`: lease·stale 재claim·시도 상한, `006`: SECURITY DEFINER RPC 권한 잠금 — README 참고)
+- [ ] Supabase migration **`001 → 013` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: SECURITY DEFINER/ACL 고정)
 - [ ] Clerk **production** 도메인·Redirect URL
 - [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
 - [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
@@ -503,9 +503,17 @@ order by created_at desc;
 - [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
 - [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`
 - [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** 초안(007 적용 시 시그니처 대체)
-- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
 - [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼
 - [`006_lock_down_security_definer_rpc.sql`](supabase/migrations/006_lock_down_security_definer_rpc.sql) — **SECURITY DEFINER RPC** 에 대해 `PUBLIC` / `anon` / `authenticated` 의 **EXECUTE 를 REVOKE**하고 **`service_role` 만 GRANT** (임의 크레딧·큐 claim 방지)
+- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
+- [`008_analysis_worker_observability.sql`](supabase/migrations/008_analysis_worker_observability.sql) — Worker heartbeat/health RPC
+- [`009_analysis_job_data_purge.sql`](supabase/migrations/009_analysis_job_data_purge.sql) — 사용자 요청 기반 분석 payload 삭제
+- [`010_analysis_job_retention.sql`](supabase/migrations/010_analysis_job_retention.sql) — 만료 payload retention RPC
+- [`011_atomic_enqueue_paid_analysis_job.sql`](supabase/migrations/011_atomic_enqueue_paid_analysis_job.sql) — 크레딧 차감과 유료 job enqueue 원자화
+- [`012_atomic_failure_refund.sql`](supabase/migrations/012_atomic_failure_refund.sql) — lease-fenced 실패 확정·환불과 quarantine 원자화
+- [`013_harden_security_definer_functions.sql`](supabase/migrations/013_harden_security_definer_functions.sql) — 11개 민감 RPC의 owner, `search_path`, ACL 및 관련 table ACL 고정
+
+파일을 골라 수동 실행하지 말고 반드시 `001 → 013` 숫자 순서를 사용한다. 새 runner와 실제 PostgreSQL gate는 [database migration gate](docs/database-migration-gate.md)를 따른다.
 
 ### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
 
@@ -557,3 +565,7 @@ select has_function_privilege('service_role', 'public.ensure_profile_with_signup
 
 - `.env` 는 `.gitignore` 에 포함되어 있어 기본적으로 커밋되지 않습니다.
 - **Secret key·서비스 롤 키를 커밋하지 마세요.**
+
+## Database migration gate
+
+Supabase migration은 반드시 `001 → 002 → … → 013` 숫자순으로 적용합니다. `pnpm db:migrate:supabase`는 `PG*` 환경변수 또는 CI container를 사용하며, 이력 없는 기존 DB는 reviewed baseline이 없으면 fail-closed 됩니다. `pnpm test:db:migrations`는 명시적으로 확인한 폐기 가능 container에서만 fresh `001→013`, upgrade `011→012→013`, checksum drift, ACL/42501, rollback·quarantine·동시 lock wait 및 schema/ACL equivalence를 검증하고 artifact를 보존합니다. `013`은 11개 SECURITY DEFINER 함수의 owner/search_path=`pg_catalog`/ACL과 table ACL을 고정합니다. 상세 내용과 기존 운영 DB 도입 제한은 [database-migration-gate](docs/database-migration-gate.md)를 참고하세요.
