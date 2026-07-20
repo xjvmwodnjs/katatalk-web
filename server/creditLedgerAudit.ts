@@ -10,10 +10,14 @@ export type CreditLedgerAuditIssueCode =
   | "JOB_CREDIT_LOG_MISSING"
   | "JOB_CREDIT_LOG_NOT_FOUND"
   | "JOB_CREDIT_LOG_INVALID"
+  | "JOB_CREDIT_LOG_AMOUNT_MISMATCH"
   | "USAGE_LOG_WITHOUT_JOB_ID"
   | "USAGE_LOG_WITHOUT_JOB"
+  | "DUPLICATE_USAGE_LOG_FOR_JOB"
   | "REFUND_LOG_WITHOUT_JOB_ID"
   | "REFUND_LOG_WITHOUT_JOB"
+  | "DUPLICATE_REFUND_LOG_FOR_JOB"
+  | "REFUND_AMOUNT_MISMATCH"
   | "FAILED_JOB_MISSING_REFUND"
   | "NON_FAILED_JOB_HAS_REFUND"
   | "PAYMENT_REFILL_MISSING_PROVIDER"
@@ -348,12 +352,63 @@ export function buildCreditLedgerAuditReport(
           jobId: job.id,
           logId: job.credit_log_id,
         });
+      } else if (linkedLog.amount !== -job.credit_cost) {
+        addIssue(issues, {
+          severity: "fail",
+          code: "JOB_CREDIT_LOG_AMOUNT_MISMATCH",
+          message: "Analysis job usage amount must equal the negative credit cost.",
+          userId: job.user_id,
+          jobId: job.id,
+          logId: linkedLog.id,
+          details: {
+            creditCost: job.credit_cost,
+            usageAmount: linkedLog.amount,
+          },
+        });
       }
     }
 
     const jobLogs = logsByAnalysisJobId.get(job.id) ?? [];
-    const hasUsageLog = jobLogs.some(log => log.type === "usage");
-    const hasRefundLog = jobLogs.some(log => log.type === "refund");
+    const usageLogs = jobLogs.filter(log => log.type === "usage");
+    const refundLogs = jobLogs.filter(log => log.type === "refund");
+    const hasUsageLog = usageLogs.length > 0;
+    const hasRefundLog = refundLogs.length > 0;
+    if (usageLogs.length > 1) {
+      addIssue(issues, {
+        severity: "fail",
+        code: "DUPLICATE_USAGE_LOG_FOR_JOB",
+        message: "Analysis job has more than one usage ledger row.",
+        userId: job.user_id,
+        jobId: job.id,
+        details: { usageLogCount: usageLogs.length },
+      });
+    }
+    if (refundLogs.length > 1) {
+      addIssue(issues, {
+        severity: "fail",
+        code: "DUPLICATE_REFUND_LOG_FOR_JOB",
+        message: "Analysis job has more than one refund ledger row.",
+        userId: job.user_id,
+        jobId: job.id,
+        details: { refundLogCount: refundLogs.length },
+      });
+    }
+    for (const refundLog of refundLogs) {
+      if (refundLog.user_id !== job.user_id || refundLog.amount !== job.credit_cost) {
+        addIssue(issues, {
+          severity: "fail",
+          code: "REFUND_AMOUNT_MISMATCH",
+          message: "Analysis refund must match the job owner and exact credit cost.",
+          userId: job.user_id,
+          jobId: job.id,
+          logId: refundLog.id,
+          details: {
+            creditCost: job.credit_cost,
+            refundAmount: refundLog.amount,
+          },
+        });
+      }
+    }
     if (job.status === "failed" && job.credit_cost > 0 && hasUsageLog && !hasRefundLog) {
       addIssue(issues, {
         severity: "fail",
@@ -365,7 +420,7 @@ export function buildCreditLedgerAuditReport(
     }
     if (job.status !== "failed" && hasRefundLog) {
       addIssue(issues, {
-        severity: "warn",
+        severity: "fail",
         code: "NON_FAILED_JOB_HAS_REFUND",
         message: "Non-failed analysis job has a refund log.",
         userId: job.user_id,

@@ -100,6 +100,72 @@ describe("buildCreditLedgerAuditReport", () => {
     expect(report.issues.map(issue => issue.code)).toContain("FAILED_JOB_MISSING_REFUND");
   });
 
+  it("accepts a failed paid job with one valid atomic refund ledger row", () => {
+    const report = buildCreditLedgerAuditReport({
+      profiles: [profile({ credits: 2 })],
+      logs: [
+        log({
+          id: "log_signup",
+          amount: 2,
+          type: "signup_bonus",
+          analysis_job_id: null,
+          idempotency_key: "signup_bonus:user_a",
+        }),
+        log(),
+        log({
+          id: "log_atomic_refund",
+          amount: 1,
+          type: "refund",
+          description: "Atomic analysis failure refund",
+          analysis_job_id: "job_a",
+          idempotency_key: "refund:job_a",
+          metadata: {
+            reason: "analysis_job_failed",
+            error_code: "KATAGO_EXIT_NONZERO",
+            worker_id: "worker-a",
+            attempt_count: 2,
+          },
+        }),
+      ],
+      jobs: [job({ status: "failed" })],
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.issues.map(issue => issue.code)).not.toContain("FAILED_JOB_MISSING_REFUND");
+  });
+
+  it("fails duplicate or wrong-amount refunds for one job", () => {
+    const report = buildCreditLedgerAuditReport({
+      profiles: [profile({ credits: 4 })],
+      logs: [
+        log({
+          id: "log_signup",
+          amount: 2,
+          type: "signup_bonus",
+          analysis_job_id: null,
+          idempotency_key: "signup_bonus:user_a",
+        }),
+        log(),
+        log({
+          id: "log_refund_a",
+          amount: 1,
+          type: "refund",
+          idempotency_key: "refund:job_a",
+        }),
+        log({
+          id: "log_refund_b",
+          amount: 2,
+          type: "refund",
+          idempotency_key: "manual-refund:job_a",
+        }),
+      ],
+      jobs: [job({ status: "failed" })],
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.issues.map(issue => issue.code)).toEqual(expect.arrayContaining(["DUPLICATE_REFUND_LOG_FOR_JOB", "REFUND_AMOUNT_MISMATCH"]));
+  });
+
   it("fails when profile credits differ from the complete ledger sum", () => {
     const report = buildCreditLedgerAuditReport({
       profiles: [profile({ credits: 99 })],

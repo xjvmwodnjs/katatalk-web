@@ -23,7 +23,11 @@ import {
   analyzePostUserLimit,
   analyzeTimelineProgressGetUserLimit,
 } from "./middleware/apiRateLimit";
-import { logAnalysisEngineSnapshot, resolveCompletedJobMetaMock } from "./analysisEngineDeterminism";
+import {
+  logAnalysisEngineSnapshot,
+  publicAnalysisJobErrorMessage,
+  resolveCompletedJobMetaMock,
+} from "./analysisEngineDeterminism";
 import {
   requireAnalyzeEnqueueAllowed,
   shouldEnqueueAnalysisJobAsMock,
@@ -77,7 +81,7 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
   if (status === "failed") {
     return {
       ...base,
-      error: { message: row.error_message ?? "Analysis failed." },
+      error: { message: publicAnalysisJobErrorMessage(row.last_error_code) },
     };
   }
 

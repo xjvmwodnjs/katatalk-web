@@ -3,7 +3,11 @@ import * as creditService from "./creditService";
 import * as analysisEngines from "./worker/analysisEngines";
 import type { AnalysisJobDbRow } from "./creditService";
 import { runKatagoAnalysisDbPipeline } from "./worker/katagoAnalysisDbPipeline";
-import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
+import {
+  vitestAnalysisJobsStore,
+  vitestAnalysisRefundedJobsStore,
+  vitestSeedAnalysisJob,
+} from "./vitestSetup";
 
 function validKatagoWorkerResult(
   overrides: Record<string, unknown> = {}
@@ -113,10 +117,69 @@ describe("runKatagoAnalysisDbPipeline", () => {
     );
     expect(failedCall?.[1]).toEqual(
       expect.objectContaining({
-        error_message: expect.stringContaining("KATAGO_EXIT_NONZERO"),
+        error_message: "Analysis failed. Please try again.",
+        last_error_code: "KATAGO_EXIT_NONZERO",
       })
     );
     expect(onJobFailed).toHaveBeenCalled();
+  });
+
+  it("uses one atomic failure/refund command for a leased paid job", async () => {
+    vitestAnalysisJobsStore.clear();
+    vitestAnalysisRefundedJobsStore.clear();
+    vi.mocked(analysisEngines.analyzeSgfKatago).mockRejectedValue(
+      new Error("KATAGO_EXIT_NONZERO: exit 1")
+    );
+    const onJobFailed = vi.fn(async () => undefined);
+    const lease = { lockedBy: "worker-atomic", attemptCount: 1 };
+    vitestSeedAnalysisJob({
+      id: "kg-fail-atomic",
+      user_id: "user_a",
+      status: "running",
+      file_name: "g.sgf",
+      language: "ko",
+      credit_cost: 1,
+      credit_log_id: "00000000-0000-0000-0000-00000000aa01",
+      is_mock: false,
+      progress: 15,
+      result: null,
+      error_message: null,
+      completed_at: null,
+      locked_at: "2026-07-20T00:00:00.000Z",
+      locked_by: lease.lockedBy,
+      attempt_count: lease.attemptCount,
+      max_attempts: 3,
+      sgf_content: "(;SZ[19];B[pd])",
+      sgf_sha256: "x",
+      sgf_size_bytes: 10,
+    });
+    const row = vitestAnalysisJobsStore.get("kg-fail-atomic") as AnalysisJobDbRow;
+
+    await expect(
+      runKatagoAnalysisDbPipeline({
+        jobId: row.id,
+        row,
+        fileName: "g.sgf",
+        language: "ko",
+        lease,
+        onJobFailed,
+      })
+    ).resolves.toBe("failed");
+
+    expect(vitestAnalysisJobsStore.get(row.id)).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        last_error_code: "KATAGO_EXIT_NONZERO",
+        failure_worker_id: lease.lockedBy,
+        failure_attempt_count: lease.attemptCount,
+      })
+    );
+    expect(vitestAnalysisRefundedJobsStore.has(row.id)).toBe(true);
+    expect(onJobFailed).not.toHaveBeenCalled();
+    expect(creditService.updateAnalysisJobRow).not.toHaveBeenCalledWith(
+      row.id,
+      expect.objectContaining({ status: "failed" })
+    );
   });
 
   it("rejects mock-shaped katago result payload", async () => {
@@ -158,7 +221,8 @@ describe("runKatagoAnalysisDbPipeline", () => {
       );
     expect(failedCall?.[1]).toEqual(
       expect.objectContaining({
-        error_message: expect.stringContaining("ENGINE_MISMATCH_MOCK_RESULT"),
+        error_message: "Analysis failed. Please try again.",
+        last_error_code: "ENGINE_MISMATCH_MOCK_RESULT",
       })
     );
   });

@@ -6,13 +6,11 @@ import {
   updateAnalysisJobRow,
   updateAnalysisJobRowWithLease,
 } from "../creditService";
-import {
-  isLegacyMockResultPayload,
-  sanitizeAnalysisJobErrorMessage,
-} from "../analysisEngineDeterminism";
+import { isLegacyMockResultPayload } from "../analysisEngineDeterminism";
 import { assertKatagoResultQualityForCompletion } from "../katagoResultQualityGate";
 import { analyzeSgfKatago, readKatagoMaxVisits } from "./analysisEngines";
 import type { AnalysisWorkerJobOutcome } from "./analysisJobOutcome";
+import { finalizeAnalysisJobFailure } from "./finalizeAnalysisJobFailure";
 
 type LeasePatch = Parameters<typeof updateAnalysisJobRowWithLease>[2];
 
@@ -53,20 +51,13 @@ export async function runKatagoAnalysisDbPipeline(args: {
   try {
     const content = typeof row.sgf_content === "string" ? row.sgf_content : null;
     if (!content?.trim()) {
-      const r = await updateJobForPipeline(jobId, lease, {
-        status: "failed",
-        progress: null,
-        error_message: "MISSING_SGF_CONTENT: KataGo 분석에는 저장된 SGF 원문이 필요합니다.",
-        completed_at: new Date().toISOString(),
-        locked_at: null,
-        locked_by: null,
+      return finalizeAnalysisJobFailure({
+        jobId,
+        rawError: "MISSING_SGF_CONTENT: KataGo 분석에는 저장된 SGF 원문이 필요합니다.",
+        lease,
+        onLegacyJobFailed: onJobFailed,
+        logPrefix: "katagoAnalysisDbPipeline",
       });
-      if (!r.ok) {
-        console.warn("[katagoAnalysisDbPipeline] lease_lost skip missing_sgf failed/refund", { jobId });
-        return "lease_lost";
-      }
-      await onJobFailed?.();
-      return "failed";
     }
 
     const pr = await updateJobForPipeline(jobId, lease, { status: "running", progress: 15 });
@@ -189,30 +180,12 @@ export async function runKatagoAnalysisDbPipeline(args: {
     }
     return "completed";
   } catch (e) {
-    const message = sanitizeAnalysisJobErrorMessage(
-      e instanceof Error ? e.message : "Unknown error"
-    );
-    try {
-      const fr = await updateJobForPipeline(jobId, lease, {
-        status: "failed",
-        progress: null,
-        error_message: message,
-        completed_at: new Date().toISOString(),
-        locked_at: null,
-        locked_by: null,
-      });
-      if (!fr.ok) {
-        console.warn("[katagoAnalysisDbPipeline] lease_lost skip failed write/refund", { jobId });
-        return "lease_lost";
-      }
-    } catch (patchErr) {
-      console.error("[katagoAnalysisDbPipeline] failed to persist failure state", patchErr);
-    }
-    try {
-      await onJobFailed?.();
-    } catch (refundErr) {
-      console.error("[katagoAnalysisDbPipeline] onJobFailed refund error", refundErr);
-    }
-    return "failed";
+    return finalizeAnalysisJobFailure({
+      jobId,
+      rawError: e instanceof Error ? e.message : "ANALYSIS_FAILED: unknown error",
+      lease,
+      onLegacyJobFailed: onJobFailed,
+      logPrefix: "katagoAnalysisDbPipeline",
+    });
   }
 }

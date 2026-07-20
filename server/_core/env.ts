@@ -103,6 +103,17 @@ export function validateProductionDeploymentEnv(): void {
   requireProdNonEmpty("SUPABASE_URL", process.env.SUPABASE_URL);
   requireProdNonEmpty("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+  const analysisWorkerMode = requireProdNonEmpty(
+    "ANALYSIS_WORKER_MODE",
+    process.env.ANALYSIS_WORKER_MODE
+  ).toLowerCase();
+  if (analysisWorkerMode !== "external") {
+    throw new Error("운영(production)에서는 ANALYSIS_WORKER_MODE=external 만 허용됩니다.");
+  }
+  if (process.env.KATATALK_ATOMIC_ENQUEUE?.trim().toLowerCase() === "false") {
+    throw new Error("운영(production)에서는 KATATALK_ATOMIC_ENQUEUE=false 를 사용할 수 없습니다.");
+  }
+
   requireProdNonEmpty("LEMONSQUEEZY_API_KEY", process.env.LEMONSQUEEZY_API_KEY);
   requireProdNonEmpty("LEMONSQUEEZY_STORE_ID", process.env.LEMONSQUEEZY_STORE_ID);
   requireProdNonEmpty("LEMONSQUEEZY_WEBHOOK_SECRET", process.env.LEMONSQUEEZY_WEBHOOK_SECRET);

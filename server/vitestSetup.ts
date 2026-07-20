@@ -45,10 +45,35 @@ function isoNow() {
 
 /** Vitest 전용 in-memory analysis_jobs (실제 Supabase 대체) */
 export const vitestAnalysisJobsStore = new Map<string, Record<string, unknown>>();
+/** 원자 실패 RPC가 생성한 refund ledger를 job id 기준으로 추적하는 테스트 대역. */
+export const vitestAnalysisRefundedJobsStore = new Set<string>();
+/** 응답 유실 재시도 fixture용 RPC 호출 횟수. */
+export const vitestAtomicFailureRpcCalls = new Map<string, number>();
+/** Max-attempt atomic finalization declines quarantined for reconciliation. */
+export const vitestAnalysisFinalizationFailuresStore = new Map<
+  string,
+  {
+    leaseWorkerId: string | null;
+    leaseAttemptCount: number;
+    failureCode: string;
+    occurrenceCount: number;
+    resolved: boolean;
+  }
+>();
+
+function resolveVitestAnalysisFinalizationFailure(jobId: string): void {
+  const existing = vitestAnalysisFinalizationFailuresStore.get(jobId);
+  if (existing) {
+    vitestAnalysisFinalizationFailuresStore.set(jobId, { ...existing, resolved: true });
+  }
+}
 
 /** HTTP 테스트 등에서 DB 행을 직접 넣을 때 사용 */
 export function vitestSeedAnalysisJob(row: Record<string, unknown>) {
   const id = row.id as string;
+  vitestAnalysisRefundedJobsStore.delete(id);
+  vitestAtomicFailureRpcCalls.delete(id);
+  vitestAnalysisFinalizationFailuresStore.delete(id);
   vitestAnalysisJobsStore.set(id, {
     created_at: isoNow(),
     updated_at: isoNow(),
@@ -176,6 +201,188 @@ function legacyQueryBuilder(table: string) {
   return builder;
 }
 
+function simulatedPublicAnalysisErrorMessage(errorCode: string): string {
+  switch (errorCode) {
+    case "KATAGO_TIMEOUT":
+      return "Analysis timed out. Please try again.";
+    case "SGF_PARSE_FAILED":
+    case "KATAGO_QUERY_BUILD_FAILED":
+      return "The game record could not be analyzed.";
+    default:
+      return "Analysis failed. Please try again.";
+  }
+}
+
+function simulateFailAnalysisJobAndRefundRpc(args?: Record<string, unknown>): {
+  data: Record<string, unknown> | null;
+  error: { message: string } | null;
+} {
+  const jobId = String(args?.p_analysis_job_id ?? "");
+  const callCount = (vitestAtomicFailureRpcCalls.get(jobId) ?? 0) + 1;
+  vitestAtomicFailureRpcCalls.set(jobId, callCount);
+  if (jobId === "atomic-failure-rpc-error") {
+    return {
+      data: null,
+      error: { message: "atomic failure RPC simulated outage" },
+    };
+  }
+  if (jobId === "atomic-failure-response-lost" && callCount === 1) {
+    const row = vitestAnalysisJobsStore.get(jobId);
+    if (row) {
+      const cost = Number(row.credit_cost ?? 0);
+      const errorCode = String(args?.p_error_code ?? "ANALYSIS_FAILED");
+      if (cost > 0) vitestAnalysisRefundedJobsStore.add(jobId);
+      Object.assign(row, {
+        status: "failed",
+        progress: null,
+        result: null,
+        error_message: simulatedPublicAnalysisErrorMessage(errorCode),
+        last_error_code: errorCode,
+        completed_at: isoNow(),
+        locked_at: null,
+        locked_by: null,
+        next_retry_at: null,
+        failure_worker_id: args?.p_locked_by,
+        failure_attempt_count: args?.p_attempt_count,
+        updated_at: isoNow(),
+      });
+      resolveVitestAnalysisFinalizationFailure(jobId);
+    }
+    return { data: null, error: { message: "response lost after commit" } };
+  }
+
+  const workerId = String(args?.p_locked_by ?? "").trim();
+  const attemptCount = Number(args?.p_attempt_count);
+  if (!workerId || !Number.isInteger(attemptCount) || attemptCount < 1) {
+    return {
+      data: {
+        ok: false,
+        code: "INVALID_ARGUMENT",
+        duplicate: false,
+        refunded: false,
+      },
+      error: null,
+    };
+  }
+  const row = vitestAnalysisJobsStore.get(jobId);
+  if (!row) {
+    return {
+      data: { ok: false, code: "NOT_FOUND", duplicate: false, refunded: false },
+      error: null,
+    };
+  }
+  const cost = Number(row.credit_cost ?? 0);
+
+  if (row.status === "failed") {
+    const sameFinalizer = row.failure_worker_id === workerId && Number(row.failure_attempt_count) === attemptCount;
+    if (!sameFinalizer) {
+      return {
+        data: {
+          ok: false,
+          code: "ALREADY_FAILED",
+          duplicate: false,
+          refunded: false,
+        },
+        error: null,
+      };
+    }
+    if (cost > 0 && !vitestAnalysisRefundedJobsStore.has(jobId)) {
+      return {
+        data: {
+          ok: false,
+          code: "LEDGER_INVARIANT",
+          duplicate: true,
+          refunded: false,
+        },
+        error: null,
+      };
+    }
+    return {
+      data: {
+        ok: true,
+        code: "ALREADY_FAILED",
+        duplicate: true,
+        refunded: cost > 0,
+        credits: 10,
+      },
+      error: null,
+    };
+  }
+  if (row.status === "completed") {
+    return {
+      data: {
+        ok: false,
+        code: "ALREADY_COMPLETED",
+        duplicate: false,
+        refunded: false,
+      },
+      error: null,
+    };
+  }
+  if (row.status !== "running") {
+    return {
+      data: {
+        ok: false,
+        code: "INVALID_STATE",
+        duplicate: false,
+        refunded: false,
+      },
+      error: null,
+    };
+  }
+  if (row.locked_by !== workerId || Number(row.attempt_count) !== attemptCount) {
+    return {
+      data: {
+        ok: false,
+        code: "LEASE_LOST",
+        duplicate: false,
+        refunded: false,
+      },
+      error: null,
+    };
+  }
+  if (cost < 0 || (cost > 0 && !row.credit_log_id)) {
+    return {
+      data: {
+        ok: false,
+        code: "LEDGER_INVARIANT",
+        duplicate: false,
+        refunded: false,
+      },
+      error: null,
+    };
+  }
+
+  const refundPreexisting = vitestAnalysisRefundedJobsStore.has(jobId);
+  const errorCode = String(args?.p_error_code ?? "ANALYSIS_FAILED");
+  if (cost > 0) vitestAnalysisRefundedJobsStore.add(jobId);
+  Object.assign(row, {
+    status: "failed",
+    progress: null,
+    result: null,
+    error_message: simulatedPublicAnalysisErrorMessage(errorCode),
+    last_error_code: errorCode,
+    completed_at: isoNow(),
+    locked_at: null,
+    locked_by: null,
+    next_retry_at: null,
+    failure_worker_id: workerId,
+    failure_attempt_count: attemptCount,
+    updated_at: isoNow(),
+  });
+  resolveVitestAnalysisFinalizationFailure(jobId);
+  return {
+    data: {
+      ok: true,
+      code: cost === 0 ? "FAILED_NO_CHARGE" : refundPreexisting ? "FAILED_ALREADY_REFUNDED" : "FAILED_AND_REFUNDED",
+      duplicate: refundPreexisting,
+      refunded: cost > 0,
+      credits: 10,
+    },
+    error: null,
+  };
+}
+
 function simulateClaimNextAnalysisJobRpc(args?: Record<string, unknown>): {
   data: Record<string, unknown> | null;
   error: null;
@@ -194,17 +401,25 @@ function simulateClaimNextAnalysisJobRpc(args?: Record<string, unknown>): {
     const lockedMs = lockedAt ? new Date(lockedAt).getTime() : 0;
     const stale = !lockedAt || nowMs - lockedMs > staleSec * 1000;
     if (!stale) continue;
-    Object.assign(r, {
-      status: "failed",
-      progress: null,
-      error_message: "MAX_ATTEMPTS_EXCEEDED: worker lease exhausted",
-      last_error_code: "MAX_ATTEMPTS_EXCEEDED",
-      completed_at: isoNow(),
-      locked_at: null,
-      locked_by: null,
-      next_retry_at: null,
-      updated_at: isoNow(),
+    const jobId = String(r.id);
+    if (vitestAnalysisFinalizationFailuresStore.get(jobId)?.resolved === false) continue;
+    const finalization = simulateFailAnalysisJobAndRefundRpc({
+      p_analysis_job_id: r.id,
+      p_locked_by: r.locked_by,
+      p_attempt_count: r.attempt_count,
+      p_error_code: "MAX_ATTEMPTS_EXCEEDED",
+      p_error_message: "MAX_ATTEMPTS_EXCEEDED: worker lease exhausted",
     });
+    if (finalization.data?.ok !== true) {
+      const existing = vitestAnalysisFinalizationFailuresStore.get(jobId);
+      vitestAnalysisFinalizationFailuresStore.set(jobId, {
+        leaseWorkerId: typeof r.locked_by === "string" ? r.locked_by : null,
+        leaseAttemptCount: Number(r.attempt_count),
+        failureCode: String(finalization.data?.code ?? "UNKNOWN"),
+        occurrenceCount: (existing?.occurrenceCount ?? 0) + 1,
+        resolved: false,
+      });
+    }
   }
 
   const candidates = Array.from(vitestAnalysisJobsStore.entries()).filter(([, row]) => {
@@ -331,6 +546,9 @@ vi.mock("./_core/supabaseAdmin", () => {
           };
         }
         return { data: { ok: true, duplicate: false, credits: 10, log_id: "00000000-0000-0000-0000-00000000cc01" }, error: null };
+      }
+      if (name === "fail_analysis_job_and_refund_with_lease") {
+        return simulateFailAnalysisJobAndRefundRpc(args);
       }
       if (name === "claim_next_analysis_job") {
         return simulateClaimNextAnalysisJobRpc(args);

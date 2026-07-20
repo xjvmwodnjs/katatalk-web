@@ -63,6 +63,7 @@ describe("InMemoryAnalysisJobStore refund on mock failure", () => {
     expect(refundSpy).toHaveBeenCalledWith(refundUser, jobId, 1);
     const row = await creditService.getAnalysisJobRow(jobId);
     expect(row?.status).toBe("failed");
-    expect(row?.error_message).toContain("forced mock pipeline failure");
+    expect(row?.error_message).toBe("Analysis failed. Please try again.");
+    expect(row?.last_error_code).toBe("ANALYSIS_FAILED");
   });
 });

@@ -21,6 +21,8 @@ describe("validateProductionDeploymentEnv", () => {
     process.env.CLERK_SECRET_KEY = "sk_test_placeholder_not_real";
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service_role_placeholder";
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    delete process.env.KATATALK_ATOMIC_ENQUEUE;
     process.env.LEMONSQUEEZY_API_KEY = "lemon_key";
     process.env.LEMONSQUEEZY_STORE_ID = "123";
     process.env.LEMONSQUEEZY_WEBHOOK_SECRET = "whsec_placeholder_32chars______";
@@ -57,6 +59,30 @@ describe("validateProductionDeploymentEnv", () => {
     minimalProdBase();
     delete process.env.VITE_CLERK_PUBLISHABLE_KEY;
     expect(() => validateProductionDeploymentEnv()).toThrow(/VITE_CLERK_PUBLISHABLE_KEY/);
+  });
+
+  it("requires the external analysis worker in production", () => {
+    minimalProdBase();
+    process.env.ANALYSIS_WORKER_MODE = "inline";
+    expect(() => validateProductionDeploymentEnv()).toThrow(/ANALYSIS_WORKER_MODE=external/);
+
+    delete process.env.ANALYSIS_WORKER_MODE;
+    expect(() => validateProductionDeploymentEnv()).toThrow(/ANALYSIS_WORKER_MODE/);
+  });
+
+  it("rejects disabling atomic enqueue in production", () => {
+    minimalProdBase();
+    process.env.KATATALK_ATOMIC_ENQUEUE = "false";
+    expect(() => validateProductionDeploymentEnv()).toThrow(/KATATALK_ATOMIC_ENQUEUE=false/);
+  });
+
+  it("allows atomic enqueue when enabled or left at its safe default", () => {
+    minimalProdBase();
+    process.env.KATATALK_ATOMIC_ENQUEUE = "true";
+    expect(() => validateProductionDeploymentEnv()).not.toThrow();
+
+    delete process.env.KATATALK_ATOMIC_ENQUEUE;
+    expect(() => validateProductionDeploymentEnv()).not.toThrow();
   });
 
   it("passes with minimal valid production env", () => {

@@ -29,6 +29,10 @@ describe("processClaimedAnalysisJob (mock engine)", () => {
       result: null,
       error_message: null,
       completed_at: null,
+      locked_at: "2026-07-20T00:00:00.000Z",
+      locked_by: "worker-mock-test",
+      attempt_count: 1,
+      max_attempts: 3,
     });
 
     const jobRow: AnalysisJobDbRow = {
@@ -49,6 +53,10 @@ describe("processClaimedAnalysisJob (mock engine)", () => {
       sgf_content: "(;FF[4]GM[1]SZ[19])",
       sgf_sha256: "abc",
       sgf_size_bytes: 20,
+      locked_at: "2026-07-20T00:00:00.000Z",
+      locked_by: "worker-mock-test",
+      attempt_count: 1,
+      max_attempts: 3,
     };
 
     const p = processClaimedAnalysisJob(jobRow);

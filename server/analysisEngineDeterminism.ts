@@ -141,3 +141,22 @@ export function sanitizeAnalysisJobErrorMessage(raw: string, maxLen = 400): stri
   }
   return msg;
 }
+
+/** Stable terminal failure code stored separately from diagnostics. */
+export function analysisJobErrorCodeFromMessage(message: string): string {
+  const match = /^([A-Z][A-Z0-9_]{1,127})(?::|$)/.exec(message.trim());
+  return match?.[1] ?? "ANALYSIS_FAILED";
+}
+
+/** Allowlisted message safe to persist in user-readable analysis_jobs rows. */
+export function publicAnalysisJobErrorMessage(errorCode: string | null | undefined): string {
+  switch (errorCode) {
+    case "KATAGO_TIMEOUT":
+      return "Analysis timed out. Please try again.";
+    case "SGF_PARSE_FAILED":
+    case "KATAGO_QUERY_BUILD_FAILED":
+      return "The game record could not be analyzed.";
+    default:
+      return "Analysis failed. Please try again.";
+  }
+}

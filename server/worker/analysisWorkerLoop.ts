@@ -1,6 +1,9 @@
 import { ENV, isMockAnalysisAllowed, validateServerEnv } from "../_core/env";
 import type { AnalysisJobDbRow } from "../creditService";
-import { claimNextAnalysisJobRpc } from "../creditService";
+import {
+  assertAtomicFailureRefundRpcReady,
+  claimNextAnalysisJobRpc,
+} from "../creditService";
 import {
   assertKatagoPathsConfiguredOrThrow,
   assertKatagoWinratePerspectiveConfig,
@@ -260,6 +263,7 @@ export async function runAnalysisWorkerLoop(opts?: {
 export async function startAnalysisWorkerMain(): Promise<void> {
   validateServerEnv();
   assertAnalysisWorkerConcurrencyConfig(process.env);
+  await assertAtomicFailureRefundRpcReady();
   console.log(
     "[analysis-worker] startup env",
     buildAnalysisWorkerStartupEnvSnapshot(process.env)

@@ -2,10 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   analysisJobProcessingLeaseFromClaimedRow,
   claimNextAnalysisJobRpc,
+  failAnalysisJobAndRefundWithLease,
   heartbeatAnalysisJobLease,
   updateAnalysisJobRowWithLease,
 } from "./creditService";
-import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
+import {
+  vitestAnalysisFinalizationFailuresStore,
+  vitestAnalysisJobsStore,
+  vitestAnalysisRefundedJobsStore,
+  vitestAtomicFailureRpcCalls,
+  vitestSeedAnalysisJob,
+} from "./vitestSetup";
 
 function seedQueued(
   id: string,
@@ -33,6 +40,9 @@ function seedQueued(
 describe("claim_next_analysis_job (RPC)", () => {
   beforeEach(() => {
     vitestAnalysisJobsStore.clear();
+    vitestAnalysisRefundedJobsStore.clear();
+    vitestAnalysisFinalizationFailuresStore.clear();
+    vitestAtomicFailureRpcCalls.clear();
   });
 
   afterEach(() => {
@@ -150,7 +160,7 @@ describe("claim_next_analysis_job (RPC)", () => {
     expect(c?.id).toBe("still-good");
   });
 
-  it("fails stale running at max attempts without returning a claim row", async () => {
+  it("atomically fails and refunds stale running at max attempts", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2025-06-01T20:00:00.000Z"));
     vitestSeedAnalysisJob({
@@ -158,13 +168,79 @@ describe("claim_next_analysis_job (RPC)", () => {
       id: "dead-max",
       status: "running",
       locked_at: "2025-06-01T18:00:00.000Z",
+      locked_by: "dead-worker",
       attempt_count: 3,
       max_attempts: 3,
       created_at: "2024-01-01T00:00:00.000Z",
     });
     const c = await claimNextAnalysisJobRpc({ staleSeconds: 60 });
     expect(c).toBeNull();
-    expect((vitestAnalysisJobsStore.get("dead-max") as { status: string }).status).toBe("failed");
+    expect(vitestAnalysisJobsStore.get("dead-max")).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        failure_worker_id: "dead-worker",
+        failure_attempt_count: 3,
+      })
+    );
+    expect(vitestAnalysisRefundedJobsStore.has("dead-max")).toBe(true);
+  });
+
+  it("keeps a max-attempt job with a broken paid ledger running and unclaimable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-06-01T20:00:00.000Z"));
+    vitestSeedAnalysisJob({
+      ...baseJobFields,
+      id: "dead-max-broken-ledger",
+      status: "running",
+      credit_log_id: null,
+      locked_at: "2025-06-01T18:00:00.000Z",
+      locked_by: "dead-worker",
+      attempt_count: 3,
+      max_attempts: 3,
+      created_at: "2024-01-01T00:00:00.000Z",
+    });
+
+    await expect(claimNextAnalysisJobRpc({ staleSeconds: 60 })).resolves.toBeNull();
+    expect(vitestAnalysisJobsStore.get("dead-max-broken-ledger")).toEqual(
+      expect.objectContaining({
+        status: "running",
+        locked_by: "dead-worker",
+        attempt_count: 3,
+      })
+    );
+    expect(vitestAnalysisJobsStore.get("dead-max-broken-ledger")).not.toHaveProperty("failure_worker_id");
+    expect(vitestAnalysisRefundedJobsStore.has("dead-max-broken-ledger")).toBe(false);
+    expect(vitestAnalysisFinalizationFailuresStore.get("dead-max-broken-ledger")).toEqual({
+      leaseWorkerId: "dead-worker",
+      leaseAttemptCount: 3,
+      failureCode: "LEDGER_INVARIANT",
+      occurrenceCount: 1,
+      resolved: false,
+    });
+    expect(vitestAtomicFailureRpcCalls.get("dead-max-broken-ledger")).toBe(1);
+
+    await expect(claimNextAnalysisJobRpc({ staleSeconds: 60 })).resolves.toBeNull();
+    expect(vitestAtomicFailureRpcCalls.get("dead-max-broken-ledger")).toBe(1);
+
+    const damagedRow = vitestAnalysisJobsStore.get("dead-max-broken-ledger");
+    if (!damagedRow) throw new Error("expected seeded job");
+    damagedRow.credit_log_id = "00000000-0000-0000-0000-00000000aa99";
+    await expect(
+      failAnalysisJobAndRefundWithLease({
+        jobId: "dead-max-broken-ledger",
+        lease: { lockedBy: "dead-worker", attemptCount: 3 },
+        errorCode: "MAX_ATTEMPTS_EXCEEDED",
+        errorMessage: "Analysis failed. Please try again.",
+      })
+    ).resolves.toEqual({
+      ok: true,
+      code: "FAILED_AND_REFUNDED",
+      duplicate: false,
+      refunded: true,
+    });
+    expect(vitestAnalysisFinalizationFailuresStore.get("dead-max-broken-ledger")?.resolved).toBe(true);
+    expect(vitestAnalysisJobsStore.get("dead-max-broken-ledger")).toEqual(expect.objectContaining({ status: "failed" }));
+    expect(vitestAnalysisRefundedJobsStore.has("dead-max-broken-ledger")).toBe(true);
   });
 
   it("does not claim completed jobs", async () => {

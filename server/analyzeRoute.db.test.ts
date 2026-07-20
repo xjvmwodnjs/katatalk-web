@@ -323,7 +323,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(raw).not.toContain("FAILED_NO_LEAK_SGF_MARKER");
     const body = JSON.parse(raw) as { data?: unknown; error?: { message: string } };
     expect(body.data).toBeUndefined();
-    expect(body.error?.message).toBe("pipeline exploded");
+    expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
 
   it("GET completed normalizes DB status casing and parses stringified result", async () => {
@@ -419,7 +419,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.progress).toBe(0);
   });
 
-  it("GET failed returns error from DB", async () => {
+  it("GET failed returns an allowlisted public error instead of DB diagnostics", async () => {
     vitestSeedAnalysisJob({
       id: "job-fail",
       user_id: "user_a",
@@ -441,7 +441,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; error?: { message: string } };
     expect(body.success).toBe(true);
-    expect(body.error?.message).toBe("pipeline exploded");
+    expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
 
   it("POST /api/analyze inserts analysis_jobs row (queued)", async () => {
