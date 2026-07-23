@@ -101,7 +101,19 @@ const SUPPORTED_LANGUAGES = new Set<AnalysisJobLanguage>(["ko", "en", "zh", "ja"
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_SGF_FILE_BYTES, files: 1 },
+  limits: {
+    // Busboy emits `limit` when bytes reach fileSize, so MAX + 1 preserves the
+    // public contract that exactly MAX_SGF_FILE_BYTES is accepted.
+    fileSize: MAX_SGF_FILE_BYTES + 1,
+    files: 1,
+    fields: 1,
+    // Busboy raises partsLimit when the counter reaches the configured value,
+    // so two accepted parts (one file + language) require a sentinel of three.
+    parts: 3,
+    fieldSize: 32,
+    fieldNameSize: 32,
+    fieldNestingDepth: 0,
+  },
   fileFilter: (_req, file, cb) => {
     if (!file.originalname.toLowerCase().endsWith(".sgf")) {
       cb(
