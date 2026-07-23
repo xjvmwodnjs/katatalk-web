@@ -25,7 +25,8 @@
 - [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
-- [~] 2026-07-16 repository cleanup removed ignored `.tmp/`, `test-results/`, `dist/`, and `analysis_logs/`. Git delivery remains blocked by a 187-entry dirty worktree and an `EPERM` failure updating `.git/FETCH_HEAD`; reconcile cached `origin/master`, split commits, and push CI-verified work before release.
+- [x] 2026-07-24 production dependency remediation completed: locked install audit reports no known vulnerabilities, 81 files / 769 Vitest tests pass, the production build passes, and Playwright passes 9/9 in GitHub Actions run `30019630160`.
+- [x] Git delivery restored: scoped commits are pushed to `agent/atomic-failure-refund` and tracked in draft PR #1 with PostgreSQL, dependency-audit, quality, and E2E gates passing.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 
 ## 결제·법무

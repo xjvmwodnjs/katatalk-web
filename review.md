@@ -1,8 +1,8 @@
 # KataTalk 상용화 코드베이스 리뷰
 
-> 기준일: 2026-07-20
+> 기준일: 2026-07-24
 > 대상 저장소: `xjvmwodnjs/katatalk-web`
-> 기준 브랜치/커밋: `master` / `aeff52b10d6c589c718137d3d0a0acf920ab7cdb`
+> 기준 브랜치/구현 커밋: `agent/atomic-failure-refund` / `bd759d5`
 > 문서 목적: 현재 구현을 사실에 근거해 진단하고, 공개 유료 서비스로 전환하기 위한 작업 순서와 합격 기준을 단일 기준점으로 만든다.
 
 ---
@@ -21,16 +21,17 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | 초대형 유료 베타 | **조건부 NO-GO** | 아래 P0 중 과금·환불, 권한, 결제 수명주기, 규칙 정확성, 실제 E2E를 모두 닫은 뒤 재판정한다. |
 | 공개 유료 베타/GA | **NO-GO** | 보안·법무·운영 복구·장기 SLO·실사용 품질 증거가 부족하다. |
 
-### 공개 유료 출시를 막는 P0 요약
+### 공개 유료 출시 판단에 남은 P0 요약
 
 1. 실패 확정·환불 원자 명령과 PostgreSQL CI 게이트는 구현됐고 GitHub Actions에서 통과했다. 실제 Supabase 스테이징 증거는 아직 남아 있다.
 2. Supabase `SECURITY DEFINER` 권한 manifest와 SQL 거절 검사는 구현됐지만 실제 Supabase/PostgREST 스냅샷은 남아 있다.
-3. 프로덕션 의존성 감사에서 현재 34건이 검출되며, 그중 high가 17건이다.
-4. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
-5. KataGo 규칙이 일본식으로 고정되어 있으나 SGF의 `RU`를 해석하거나 거부하지 않는다.
-6. 마이그레이션 실행 경로는 단일화했지만 기존 운영 DB의 승인된 history baseline과 스테이징 리허설이 남아 있다.
-7. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
-8. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
+3. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
+4. KataGo 규칙이 일본식으로 고정되어 있으나 SGF의 `RU`를 해석하거나 거부하지 않는다.
+5. 마이그레이션 실행 경로는 단일화했지만 기존 운영 DB의 승인된 history baseline과 스테이징 리허설이 남아 있다.
+6. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
+7. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
+
+`COM-003`의 프로덕션 의존성 high/critical 게이트는 이번 변경에서 닫혔다. GitHub Actions의 깨끗한 고정 lockfile 설치와 프로덕션 감사에서 알려진 취약점이 검출되지 않았다.
 
 **첫 구현 작업은 `COM-001: 실패 확정 + 환불 원자화`로 잡는 것이 맞다.** 이 작업이 결제 서비스의 가장 중요한 불변식인 “돈을 냈는데 결과도 환불도 없는 상태”와 “환불받았는데 작업이 다시 성공하는 상태”를 동시에 막는다.
 
@@ -44,10 +45,10 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 항목 | 현재 값 |
 |---|---:|
-| Git 추적 파일 | 364개 (이번 변경 포함) |
-| TypeScript/TSX | 약 50,290줄 |
+| Git 추적 파일 | 380개 (이번 변경 포함) |
+| TypeScript/TSX | 275개 파일 / 약 51,429줄 |
 | Vitest 테스트 파일 | 81개 |
-| Vitest 테스트 수 | 766개 |
+| Vitest 테스트 수 | 769개 |
 | Playwright 시나리오 | 9개 |
 | Supabase SQL 마이그레이션 | 13개 (`001`~`013`) |
 | GitHub Actions 워크플로 | 3개 |
@@ -56,14 +57,14 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **PASS** | 컴파일 타입 오류 없음 |
-| Vitest | **PASS** | 81 files / 766 tests (전체 재실행 통과) |
-| 프로덕션 빌드 | **PASS** | Vite 클라이언트 + API + Worker 번들 |
-| Playwright Chromium | **PASS** | 9/9, 테스트/모의 분석 모드 |
-| 프로덕션 의존성 감사 | **FAIL** | critical 0, high 17, moderate 15, low 2 |
+| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음 |
+| Vitest | **GitHub CI PASS** | 81 files / 769 tests, 26.20초 |
+| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 3.63초 |
+| Playwright Chromium | **GitHub CI PASS** | 9/9, 27.4초, 테스트/모의 분석 모드 |
+| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 취약점 0 (`pnpm audit --prod --audit-level high`) |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성 gate 31초 통과 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성 gate 32초 통과 |
 
 `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -192,22 +193,26 @@ flowchart LR
 
 ### COM-003. 프로덕션 의존성 high/critical 0 만들기
 
-**현재 결과**
+**상태: GitHub CI 검증 완료 (2026-07-24)**
 
-- critical 0, high 17, moderate 15, low 2, 합계 34.
-- 직접 의존성 경로에는 `multer`, `express/path-to-regexp`, `drizzle-orm`, `axios`, `@clerk/clerk-react` 관련 항목이 포함된다.
+**적용 결과**
 
-**위험**
+- `axios 1.18.1`, `drizzle-orm 0.45.2`, `express 4.22.2`, `multer 2.2.0`, `@clerk/clerk-react 5.61.6`으로 안전 버전을 고정 또는 상향했다.
+- Express 5 전환에 따른 라우팅 호환성 변경은 섞지 않았다. Express 4 하위의 `path-to-regexp 0.1.13`과 Clerk 하위의 `js-cookie 3.0.7`만 경로가 제한된 override로 고정했다.
+- Multer 업그레이드와 함께 파일 1개, 일반 필드 1개, 총 multipart part 수, 필드 크기·이름·중첩 깊이를 제한했다.
+- Busboy의 경계 이벤트 의미를 반영해 공개 계약인 “정확히 1MiB는 허용, 1MiB+1 byte는 거절”을 보존했고, 정상 part 순서·중첩 필드·경계 크기 회귀 테스트를 추가했다.
 
-- 업로드 경로의 자원 고갈, 라우팅 ReDoS, 요청 위조/헤더 처리, 권한 검사 조합 등 인터넷 공개 서비스에서 무시하기 어려운 범주다.
-- 이미 CI에 high/critical 감사 게이트가 있으므로 현재 lockfile 상태라면 해당 잡이 실패할 가능성이 높다.
+**검증 근거**
 
-**개선 뼈대와 완료 조건**
+- GitHub Actions 실행 [`30019630160`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30019630160): 고정 lockfile 설치, production audit, 타입 검사, 81 files / 769 tests, 프로덕션 빌드, PostgreSQL 게이트, Playwright 9/9 모두 통과.
+- production audit 결과는 `No known vulnerabilities found`이며 기존 critical 0, high 17, moderate 15, low 2를 모두 제거했다.
+- 별도 보안 설계 검토에서 Express 4 유지, 제한된 override 범위, Multer/Busboy 경계 계약과 테스트를 재검증했다.
 
-- 직접 의존성을 먼저 안전 버전으로 올리고, 간접 의존성은 lockfile 재해결 또는 제한된 override로 정리한다.
-- 변경마다 734개 테스트, 빌드, 9개 E2E를 재실행한다.
-- 근본 수정 버전이 없는 항목은 실제 도달 가능성을 문서화하고, WAF/요청 제한 등 임시 완화와 만료일을 둔다.
-- 출시 브랜치에서 production audit의 high/critical이 0이어야 한다.
+**잔여 관리**
+
+- `@clerk/clerk-react`의 장기 `@clerk/react`/Core 3 전환은 인증 UI·세션 회귀를 포함한 별도 호환성 작업으로 진행한다. 현재 보안 게이트를 다시 열 이유는 아니다.
+- override는 상위 패키지가 안전한 하위 버전을 직접 채택하면 제거하고, Renovate/Dependabot 또는 정기 lockfile 갱신에서 production audit을 계속 강제한다.
+- 이번 완료는 저장소 의존성 게이트를 닫은 것이다. 실제 Clerk 장애·JWT·쿠키·결제 종단 검증은 COM-007/113의 스테이징 게이트로 남는다.
 
 ### COM-004. 결제 이벤트를 완전한 권리(entitlement) 상태 머신으로 만들기
 
@@ -622,7 +627,7 @@ ops/
 
 - COM-001 실패/환불 원자화와 reconciliation.
 - COM-002 함수 권한 검사와 migration CI.
-- COM-003 의존성 high/critical 0.
+- COM-003 의존성 high/critical 0 — GitHub CI 완료.
 - COM-005 SGF 규칙/메타데이터 정확성.
 - COM-006 단일 migration 경로.
 - COM-101/102 인증·polling DB 부하 제거.
@@ -707,7 +712,7 @@ ops/
 | 4 | COM-005 | P0 | SGF rules/metadata parser | Analysis | 없음 | golden SGF와 UI 정확성 테스트 |
 | 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
 | 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
-| 7 | COM-003 | P0 | dependency remediation | Platform | 없음 | prod high/critical 0 |
+| 7 | COM-003 | P0 | dependency remediation — GitHub CI 완료 | Platform | 없음 | 실행 30019630160에서 알려진 취약점 0 |
 | 8 | COM-106 | P1/P0 | Web/Worker env와 secret 분리 | Platform | 없음 | Worker 최소 비밀로 부팅 |
 | 9 | COM-004 | P0 | payment entitlement/reversal | Billing·DB | COM-001 패턴 | replay/refund/chargeback 통과 |
 | 10 | COM-008 | P0 | Worker liveness/queue TTL/refund | Worker·API | COM-001 | offline 시 과금 손실 0 |
@@ -832,6 +837,7 @@ ops/
 1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
 2. **COM-001 후속**: quarantine 관리자 조회·알림과 승인된 append-only reconciliation command를 만든다.
 3. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
+4. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
 
 ---
 
@@ -843,4 +849,4 @@ ops/
 - 아키텍처가 바뀌면 이 문서와 최신 `ARCHITECTURE.md`를 같은 PR에서 갱신한다.
 - 새 P0가 발견되면 일정에 맞춰 등급을 낮추지 않고 출시 범위를 조정한다.
 
-현재의 가장 합리적인 작업 순서는 **COM-001 → COM-002/006 → COM-005 → COM-101/102 → COM-003/106 → COM-004/008 → 실제 스테이징 E2E**다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.
+현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 → COM-101/102 → COM-106 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.
