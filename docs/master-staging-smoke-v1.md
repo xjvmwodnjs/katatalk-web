@@ -208,14 +208,27 @@ corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
 인증된 staging 전용 계정의 잔액 조회까지 확인하려면 아래처럼 실행한다. 이 단계도 checkout은 만들지 않는다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+SMOKE_BASE_URL=https://<staging-domain> \
+SMOKE_EXPECTED_ORIGIN=https://<staging-domain> \
+SMOKE_AUTH_TOKEN=<redacted> \
+corepack pnpm deploy:smoke
 ```
 
 Lemon checkout URL 생성까지 확인하는 smoke는 실제 결제 세션을 만들 수 있으므로 staging 전용 계정과 별도 승인 하에서만 실행한다. 카드 결제 완료나 webhook grant 검증은 이 자동 smoke에 포함하지 않는다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> SMOKE_CREATE_CHECKOUT=true corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+SMOKE_BASE_URL=https://<staging-domain> \
+SMOKE_EXPECTED_ORIGIN=https://<staging-domain> \
+SMOKE_AUTH_TOKEN=<redacted> \
+SMOKE_CREATE_CHECKOUT=true \
+corepack pnpm deploy:smoke
 ```
+
+credential을 포함한 smoke는 `SMOKE_EXPECTED_ORIGIN`과 대상 HTTPS origin이 정확히 같을 때만 시작한다. redirect는 따라가지 않고 실패 처리하며 응답에서 가져온 값이나 `Location`을 오류에 출력하지 않는다. 응답 본문은 64KiB를 넘으면 읽기를 중단하고 실패 처리한다. GitHub `Staging Smoke` workflow의 대상은 임의 dispatch 입력이 아니라 보호된 `staging` environment 변수 `STAGING_BASE_URL`로 고정한다. 같은 environment에 `SMOKE_AUTH_TOKEN`, `SMOKE_OPS_TOKEN` secret을 두되 두 secret은 설치 후 smoke step에만 주입한다.
+
+GitHub `staging` environment의 deployment branch는 `master`만 허용하고, required reviewer를 지정하며, self-review와 administrator bypass를 금지한다. 이 environment 정책이 실제 secret 경계다. workflow의 `master` ref guard는 우회나 오설정을 조기에 실패시키는 보조 방어일 뿐 environment 정책을 대신하지 않는다.
+
+로컬 공개 endpoint만 확인할 때는 `SMOKE_ALLOW_INSECURE_LOOPBACK=true`로 literal loopback HTTP를 허용할 수 있다. 이 예외에 credential을 결합할 수 없으며 `0.0.0.0`, 사설 IP, 일반 hostname은 허용하지 않는다.
 
 ### 4.3 Worker Service
 

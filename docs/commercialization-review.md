@@ -527,3 +527,12 @@ corepack pnpm credits:audit
 - The normal `POST /api/analyze` path now uses this RPC by default. `KATATALK_ATOMIC_ENQUEUE=false` is an emergency-only legacy rollback switch and must not be used for normal deployments.
 - Verified the change with credit RPC, DB-backed analysis route, and billing webhook tests: `3` files and `47` tests passed, followed by a successful TypeScript check.
 - Migration `011` is now a hard prerequisite for deploying this Web code. Apply `008 -> 009 -> 010 -> 011`, verify the function exists with service-role-only execute access, then deploy Web and Worker.
+
+### 2026-07-24: protected staging smoke trust boundary
+
+- Removed the dispatcher-controlled staging URL. The manual workflow now obtains both its target and expected origin from the protected `staging` environment variable `STAGING_BASE_URL`.
+- Credential-bearing smoke runs require an exact HTTPS origin match and reject credentials in URLs, paths, queries, fragments, lookalike origins, insecure targets, and every redirect before credentials can be forwarded. Secrets are injected only into the post-install smoke step.
+- Corrected both live contracts: `/healthz` requires `{ ok: true, status: "ok" }`, while `/readyz` requires `{ ok: true, status: "ready" }`.
+- Response-derived values are no longer emitted in diagnostics, and response bodies are capped at 64 KiB by both declared length and streamed bytes.
+- Added a two-server redirect trap and URL, health, 5xx, body-redaction/size, job-secret-scope, ref-guard, and workflow regression coverage. The focused 20 tests, full 82-file/789-test gate, TypeScript check, production build, formatting check, and secret scan passed locally.
+- This hardens the staging evidence path but does not create external evidence. A read-only GitHub API check on 2026-07-24 returned `404` for the repository's `staging` environment, so it still needs to be created with a protected `STAGING_BASE_URL`, dedicated Clerk smoke token, Ops token, deployment branches restricted to `master`, an independent reviewer, self-review prevention, and administrator bypass disabled. Deployed Web/Worker services and a successful manual workflow run are also still required.

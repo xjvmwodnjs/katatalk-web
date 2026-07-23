@@ -292,6 +292,18 @@ flowchart LR
 
 ### COM-007. 실제 상용 경로의 종단 증거 만들기
 
+**상태: 검증 중 — staging smoke의 credential 전송 경계와 health 계약을 고정했고, 보호된 실제 staging 실행 대기 (2026-07-24)**
+
+**이번 사전 게이트 증거**
+
+- GitHub workflow에서 사용자가 임의 `base_url`을 입력하는 경로를 제거하고, 보호된 `staging` environment의 `STAGING_BASE_URL`만 대상과 expected origin으로 사용한다. secret은 설치 후 smoke 단일 step에만 주입한다.
+- credential이 있으면 정확히 일치하는 HTTPS origin만 허용한다. 모든 redirect는 수동 차단하며, 오류에는 token, `Location`, 응답 유래 값을 넣지 않고 body는 64KiB로 제한한다.
+- `/healthz`의 `ok/ok`와 `/readyz`의 `ok/ready` 실제 계약을 각각 검증한다.
+- literal loopback HTTP는 credential이 없는 로컬 확인에서 명시적으로 켠 경우만 허용한다.
+- URL 우회, lookalike origin, redirect token forwarding, 5xx·잘못된 body, body size, job-level secret 부재, workflow ref 경계를 다루는 집중 테스트 20개와 전체 82개 파일·789개 테스트, TypeScript 검사, production build, secret scan이 통과했다.
+- GitHub `staging` environment에서 deployment branch를 `master`로 제한하고 required reviewer, self-review 금지, administrator bypass 금지를 설정해야 한다. workflow ref guard는 이 외부 정책의 보조 방어다.
+- 2026-07-24 읽기 전용 GitHub API 확인에서 `staging` environment가 아직 존재하지 않았다. 이를 생성해 위 보호 규칙, `STAGING_BASE_URL`, 전용 Clerk smoke token, Ops token을 설정해야 하므로 COM-007의 외부 증거는 아직 닫지 않는다.
+
 **현재 빠진 증거**
 
 - 실제 Clerk 로그인과 JWT 검증.
