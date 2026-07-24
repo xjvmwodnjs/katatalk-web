@@ -36,7 +36,7 @@ jobs:
       - name: Scan tracked files for committed secrets
         run: corepack pnpm ci:secrets
       - name: Check formatting
-        run: corepack pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/staging-smoke.yml .github/workflows/analysis-data-retention.yml package.json scripts/ci-secret-scan.ts scripts/db/*.mjs server/ciSecretScan.ts server/ciSecretScan.test.ts server/migrationRunner.test.ts docs/analysis-data-retention-runbook.md docs/database-migration-gate.md
+        run: corepack pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/staging-smoke.yml .github/workflows/staging-db-evidence.yml .github/workflows/analysis-data-retention.yml package.json scripts/ci-secret-scan.ts scripts/db/*.mjs server/ciSecretScan.ts server/ciSecretScan.test.ts server/migrationRunner.test.ts server/stagingEvidence.test.ts docs/analysis-data-retention-runbook.md docs/database-migration-gate.md
       - name: Type check
         run: corepack pnpm check
       - name: Unit tests
@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16-bookworm
+        image: postgres:16-bookworm@sha256:92620daddcd947f8d5ab5ba66e848702fe443d87fed30c4cea8e389fd78dfc55
         env:
           POSTGRES_PASSWORD: postgres
         options: >-

@@ -2,7 +2,7 @@
 
 > 기준일: 2026-07-24
 > 대상 저장소: `xjvmwodnjs/katatalk-web`
-> 기준 브랜치/구현 커밋: `agent/atomic-failure-refund` / `bd759d5`
+> 기준 브랜치/구현 상태: `agent/atomic-failure-refund` / 이번 리뷰 작업 트리
 > 문서 목적: 현재 구현을 사실에 근거해 진단하고, 공개 유료 서비스로 전환하기 위한 작업 순서와 합격 기준을 단일 기준점으로 만든다.
 
 ---
@@ -45,26 +45,26 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 항목 | 현재 값 |
 |---|---:|
-| Git 추적 파일 | 380개 (이번 변경 포함) |
-| TypeScript/TSX | 275개 파일 / 약 51,429줄 |
-| Vitest 테스트 파일 | 81개 |
-| Vitest 테스트 수 | 769개 |
+| Git 추적 파일 | 388개 (이번 변경 포함) |
+| TypeScript/TSX | 278개 파일 / 약 56,947줄 |
+| Vitest 테스트 파일 | 83개 |
+| Vitest 테스트 수 | 821개 |
 | Playwright 시나리오 | 9개 |
 | Supabase SQL 마이그레이션 | 13개 (`001`~`013`) |
-| GitHub Actions 워크플로 | 3개 |
+| GitHub Actions 워크플로 | 4개 |
 
 ### 실행 검증
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음 |
-| Vitest | **GitHub CI PASS** | 81 files / 769 tests, 26.20초 |
-| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 3.63초 |
+| TypeScript `tsc --noEmit` | **로컬 PASS, GitHub 재검증 대기** | 컴파일 타입 오류 없음 |
+| Vitest | **로컬 PASS, GitHub 재검증 대기** | 83 files / 821 tests, 직렬 실행 98.68초 |
+| 프로덕션 빌드 | **로컬 PASS, GitHub 재검증 대기** | Vite 클라이언트 + API + Worker 번들, 3.57초 |
 | Playwright Chromium | **GitHub CI PASS** | 9/9, 27.4초, 테스트/모의 분석 모드 |
 | 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 취약점 0 (`pnpm audit --prod --audit-level high`) |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성 gate 32초 통과 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **기존 GitHub CI PASS, 구조 게이트 재검증 대기** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성은 통과; 신규 구조 hash/history-absent fixture는 이번 CI에서 확인 |
 
 `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -165,7 +165,7 @@ flowchart LR
 
 ### COM-002. Supabase 함수 권한을 배포 게이트로 증명하기
 
-**상태: 검증 중 — `013`·권한 manifest·실제 SQL 42501 검사가 GitHub CI 통과, staging HTTP snapshot 대기 (2026-07-20)**
+**상태: 검증 중 — 읽기 전용 staging DB/HTTP 수집기, same-commit security/structure contract와 protected workflow 구현, 실제 staging 실행 대기 (2026-07-24)**
 
 **증거**
 
@@ -185,11 +185,19 @@ flowchart LR
 - service role만 가능한 호출을 anon 토큰으로 시도해 반드시 거절되는 통합 테스트를 만든다.
 - 새 DB에 `001 → 최신` 적용, 운영과 같은 구버전 DB에 `다음 migration` 적용을 CI에서 모두 수행한다.
 - vanilla PostgreSQL에서 `SET ROLE anon/authenticated` 실제 호출이 SQLSTATE `42501`로 거절되는지 검사하고 catalog/ACL snapshot을 artifact로 남긴다.
+- 실제 staging collector는 단일 `REPEATABLE READ READ ONLY` transaction에서 migration history, 11개 RPC, 6개 table, `public` schema의 direct/effective ACL과 RLS만 읽는다. 대상에서 baseline을 만들거나 migration·테스트 SQL·write RPC를 실행하지 않는다.
+- fresh와 `011 → 013` upgrade DB의 canonical catalog hash가 일치할 때만 같은 커밋에 묶인 expected contract를 CI artifact로 만든다. staging 관찰값을 expected로 자동 승인하는 경로는 두지 않는다.
+- 함수 본문, relation persistence/replica identity/options, column default/collation, constraint, index, RLS policy 식, trigger 정의는 DB 내부 hash·정규화 catalog로 비교하고 독립 composite를 포함한 예상 밖 public custom type도 거부한다. deparser 설정과 non-pretty 출력을 고정하고 PostgreSQL major도 expected contract와 일치시킨다. SECURITY DEFINER 본문, table persistence 또는 독립 composite type만 바꾼 mutation fixture가 좁은 권한 hash를 통과해도 application structure hash에서 반드시 실패해야 한다.
+- collector는 실제 clean checkout과 주장 커밋, expected-contract 파일 digest를 대조하고, direct/pooler DB identity와 HTTP origin이 같은 Supabase project인지 보호된 승인 hash까지 포함해 확인한다.
+- anon `401/42501`, Supabase authenticated user `403/42501`만 성공으로 인정하는 읽기 전용 PostgREST probe를 둔다. redirect, 2xx, 404/PGRST202, 5xx와 잘못된 JWT는 모두 실패한다.
+- evidence artifact에는 boolean/count/hash와 고정 failure code만 남기고 DB 접속정보, key/JWT, row data, 함수/policy 원문, raw 오류 본문과 예상 밖 role 이름을 배제한다. 실행별 고유 임시 파일을 atomic rename하고 기존 PASS를 덮어쓰지 않는다.
+- master 전용 수동 workflow가 immutable digest로 고정한 공식 action과 PostgreSQL 16 image를 사용해 폐기 가능한 DB에서 same-commit contract를 생성하고 정확한 파일 digest를 보호된 `staging` job에 넘긴다. DB/HTTP credential은 collector step에만 주입한다.
 
 **완료 조건**
 
 - 실제 스테이징/운영 DB의 마이그레이션 이력과 함수 권한 스냅샷이 릴리스 증거로 저장된다.
 - 권한 diff가 하나라도 있으면 배포가 중단된다.
+- 동일 커밋 CI의 `expected-staging-db-contract.json`과 protected staging DB/HTTP 수집 결과가 일치한다. JWT는 최근 1시간 발급·5분 이상 잔여·최대 2시간 수명만 허용하며 실행 직전 rotation하고, 장기적으로 GitHub OIDC token broker로 대체한다. 현재 실제 staging environment·DB credential·짧은 수명 Supabase authenticated JWT가 없어 이 외부 증거는 아직 남아 있다.
 
 ### COM-003. 프로덕션 의존성 high/critical 0 만들기
 
@@ -269,7 +277,7 @@ flowchart LR
 
 ### COM-006. 마이그레이션을 재현 가능한 단일 경로로 만들기
 
-**상태: 검증 중 — checksum 이력 runner와 PostgreSQL 16 CI 통과, 운영 baseline 승인 대기 (2026-07-20)**
+**상태: 검증 중 — checksum runner와 same-commit read-only evidence contract 구현, 실제 staging 비교·기존 운영 baseline 승인 대기 (2026-07-24)**
 
 **문제**
 

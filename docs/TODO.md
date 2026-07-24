@@ -154,4 +154,4 @@
 
 ## Database migration gate
 
-- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 및 GitHub PostgreSQL 16 CI 통과; staging Supabase catalog/HTTP snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.
+- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 및 GitHub PostgreSQL 16 CI 통과. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.

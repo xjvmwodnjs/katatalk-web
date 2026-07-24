@@ -27,6 +27,7 @@
     "credits:audit": "tsx scripts/credit-ledger-audit.ts",
     "data:retention": "tsx scripts/analysis-data-retention.ts",
     "db:migrate:supabase": "node scripts/db/migrate.mjs",
+    "db:evidence:staging": "node scripts/db/collect-staging-evidence.mjs",
     "test:db:migrations": "node scripts/db/ci-gate.mjs",
     "db:legacy-mysql": "drizzle-kit generate && drizzle-kit migrate",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"

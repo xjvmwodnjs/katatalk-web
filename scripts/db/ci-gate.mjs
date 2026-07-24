@@ -12,12 +12,21 @@ import {
   runSqlAsync,
   runSqlExpectingFailure,
 } from "./postgres.mjs";
+import { collectStagingCatalog } from "./stagingEvidenceCatalog.mjs";
+import {
+  buildDatabaseFixtureEvidence,
+  buildExpectedContract,
+  validateMigrationHistory,
+  validateSecurityCatalog,
+} from "./stagingEvidenceCore.mjs";
 
 const databases = {
   maintenance: "postgres",
   fresh: "katatalk_fresh",
   upgrade: "katatalk_upgrade",
   guard: "katatalk_migration_guard",
+  structureGuard: "katatalk_structure_guard",
+  historyGuard: "katatalk_history_guard",
 };
 
 const artifactDirectory = resolve(
@@ -286,28 +295,221 @@ WHERE version = 1;`,
   throw new Error("Migration checksum drift was accepted");
 }
 
-function securitySnapshot(database) {
-  const sql = `SELECT pg_catalog.jsonb_pretty(
-  pg_catalog.jsonb_agg(
-    pg_catalog.jsonb_build_object(
-      'signature', p.oid::pg_catalog.regprocedure::text,
-      'owner', pg_catalog.pg_get_userbyid(p.proowner),
-      'security_definer', p.prosecdef,
-      'config', p.proconfig,
-      'acl', p.proacl
-    )
-    ORDER BY p.oid::pg_catalog.regprocedure::text
+function sourceCommitSha() {
+  const candidate = (
+    process.env.GITHUB_SHA ||
+    process.env.KATATALK_EVIDENCE_COMMIT_SHA ||
+    ""
   )
-)
-FROM pg_catalog.pg_proc AS p
-JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public' AND p.prosecdef;`;
-  return runSql({
+    .trim()
+    .toLowerCase();
+  return /^[0-9a-f]{40,64}$/.test(candidate) ? candidate : null;
+}
+
+function collectDatabaseFixture(database, manifest) {
+  section(`read-only security evidence on ${database}`);
+  const observation = collectStagingCatalog({ database });
+  const catalogValidation = validateSecurityCatalog(observation.catalog);
+  const migrationValidation = validateMigrationHistory(
+    observation.history,
+    manifest,
+    {
+      historyPresent: catalogValidation.normalized.historyPresent === true,
+      applicationObjectCount:
+        catalogValidation.normalized.applicationObjectCount ?? 0,
+    }
+  );
+  const failureCodes = [
+    ...catalogValidation.failureCodes,
+    ...migrationValidation.failureCodes,
+  ];
+  if (failureCodes.length > 0) {
+    throw new Error(
+      `Read-only security evidence failed: ${[...new Set(failureCodes)].join(
+        ", "
+      )}`
+    );
+  }
+  return {
+    catalogValidation,
+    migrationValidation,
+    artifact: buildDatabaseFixtureEvidence({
+      commitSha: sourceCommitSha(),
+      manifest,
+      catalogValidation,
+      migrationValidation,
+    }),
+  };
+}
+
+function verifyStructuralDriftGuard(database, manifest, expectedEvidence) {
+  section("application structural drift guard");
+  const before = collectDatabaseFixture(database, manifest);
+  if (
+    before.catalogValidation.canonicalSha256 !==
+      expectedEvidence.catalogValidation.canonicalSha256 ||
+    before.catalogValidation.structureSha256 !==
+      expectedEvidence.catalogValidation.structureSha256
+  ) {
+    throw new Error(
+      "Structural drift fixture did not start from the expected contract"
+    );
+  }
+
+  runSql({
     database,
-    sql,
-    label: "Security catalog snapshot",
-    tuplesOnly: true,
-  }).stdout.trim();
+    label: "Inject table persistence drift",
+    sql: `ALTER TABLE public.analysis_worker_instances SET UNLOGGED;`,
+  });
+  const persistenceDrift = collectDatabaseFixture(database, manifest);
+  if (
+    persistenceDrift.catalogValidation.canonicalSha256 !==
+    before.catalogValidation.canonicalSha256
+  ) {
+    throw new Error(
+      "Narrow security catalog unexpectedly detected persistence-only drift"
+    );
+  }
+  if (
+    persistenceDrift.catalogValidation.structureSha256 ===
+    before.catalogValidation.structureSha256
+  ) {
+    throw new Error(
+      "Application structure fingerprint accepted table persistence drift"
+    );
+  }
+  runSql({
+    database,
+    label: "Restore table persistence",
+    sql: `ALTER TABLE public.analysis_worker_instances SET LOGGED;`,
+  });
+  const restored = collectDatabaseFixture(database, manifest);
+  if (
+    restored.catalogValidation.canonicalSha256 !==
+      before.catalogValidation.canonicalSha256 ||
+    restored.catalogValidation.structureSha256 !==
+      before.catalogValidation.structureSha256
+  ) {
+    throw new Error(
+      "Structural drift fixture did not return to the expected contract"
+    );
+  }
+
+  runSql({
+    database,
+    label: "Inject independent composite type drift",
+    sql: `CREATE TYPE public.katatalk_unexpected_composite AS (
+  value text
+);`,
+  });
+  const compositeTypeDrift = collectDatabaseFixture(database, manifest);
+  if (
+    compositeTypeDrift.catalogValidation.canonicalSha256 !==
+    before.catalogValidation.canonicalSha256
+  ) {
+    throw new Error(
+      "Narrow security catalog unexpectedly detected composite-type-only drift"
+    );
+  }
+  if (
+    compositeTypeDrift.catalogValidation.structureSha256 ===
+      before.catalogValidation.structureSha256 ||
+    !compositeTypeDrift.catalogValidation.failureCodes.includes(
+      "UNEXPECTED_APPLICATION_OBJECT"
+    ) ||
+    !compositeTypeDrift.catalogValidation.normalized.structure.unexpectedTypes.includes(
+      "public.katatalk_unexpected_composite"
+    )
+  ) {
+    throw new Error(
+      "Application structure fingerprint accepted independent composite type drift"
+    );
+  }
+  runSql({
+    database,
+    label: "Restore independent composite type drift",
+    sql: `DROP TYPE public.katatalk_unexpected_composite;`,
+  });
+  const compositeTypeRestored = collectDatabaseFixture(database, manifest);
+  if (
+    compositeTypeRestored.catalogValidation.canonicalSha256 !==
+      before.catalogValidation.canonicalSha256 ||
+    compositeTypeRestored.catalogValidation.structureSha256 !==
+      before.catalogValidation.structureSha256
+  ) {
+    throw new Error(
+      "Composite type drift fixture did not return to the expected contract"
+    );
+  }
+
+  runSql({
+    database,
+    label: "Inject SECURITY DEFINER function body drift",
+    sql: `CREATE OR REPLACE FUNCTION public.ensure_profile_with_signup_bonus(
+  p_user_id text,
+  p_email text,
+  p_name text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function_body_drift$
+BEGIN
+  RETURN pg_catalog.jsonb_build_object('ok', true);
+END;
+$function_body_drift$;`,
+  });
+
+  const after = collectDatabaseFixture(database, manifest);
+  if (
+    after.catalogValidation.canonicalSha256 !==
+    before.catalogValidation.canonicalSha256
+  ) {
+    throw new Error(
+      "Narrow security catalog unexpectedly detected body-only drift"
+    );
+  }
+  if (
+    after.catalogValidation.structureSha256 ===
+    before.catalogValidation.structureSha256
+  ) {
+    throw new Error(
+      "Application structure fingerprint accepted SECURITY DEFINER body drift"
+    );
+  }
+}
+
+function verifyMissingHistoryGuard(database, manifest) {
+  section("missing migration history guard");
+  runSql({
+    database,
+    label: "Create untracked application schema",
+    sql: `CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE public.preexisting_schema_marker (
+  id text PRIMARY KEY
+);`,
+  });
+  const observation = collectStagingCatalog({ database });
+  const catalogValidation = validateSecurityCatalog(observation.catalog);
+  const migrationValidation = validateMigrationHistory(
+    observation.history,
+    manifest,
+    {
+      historyPresent: catalogValidation.normalized.historyPresent === true,
+      applicationObjectCount:
+        catalogValidation.normalized.applicationObjectCount ?? 0,
+    }
+  );
+  if (
+    !migrationValidation.failureCodes.includes("BASELINE_REQUIRED") ||
+    migrationValidation.failureCodes.includes("DATABASE_UNINITIALIZED")
+  ) {
+    throw new Error(
+      "Existing schema without migration history did not fail as baseline-required"
+    );
+  }
 }
 
 async function main() {
@@ -343,8 +545,10 @@ async function main() {
     migrate(databases.upgrade, 11);
     runFile(databases.upgrade, "supabase/tests/upgrade_011_seed.sql");
     migrate(databases.upgrade);
+    migrate(databases.structureGuard);
 
     verifyMigrationDriftGuard(databases.guard);
+    verifyMissingHistoryGuard(databases.historyGuard, manifest);
 
     for (const database of [databases.fresh, databases.upgrade]) {
       runFile(database, "supabase/tests/security_contract.sql");
@@ -358,19 +562,45 @@ async function main() {
     runFile(databases.upgrade, "supabase/tests/upgrade_assertions.sql");
     await verifyConcurrency(databases.fresh);
 
-    section("fresh/upgrade schema and ACL equivalence");
-    const freshSchema = normalizeSchemaDump(dumpSchema(databases.fresh));
-    const upgradeSchema = normalizeSchemaDump(dumpSchema(databases.upgrade));
-    writeFileSync(
-      resolve(artifactDirectory, "fresh-schema.sql"),
-      `${freshSchema}\n`
+    const freshEvidence = collectDatabaseFixture(databases.fresh, manifest);
+    const upgradeEvidence = collectDatabaseFixture(databases.upgrade, manifest);
+    if (
+      freshEvidence.catalogValidation.canonicalSha256 !==
+      upgradeEvidence.catalogValidation.canonicalSha256
+    ) {
+      throw new Error(
+        "Fresh and 011-upgrade security catalog fingerprints differ"
+      );
+    }
+    if (
+      freshEvidence.catalogValidation.structureSha256 !==
+      upgradeEvidence.catalogValidation.structureSha256
+    ) {
+      throw new Error(
+        "Fresh and 011-upgrade application structure fingerprints differ"
+      );
+    }
+    verifyStructuralDriftGuard(
+      databases.structureGuard,
+      manifest,
+      freshEvidence
     );
-    writeFileSync(
-      resolve(artifactDirectory, "upgrade-schema.sql"),
-      `${upgradeSchema}\n`
+
+    section("fresh/upgrade schema equivalence");
+    const freshSchema = normalizeSchemaDump(
+      dumpSchema(databases.fresh, {
+        schema: "public",
+        noAcl: true,
+      })
+    );
+    const upgradeSchema = normalizeSchemaDump(
+      dumpSchema(databases.upgrade, {
+        schema: "public",
+        noAcl: true,
+      })
     );
     if (freshSchema !== upgradeSchema) {
-      throw new Error("Fresh and 011-upgrade schema/ACL dumps differ");
+      throw new Error("Fresh and 011-upgrade schema dumps differ");
     }
 
     const schemaChecksum = createHash("sha256")
@@ -381,8 +611,33 @@ async function main() {
       `${schemaChecksum}\n`
     );
     writeFileSync(
+      resolve(artifactDirectory, "fresh-staging-db-evidence.json"),
+      `${JSON.stringify(freshEvidence.artifact, null, 2)}\n`
+    );
+    writeFileSync(
+      resolve(artifactDirectory, "upgrade-staging-db-evidence.json"),
+      `${JSON.stringify(upgradeEvidence.artifact, null, 2)}\n`
+    );
+    writeFileSync(
       resolve(artifactDirectory, "rpc-security-snapshot.json"),
-      `${securitySnapshot(databases.fresh)}\n`
+      `${JSON.stringify(freshEvidence.artifact.database.security, null, 2)}\n`
+    );
+    writeFileSync(
+      resolve(artifactDirectory, "expected-staging-db-contract.json"),
+      `${JSON.stringify(
+        buildExpectedContract({
+          commitSha: sourceCommitSha(),
+          manifest,
+          securityCatalogSha256:
+            freshEvidence.catalogValidation.canonicalSha256,
+          applicationStructureSha256:
+            freshEvidence.catalogValidation.structureSha256,
+          serverMajor:
+            freshEvidence.catalogValidation.normalized.transaction.serverMajor,
+        }),
+        null,
+        2
+      )}\n`
     );
     writeFileSync(
       resolve(artifactDirectory, "migration-manifest.json"),
@@ -401,6 +656,8 @@ async function main() {
     summary.completedAt = new Date().toISOString();
     summary.migrations = manifest.length;
     summary.schemaChecksumSha256 = schemaChecksum;
+    summary.securityCatalogSha256 =
+      freshEvidence.catalogValidation.canonicalSha256;
     writeFileSync(
       resolve(artifactDirectory, "summary.json"),
       `${JSON.stringify(summary, null, 2)}\n`

@@ -1,0 +1,98 @@
+name: Staging database evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-database-evidence
+  cancel-in-progress: false
+
+jobs:
+  expected-contract:
+    name: Build same-commit expected contract
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-bookworm@sha256:92620daddcd947f8d5ab5ba66e848702fe443d87fed30c4cea8e389fd78dfc55
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    outputs:
+      contract-sha256: ${{ steps.contract.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Build expected contract from disposable PostgreSQL
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+          KATATALK_DB_GATE_CONFIRM: ephemeral-postgres
+          DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/database-gate
+        run: node scripts/db/ci-gate.mjs
+      - name: Record expected contract digest
+        id: contract
+        shell: bash
+        run: |
+          contract="${RUNNER_TEMP}/database-gate/expected-staging-db-contract.json"
+          test -f "${contract}"
+          echo "sha256=$(sha256sum "${contract}" | cut -d ' ' -f 1)" >> "${GITHUB_OUTPUT}"
+      - name: Upload same-commit expected contract
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: expected-staging-db-contract
+          path: ${{ runner.temp }}/database-gate/expected-staging-db-contract.json
+          if-no-files-found: error
+          retention-days: 1
+
+  staging-evidence:
+    name: Collect read-only staging evidence
+    needs: expected-contract
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Download same-commit expected contract
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: expected-staging-db-contract
+          path: ${{ runner.temp }}/expected-contract
+      - name: Collect sanitized read-only evidence
+        env:
+          PGHOST: ${{ secrets.STAGING_PGHOST }}
+          PGPORT: ${{ secrets.STAGING_PGPORT }}
+          PGUSER: ${{ secrets.STAGING_PGUSER }}
+          PGPASSWORD: ${{ secrets.STAGING_PGPASSWORD }}
+          PGDATABASE: postgres
+          PGSSLMODE: verify-full
+          KATATALK_DB_EVIDENCE_CONFIRM: read-only-staging
+          KATATALK_EXPECTED_DB_CONTRACT: ${{ runner.temp }}/expected-contract/expected-staging-db-contract.json
+          KATATALK_EXPECTED_DB_CONTRACT_SHA256: ${{ needs.expected-contract.outputs.contract-sha256 }}
+          KATATALK_EXPECTED_TARGET_SHA256: ${{ vars.STAGING_SUPABASE_PROJECT_SHA256 }}
+          KATATALK_EVIDENCE_COMMIT_SHA: ${{ github.sha }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          STAGING_SUPABASE_AUTH_JWT: ${{ secrets.STAGING_SUPABASE_AUTH_JWT }}
+          KATATALK_STAGING_EVIDENCE_PATH: ${{ runner.temp }}/staging-evidence/staging-database-evidence.json
+        run: node scripts/db/collect-staging-evidence.mjs
+      - name: Upload sanitized staging evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-database-evidence
+          path: ${{ runner.temp }}/staging-evidence/staging-database-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14

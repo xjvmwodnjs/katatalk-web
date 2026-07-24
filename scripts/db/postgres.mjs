@@ -2,6 +2,34 @@ import { spawn, spawnSync } from "node:child_process";
 
 const DEFAULT_MAX_BUFFER = 32 * 1024 * 1024;
 
+function postgresChildEnvironment() {
+  const allowedNames = new Set([
+    "COMSPEC",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "PATH",
+    "PATHEXT",
+    "Path",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR",
+    "POSTGRES_CONTAINER_ID",
+    "PSQL_BIN",
+    "PG_DUMP_BIN",
+  ]);
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) =>
+        allowedNames.has(name) ||
+        name.startsWith("PG") ||
+        name.startsWith("DOCKER_")
+    )
+  );
+}
+
 function requireSafeDatabaseName(database) {
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(database)) {
     throw new Error(
@@ -28,7 +56,7 @@ function postgresCommand(tool, database, extraArgs = []) {
         ...(safeDatabase ? ["--dbname", safeDatabase] : []),
         ...extraArgs,
       ],
-      env: process.env,
+      env: postgresChildEnvironment(),
     };
   }
 
@@ -36,7 +64,7 @@ function postgresCommand(tool, database, extraArgs = []) {
     tool === "psql"
       ? process.env.PSQL_BIN || "psql"
       : process.env.PG_DUMP_BIN || tool;
-  const env = { ...process.env };
+  const env = postgresChildEnvironment();
   if (safeDatabase) env.PGDATABASE = safeDatabase;
   return { command, args: extraArgs, env };
 }
@@ -139,11 +167,13 @@ export function runSqlAsync({
   });
 }
 
-export function dumpSchema(database) {
+export function dumpSchema(database, { noAcl = false, schema } = {}) {
   const invocation = postgresCommand("pg_dump", database, [
     "--schema-only",
     "--no-owner",
     "--no-comments",
+    ...(noAcl ? ["--no-acl"] : []),
+    ...(schema ? [`--schema=${schema}`] : []),
   ]);
   const result = spawnSync(invocation.command, invocation.args, {
     cwd: process.cwd(),
@@ -153,7 +183,10 @@ export function dumpSchema(database) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0)
-    throw commandFailure(`Schema dump for ${database}`, result);
+    throw commandFailure(`Schema dump for ${database}`, {
+      ...result,
+      stdout: "",
+    });
   return result.stdout;
 }
 
@@ -168,4 +201,4 @@ export function normalizeSchemaDump(dump) {
     .trim();
 }
 
-export { requireSafeDatabaseName };
+export { postgresChildEnvironment, requireSafeDatabaseName };

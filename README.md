@@ -526,7 +526,7 @@ order by created_at desc;
 - [`012_atomic_failure_refund.sql`](supabase/migrations/012_atomic_failure_refund.sql) — lease-fenced 실패 확정·환불과 quarantine 원자화
 - [`013_harden_security_definer_functions.sql`](supabase/migrations/013_harden_security_definer_functions.sql) — 11개 민감 RPC의 owner, `search_path`, ACL 및 관련 table ACL 고정
 
-파일을 골라 수동 실행하지 말고 반드시 `001 → 013` 숫자 순서를 사용한다. 새 runner와 실제 PostgreSQL gate는 [database migration gate](docs/database-migration-gate.md)를 따른다.
+파일을 골라 수동 실행하지 말고 반드시 `001 → 013` 숫자 순서를 사용한다. 새 runner와 실제 PostgreSQL gate는 [database migration gate](docs/database-migration-gate.md)를 따른다. 실제 staging 권한 증거는 SQL Editor 결과를 복사하는 대신 같은 커밋의 CI expected contract와 `pnpm db:evidence:staging` 읽기 전용 collector로 수집한다.
 
 ### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
 
@@ -581,4 +581,4 @@ select has_function_privilege('service_role', 'public.ensure_profile_with_signup
 
 ## Database migration gate
 
-Supabase migration은 반드시 `001 → 002 → … → 013` 숫자순으로 적용합니다. `pnpm db:migrate:supabase`는 `PG*` 환경변수 또는 CI container를 사용하며, 이력 없는 기존 DB는 reviewed baseline이 없으면 fail-closed 됩니다. `pnpm test:db:migrations`는 명시적으로 확인한 폐기 가능 container에서만 fresh `001→013`, upgrade `011→012→013`, checksum drift, ACL/42501, rollback·quarantine·동시 lock wait 및 schema/ACL equivalence를 검증하고 artifact를 보존합니다. `013`은 11개 SECURITY DEFINER 함수의 owner/search_path=`pg_catalog`/ACL과 table ACL을 고정합니다. 상세 내용과 기존 운영 DB 도입 제한은 [database-migration-gate](docs/database-migration-gate.md)를 참고하세요.
+Supabase migration은 반드시 `001 → 002 → … → 013` 숫자순으로 적용합니다. `pnpm db:migrate:supabase`는 `PG*` 환경변수 또는 CI container를 사용하며, 이력 없는 기존 DB는 reviewed baseline이 없으면 fail-closed 됩니다. `pnpm test:db:migrations`는 명시적으로 확인한 폐기 가능 container에서만 fresh `001→013`, upgrade `011→012→013`, checksum drift, ACL/42501, rollback·quarantine·동시 lock wait 및 schema/ACL/함수 본문 구조 동등성을 검증하고 정제된 artifact를 보존합니다. `013`은 11개 SECURITY DEFINER 함수의 owner/search_path=`pg_catalog`/ACL과 table ACL을 고정합니다. 실제 staging은 master 전용 `Staging database evidence` workflow가 same-commit contract, clean checkout, DB↔HTTP Supabase project binding, read-only catalog와 PostgREST 거절을 검증한 뒤 정제된 evidence만 업로드합니다. 상세 설정과 기존 운영 DB 도입 제한은 [database-migration-gate](docs/database-migration-gate.md)를 참고하세요.
