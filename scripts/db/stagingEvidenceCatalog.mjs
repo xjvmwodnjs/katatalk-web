@@ -413,7 +413,7 @@ WITH
       expected.qualified_name,
       constraint_entry.conname AS constraint_name,
       constraint_entry.contype::pg_catalog.text AS constraint_type,
-      constraint_entry.condeferrable AS deferrable,
+      constraint_entry.condeferrable AS is_deferrable,
       constraint_entry.condeferred AS initially_deferred,
       constraint_entry.convalidated AS validated,
       pg_catalog.encode(
@@ -773,7 +773,7 @@ SELECT ${sqlLiteral(CATALOG_MARKER)} || pg_catalog.jsonb_build_object(
             'qualifiedName', qualified_name,
             'name', constraint_name,
             'type', constraint_type,
-            'deferrable', deferrable,
+            'deferrable', is_deferrable,
             'initiallyDeferred', initially_deferred,
             'validated', validated,
             'definitionSha256', definition_sha256
@@ -914,6 +914,7 @@ SELECT ${sqlLiteral(CATALOG_MARKER)} || pg_catalog.jsonb_build_object(
           SELECT 1
           FROM pg_catalog.pg_class AS relation
           WHERE relation.reltype = type_entry.oid
+            AND relation.relkind <> 'c'
         )
         AND NOT EXISTS (
           SELECT 1
