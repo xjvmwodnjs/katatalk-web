@@ -223,6 +223,8 @@ describe("read-only staging catalog collector", () => {
     expect(sql).toContain("SET LOCAL quote_all_identifiers = off");
     expect(sql.match(/AND relation\.relkind <> 'c'/g)).toHaveLength(2);
     expect(sql).toContain("'deferrable', is_deferrable");
+    expect(sql).toContain("::pg_catalog.int4");
+    expect(sql).not.toContain("::pg_catalog.integer");
     expect(sql).toContain(CATALOG_MARKER);
     expect(sql).toContain(HISTORY_MARKER);
     expect(sql).toContain("\\if :history_present");

@@ -554,7 +554,7 @@ SELECT ${sqlLiteral(CATALOG_MARKER)} || pg_catalog.jsonb_build_object(
     'readOnly', pg_catalog.current_setting('transaction_read_only') = 'on',
     'isolation', pg_catalog.current_setting('transaction_isolation'),
     'serverMajor',
-      pg_catalog.current_setting('server_version_num')::pg_catalog.integer
+      pg_catalog.current_setting('server_version_num')::pg_catalog.int4
         / 10000,
     'timeoutsApplied',
       pg_catalog.current_setting('statement_timeout') = '10s'
