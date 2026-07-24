@@ -306,7 +306,11 @@ function sourceCommitSha() {
   return /^[0-9a-f]{40,64}$/.test(candidate) ? candidate : null;
 }
 
-function collectDatabaseFixture(database, manifest) {
+function collectDatabaseFixture(
+  database,
+  manifest,
+  { allowedFailureCodes = [] } = {}
+) {
   section(`read-only security evidence on ${database}`);
   const observation = collectStagingCatalog({ database });
   const catalogValidation = validateSecurityCatalog(observation.catalog);
@@ -323,11 +327,12 @@ function collectDatabaseFixture(database, manifest) {
     ...catalogValidation.failureCodes,
     ...migrationValidation.failureCodes,
   ];
-  if (failureCodes.length > 0) {
+  const unexpectedFailureCodes = [...new Set(failureCodes)].filter(
+    code => !allowedFailureCodes.includes(code)
+  );
+  if (unexpectedFailureCodes.length > 0) {
     throw new Error(
-      `Read-only security evidence failed: ${[...new Set(failureCodes)].join(
-        ", "
-      )}`
+      `Read-only security evidence failed: ${unexpectedFailureCodes.join(", ")}`
     );
   }
   return {
@@ -402,7 +407,9 @@ function verifyStructuralDriftGuard(database, manifest, expectedEvidence) {
   value text
 );`,
   });
-  const compositeTypeDrift = collectDatabaseFixture(database, manifest);
+  const compositeTypeDrift = collectDatabaseFixture(database, manifest, {
+    allowedFailureCodes: ["UNEXPECTED_APPLICATION_OBJECT"],
+  });
   if (
     compositeTypeDrift.catalogValidation.canonicalSha256 !==
     before.catalogValidation.canonicalSha256
