@@ -375,7 +375,7 @@ WITH
       ELSE pg_catalog.format(
         '%I.%I',
         collation_namespace.nspname,
-        collation.collname
+        collation_entry.collname
       )
       END AS collation_name,
       CASE WHEN default_value.oid IS NULL THEN NULL ELSE
@@ -403,10 +403,10 @@ WITH
     LEFT JOIN pg_catalog.pg_attrdef AS default_value
       ON default_value.adrelid = relation.oid
       AND default_value.adnum = attribute.attnum
-    LEFT JOIN pg_catalog.pg_collation AS collation
-      ON collation.oid = attribute.attcollation
+    LEFT JOIN pg_catalog.pg_collation AS collation_entry
+      ON collation_entry.oid = attribute.attcollation
     LEFT JOIN pg_catalog.pg_namespace AS collation_namespace
-      ON collation_namespace.oid = collation.collnamespace
+      ON collation_namespace.oid = collation_entry.collnamespace
   ),
   structure_constraints AS (
     SELECT
