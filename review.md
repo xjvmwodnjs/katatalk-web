@@ -57,16 +57,16 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **로컬 PASS, GitHub 재검증 대기** | 컴파일 타입 오류 없음 |
-| Vitest | **로컬 PASS, GitHub 재검증 대기** | 83 files / 821 tests, 직렬 실행 98.68초 |
-| 프로덕션 빌드 | **로컬 PASS, GitHub 재검증 대기** | Vite 클라이언트 + API + Worker 번들, 3.57초 |
+| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30058581181` |
+| Vitest | **GitHub CI PASS** | 83 files / 821 tests, 실행 `30058581181` |
+| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30058581181` |
 | Playwright Chromium | **GitHub CI PASS** | 9/9, 27.4초, 테스트/모의 분석 모드 |
 | 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 취약점 0 (`pnpm audit --prod --audit-level high`) |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **기존 GitHub CI PASS, 구조 게이트 재검증 대기** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성은 통과; 신규 구조 hash/history-absent fixture는 이번 CI에서 확인 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과 |
 
-`PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
+최종 검증 근거는 GitHub Actions 실행 [`30058581181`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058581181)이다. `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
 ### 문서 신뢰도
 
@@ -165,7 +165,7 @@ flowchart LR
 
 ### COM-002. Supabase 함수 권한을 배포 게이트로 증명하기
 
-**상태: 검증 중 — 읽기 전용 staging DB/HTTP 수집기, same-commit security/structure contract와 protected workflow 구현, 실제 staging 실행 대기 (2026-07-24)**
+**상태: 검증 중 — 읽기 전용 수집기와 same-commit security/structure contract는 GitHub PostgreSQL 16 게이트 통과, 실제 protected staging 실행 대기 (2026-07-24)**
 
 **증거**
 

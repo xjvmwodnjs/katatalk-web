@@ -14,6 +14,8 @@ Supabase PostgreSQL 스키마는 번호가 매겨진 migration을 **`001` → `0
 
 보호된 수동 workflow인 `.github/workflows/staging-db-evidence.yml`은 `master`의 동일 커밋에서 폐기 가능한 PostgreSQL 16 DB로 expected contract를 만들고, 그 파일의 SHA-256을 다음 job에 직접 전달한다. expected contract는 fresh와 `011 → 013` upgrade DB의 canonical security catalog hash 및 application structure hash가 모두 같은 경우에만 생성된다. staging에서 관찰한 값을 expected로 승격하거나 `--accept-current`로 drift를 승인하는 경로는 없다.
 
+GitHub Actions 실행 [`30058581181`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058581181)에서 실제 PostgreSQL 16 catalog SQL, fresh/upgrade 동일성, migration history 누락, 함수 본문, table persistence, 독립 composite type drift fixture와 정제된 artifact 업로드가 모두 통과했다. 이 증거는 폐기 가능한 DB 계약을 검증한 것이며 실제 Supabase staging 결과를 대신하지 않는다.
+
 DB 접속은 CLI 인자가 아닌 표준 `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE=postgres`, `PGSSLMODE=verify-full`로 전달한다. `PGPASSFILE`은 사용할 수 있지만 대상 식별을 우회하는 `PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE`은 거부한다. direct host는 `db.<project-ref>.supabase.co`, pooler는 `*.pooler.supabase.com`과 `PGUSER=postgres.<project-ref>` 조합이어야 하며 HTTP origin의 project ref와 일치해야 한다. 다음 값도 필요하다.
 
 - `KATATALK_DB_EVIDENCE_CONFIRM=read-only-staging`
