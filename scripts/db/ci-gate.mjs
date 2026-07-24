@@ -411,11 +411,11 @@ function verifyStructuralDriftGuard(database, manifest, expectedEvidence) {
     allowedFailureCodes: ["UNEXPECTED_APPLICATION_OBJECT"],
   });
   if (
-    compositeTypeDrift.catalogValidation.canonicalSha256 !==
+    compositeTypeDrift.catalogValidation.canonicalSha256 ===
     before.catalogValidation.canonicalSha256
   ) {
     throw new Error(
-      "Narrow security catalog unexpectedly detected composite-type-only drift"
+      "Security catalog fingerprint accepted composite-type-only drift"
     );
   }
   if (
