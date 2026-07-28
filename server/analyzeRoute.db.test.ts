@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import express from "express";
 import http from "http";
 import * as resolve from "./_core/resolveRequestUser";
+import * as creditService from "./creditService";
 import { analyzeRouter } from "./analyzeRoute";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
@@ -76,6 +77,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     delete process.env.ANALYSIS_WORKER_MODE;
     delete process.env.ANALYSIS_ENGINE;
@@ -482,6 +484,48 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     const body = (await res.json()) as { success: boolean; message?: string };
     expect(body.success).toBe(false);
     expect(body.message).toMatch(/AB\/AW\/AE|setup stones/i);
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
+  it("POST rejects unsupported root rules before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(creditService, "ensureWalletWithSignupBonus");
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    const legacySpendSpy = vi.spyOn(creditService, "spendCreditForAnalysisJob");
+    const legacyInsertSpy = vi.spyOn(creditService, "insertAnalysisJobQueued");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const marker = "private-rule-marker-947";
+    const sgf = `(;FF[4]GM[1]SZ[19]RU[${marker}];B[pd];W[dp])`;
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([sgf], { type: "application/octet-stream" }),
+      "unsupported-rules.sgf"
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(response.status).toBe(400);
+    const rawBody = await response.text();
+    const body = JSON.parse(rawBody) as {
+      success: boolean;
+      code?: string;
+      message?: string;
+    };
+    expect(body).toEqual({
+      success: false,
+      code: "SGF_UNSUPPORTED_RULES",
+      message: "Invalid SGF: only Japanese rules are supported.",
+    });
+    expect(rawBody).not.toContain(marker);
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(legacySpendSpy).not.toHaveBeenCalled();
+    expect(legacyInsertSpy).not.toHaveBeenCalled();
     expect(vitestAnalysisJobsStore.size).toBe(0);
   });
 

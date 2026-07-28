@@ -208,6 +208,7 @@ async function runKatagoRootAnalysis(args: {
     const queryLine = buildKatagoAnalysisQueryLine({
       boardSize: args.parsed.boardSize,
       komi: args.parsed.komi,
+      rules: args.parsed.rules,
       moves: args.parsed.moves,
       initialStones: args.parsed.initialStones,
       maxVisits: args.maxVisits,

@@ -8,6 +8,66 @@ import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 
 describe("sgfKatagoParseV1", () => {
+  it("defaults missing or blank root RU to Japanese rules", () => {
+    expect(parseSgfForKatagoV1("(;GM[1]SZ[19];B[pd])").rules).toBe("japanese");
+    expect(parseSgfForKatagoV1("(;GM[1]SZ[19]RU[];B[pd])").rules).toBe("japanese");
+    expect(parseSgfForKatagoV1("(;GM[1]SZ[19]RU[   ];B[pd])").rules).toBe("japanese");
+  });
+
+  it("normalizes reviewed Japanese rules aliases", () => {
+    const aliases = [
+      "Japanese",
+      " JAPANESE   RULES ",
+      "Japan",
+      "Japan Rules",
+      "Ｊａｐａｎｅｓｅ",
+      "日本",
+      "日本式",
+      "日本ルール",
+    ];
+    for (const alias of aliases) {
+      expect(
+        parseSgfForKatagoV1(`(;GM[1]SZ[19]RU[${alias}];B[pd])`).rules
+      ).toBe("japanese");
+    }
+  });
+
+  it("rejects unsupported root RU values without reflecting the raw label", () => {
+    const unsupported = ["Chinese", "AGA", "NZ", "Ing", "private-rule-marker-947"];
+    for (const rawRules of unsupported) {
+      try {
+        parseSgfForKatagoV1(`(;GM[1]SZ[19]RU[${rawRules}];B[pd])`);
+        throw new Error("expected failure");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SgfKatagoParseError);
+        expect((error as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_RULES");
+        expect((error as Error).message).not.toContain(rawRules);
+      }
+    }
+  });
+
+  it("reads RU only from the root node and ignores property-value lookalikes", () => {
+    const parsed = parseSgfForKatagoV1(
+      "(;GM[1]SZ[19]XX[safe][RU[private-rule-marker-947]]C[RU[Chinese]]RU[Japanese];B[pd];RU[AGA](;W[dd]RU[NZ]))"
+    );
+    expect(parsed.rules).toBe("japanese");
+  });
+
+  it("rejects unsupported duplicate or multi-value root RU without an allowlist bypass", () => {
+    for (const sgf of [
+      "(;GM[1]SZ[19]RU[Japanese][private-rule-marker-947];B[pd])",
+      "(;GM[1]SZ[19]RU[Japanese]RU[private-rule-marker-947];B[pd])",
+    ]) {
+      expect(() => parseSgfForKatagoV1(sgf)).toThrow(SgfKatagoParseError);
+      try {
+        parseSgfForKatagoV1(sgf);
+      } catch (error) {
+        expect((error as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_RULES");
+        expect((error as Error).message).not.toContain("private-rule-marker-947");
+      }
+    }
+  });
+
   it("reads KM property from actual SGF property values", () => {
     expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[6.5]SZ[19];B[pd])").komi).toBe(6.5);
     expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[7.5]SZ[19];B[pd])").komi).toBe(7.5);

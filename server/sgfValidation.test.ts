@@ -13,6 +13,53 @@ describe("validateSgfText", () => {
     expect(validateSgfText(MINIMAL_SGF)).toEqual({ ok: true });
   });
 
+  it("accepts supported, missing, and blank root rules", () => {
+    expect(validateSgfText("(;GM[1]SZ[19]RU[Japanese];B[pd])")).toEqual({
+      ok: true,
+    });
+    expect(validateSgfText("(;GM[1]SZ[19];B[pd])")).toEqual({ ok: true });
+    expect(validateSgfText("(;GM[1]SZ[19]RU[];B[pd])")).toEqual({ ok: true });
+  });
+
+  it("rejects unsupported root rules with a fixed non-reflective error", () => {
+    const marker = "private-rule-marker-947";
+    const result = validateSgfText(`(;GM[1]SZ[19]RU[${marker}];B[pd])`);
+    expect(result).toEqual({
+      ok: false,
+      code: "SGF_UNSUPPORTED_RULES",
+      message: "Invalid SGF: only Japanese rules are supported.",
+    });
+    expect(JSON.stringify(result)).not.toContain(marker);
+
+    try {
+      parseSgfForKatagoV1(`(;GM[1]SZ[19]RU[${marker}];B[pd])`);
+      throw new Error("expected failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SgfKatagoParseError);
+      expect((error as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_RULES");
+      expect((error as Error).message).not.toContain(marker);
+    }
+  });
+
+  it("rejects an unclosed root RU with a fixed parse error", () => {
+    const marker = "private-unclosed-rule-marker-947";
+    const result = validateSgfText(`(;GM[1]SZ[19]B[pd]RU[${marker}`);
+    expect(result).toEqual({
+      ok: false,
+      code: "SGF_PARSE_FAILED",
+      message: "Invalid SGF: the root RU property is not closed.",
+    });
+    expect(JSON.stringify(result)).not.toContain(marker);
+  });
+
+  it("does not treat comment, later-node, or variation RU text as root rules", () => {
+    expect(
+      validateSgfText(
+        "(;GM[1]SZ[19]C[RU[private-rule-marker-947]];B[pd];RU[AGA](;W[dd]RU[NZ]))"
+      )
+    ).toEqual({ ok: true });
+  });
+
   it("accepts the learning events smoke fixture", () => {
     expect(validateSgfText(LEARNING_EVENTS_SMOKE_SGF)).toEqual({ ok: true });
     expect(() => parseSgfForKatagoV1(LEARNING_EVENTS_SMOKE_SGF)).not.toThrow();

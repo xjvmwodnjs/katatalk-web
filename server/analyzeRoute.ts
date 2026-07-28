@@ -150,8 +150,12 @@ function parseLanguage(req: Request): AnalysisJobLanguage {
   return "ko";
 }
 
-function sendUploadError(res: Response, status: number, message: string) {
-  res.status(status).json({ success: false, message });
+function sendUploadError(res: Response, status: number, message: string, code?: string) {
+  res.status(status).json({
+    success: false,
+    ...(code ? { code } : {}),
+    message,
+  });
 }
 
 function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
@@ -374,7 +378,7 @@ analyzeRouter.post(
 
       const validation = validateSgfText(sgfContent);
       if (!validation.ok) {
-        sendUploadError(res, 400, validation.message);
+        sendUploadError(res, 400, validation.message, validation.code);
         return;
       }
 

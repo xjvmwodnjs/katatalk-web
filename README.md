@@ -178,6 +178,13 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 **금지 조합(운영):** `ANALYSIS_ENGINE=katago` + **`ANALYSIS_WORKER_MODE=inline`** → **503** `KATAGO_INLINE_FORBIDDEN` (웹·워커 역할 혼동·오설정 방지).
 
+### SGF 규칙 지원 (현재 베타)
+
+- 현재 분석 계약은 **일본식 규칙만 지원**합니다. 첫 root node의 `RU`를 구조적으로 읽고 검토된 일본식 표기를 KataGo의 `japanese`로 정규화합니다.
+- `RU`가 없거나 비어 있으면 기존 기보 호환을 위해 일본식으로 간주합니다.
+- 중국식, AGA, 뉴질랜드식 등 비지원 규칙은 원문 값을 응답에 노출하지 않는 **400 `SGF_UNSUPPORTED_RULES`** 로 거절하며, 이 검사는 wallet 준비·크레딧 차감·job enqueue보다 먼저 실행됩니다.
+- `PL`, handicap/setup 정합성, 엄격한 root `SZ`/`KM`, 추가 규칙 지원은 [`review.md`](review.md)의 `COM-005` 후속 범위입니다.
+
 ### SGF 원문 저장 (MVP)
 
 - **저장 위치:** 검증된 SGF UTF-8 텍스트는 Supabase **`analysis_jobs.sgf_content`** 컬럼에 저장됩니다.

@@ -226,6 +226,7 @@ export async function computeDeepSearchResultsV1(opts: {
     const queryLine = buildKatagoAnalysisQueryLine({
       boardSize: opts.parsed.boardSize,
       komi: opts.parsed.komi,
+      rules: opts.parsed.rules,
       moves: sliced.movesBefore,
       initialStones: opts.parsed.initialStones,
       maxVisits: policy.visits,

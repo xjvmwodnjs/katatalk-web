@@ -3,8 +3,19 @@
 // =============================================================
 
 import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
+import {
+  parseSupportedKatagoRulesFromRootV1,
+  SgfKatagoParseError,
+  type SgfKatagoParseErrorCodeV1,
+} from "@shared/sgfKatagoParseV1";
 
-export type SgfValidationResult = { ok: true } | { ok: false; message: string };
+export type SgfValidationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      message: string;
+      code?: SgfKatagoParseErrorCodeV1;
+    };
 
 /**
  * Validates minimal SGF structure expected for a real game record.
@@ -59,6 +70,28 @@ export function validateSgfText(raw: string): SgfValidationResult {
       message:
         "Invalid SGF: no Black or White move properties were found. Expected at least one B[...] or W[...] (including passes like B[] or W[]).",
     };
+  }
+
+  try {
+    parseSupportedKatagoRulesFromRootV1(text);
+  } catch (error) {
+    if (error instanceof SgfKatagoParseError) {
+      if (error.code === "SGF_UNSUPPORTED_RULES") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: only Japanese rules are supported.",
+        };
+      }
+      if (error.code === "SGF_PARSE_FAILED") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: the root RU property is not closed.",
+        };
+      }
+    }
+    throw error;
   }
 
   return { ok: true };

@@ -413,6 +413,7 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
       reportDuringSearchEverySeconds: 0.5,
     });
     const q = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(q.rules).toBe(parsed.rules);
     expect(q.analyzeTurns).toEqual([0, 1, 2, 3]);
     expect(q.maxVisits).toBe(200);
     expect(q.analysisPVLen).toBe(1);

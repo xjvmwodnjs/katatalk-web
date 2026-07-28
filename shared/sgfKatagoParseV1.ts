@@ -15,15 +15,19 @@ import {
 export type ParsedMinimalSgfV1 = {
   boardSize: number;
   komi: number;
+  rules: SupportedKatagoRulesV1;
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones: { color: "B" | "W"; sgfPoint: string }[];
   parseWarnings: SgfPlaybackWarningV1[];
 };
 
+export type SupportedKatagoRulesV1 = "japanese";
+
 export type SgfKatagoParseErrorCodeV1 =
   | "SGF_PARSE_FAILED"
   | "SGF_UNSUPPORTED_SETUP_STONES"
   | "SGF_UNSUPPORTED_GAME_TYPE"
+  | "SGF_UNSUPPORTED_RULES"
   | "SGF_INVALID_COORDINATE"
   | "KATAGO_QUERY_BUILD_FAILED";
 
@@ -117,6 +121,103 @@ function findFirstMainlinePropertyValue(sgf: string, propId: string): string | n
   return null;
 }
 
+const JAPANESE_RULE_ALIASES_V1 = new Set([
+  "japanese",
+  "japanese rules",
+  "japan",
+  "japan rules",
+  "日本",
+  "日本式",
+  "日本ルール",
+]);
+
+function normalizeRulesLabelV1(raw: string): string {
+  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Reads every value of a property in the first/root node only. */
+function readRootPropertyValuesV1(sgf: string, propId: string): string[] {
+  const s = sgf.replace(/\r\n|\r|\n/g, " ");
+  const rootIdx = s.indexOf("(;");
+  if (rootIdx < 0) {
+    return [];
+  }
+
+  const target = propId.toUpperCase();
+  const found: string[] = [];
+  let i = rootIdx + 2;
+
+  while (i < s.length) {
+    while (i < s.length && /\s/.test(s[i]!)) {
+      i += 1;
+    }
+    if (i >= s.length || s[i] === ";" || s[i] === "(" || s[i] === ")") {
+      break;
+    }
+    if (!/[A-Za-z]/.test(s[i]!)) {
+      i += 1;
+      continue;
+    }
+
+    const idStart = i;
+    while (i < s.length && /[A-Za-z]/.test(s[i]!)) {
+      i += 1;
+    }
+    const currentId = s.slice(idStart, i).toUpperCase();
+    while (i < s.length && /\s/.test(s[i]!)) {
+      i += 1;
+    }
+    if (i >= s.length || s[i] !== "[") {
+      continue;
+    }
+
+    while (i < s.length) {
+      while (i < s.length && /\s/.test(s[i]!)) {
+        i += 1;
+      }
+      if (i >= s.length || s[i] !== "[") {
+        break;
+      }
+      const bracket = readSgfBracketValue(s, i);
+      if (bracket == null) {
+        if (currentId === target) {
+          throw new SgfKatagoParseError(
+            "SGF_PARSE_FAILED",
+            "root RU property is not closed"
+          );
+        }
+        return found;
+      }
+      if (currentId === target) {
+        found.push(bracket.text);
+      }
+      i = bracket.end;
+    }
+  }
+
+  return found;
+}
+
+/** Resolves the only ruleset supported by the current product analysis contract. */
+export function parseSupportedKatagoRulesFromRootV1(
+  sgf: string
+): SupportedKatagoRulesV1 {
+  const rawValues = readRootPropertyValuesV1(sgf, "RU");
+  for (const rawValue of rawValues) {
+    const normalized = normalizeRulesLabelV1(rawValue);
+    if (normalized.length === 0) {
+      continue;
+    }
+    if (!JAPANESE_RULE_ALIASES_V1.has(normalized)) {
+      throw new SgfKatagoParseError(
+        "SGF_UNSUPPORTED_RULES",
+        "only Japanese rules are supported"
+      );
+    }
+  }
+  return "japanese";
+}
+
 function readKomiFromSgf(sgf: string): number {
   const rawKomi = findFirstMainlinePropertyValue(sgf, "KM");
   if (rawKomi == null) {
@@ -200,6 +301,7 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
   }
   const { moves, initialStones, warnings, boardSizeHint } = extractMainlineBwMoves(sgf);
   assertParseableMainline(warnings);
+  const rules = parseSupportedKatagoRulesFromRootV1(sgf);
   const boardSize = resolveBoardSize(boardSizeHint);
   validateSetupStoneCoordinates(initialStones, boardSize);
   validateMoveCoordinates(moves, boardSize);
@@ -207,6 +309,7 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
   return {
     boardSize,
     komi,
+    rules,
     moves: moves.map((m) => ({ color: m.color, sgfPoint: m.sgfPoint })),
     initialStones: initialStones.map((s) => ({ color: s.color, sgfPoint: s.sgfPoint })),
     parseWarnings: warnings,

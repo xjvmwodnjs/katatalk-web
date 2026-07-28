@@ -145,9 +145,12 @@ describe("sgfPayload (smoke 연동)", () => {
 
 describe("katagoSgfQuery", () => {
   it("SZ·KM·순차 수 파싱", () => {
-    const p = parseMinimalSgfForSmoke("(;FF[4]SZ[19]KM[7.5];B[pd];W[dd])");
+    const p = parseMinimalSgfForSmoke(
+      "(;FF[4]SZ[19]KM[7.5]RU[Japanese Rules];B[pd];W[dd])"
+    );
     expect(p.boardSize).toBe(19);
     expect(p.komi).toBe(7.5);
+    expect(p.rules).toBe("japanese");
     expect(p.moves).toEqual([
       { color: "B", sgfPoint: "pd" },
       { color: "W", sgfPoint: "dd" },
@@ -185,6 +188,7 @@ describe("katagoSgfQuery", () => {
     const q = buildKatagoAnalysisQueryObject({
       boardSize: 19,
       komi: 6.5,
+      rules: "japanese",
       moves: [
         { color: "B", sgfPoint: "" },
         { color: "W", sgfPoint: "dd" },
@@ -205,15 +209,18 @@ describe("katagoSgfQuery", () => {
     const q = buildKatagoAnalysisQueryObject({
       boardSize: 19,
       komi: 6.5,
+      rules: "japanese",
       moves: [{ color: "B", sgfPoint: "dd" }],
       maxVisits: 123,
       id: "x",
     });
     expect(q.maxVisits).toBe(123);
+    expect(q.rules).toBe("japanese");
     expect(q.moves[0]).toEqual(["B", "D16"]);
     const line = buildKatagoAnalysisQueryLine({
       boardSize: 19,
       komi: 6.5,
+      rules: "japanese",
       moves: [{ color: "B", sgfPoint: "dd" }],
       maxVisits: 123,
       id: "x",
@@ -227,6 +234,7 @@ describe("katagoSgfQuery", () => {
     const q = buildKatagoAnalysisQueryObject({
       boardSize: parsed.boardSize,
       komi: parsed.komi,
+      rules: parsed.rules,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
       maxVisits: 10,

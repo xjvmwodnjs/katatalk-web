@@ -26,7 +26,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 1. 실패 확정·환불 원자 명령과 PostgreSQL CI 게이트는 구현됐고 GitHub Actions에서 통과했다. 실제 Supabase 스테이징 증거는 아직 남아 있다.
 2. Supabase `SECURITY DEFINER` 권한 manifest와 SQL 거절 검사는 구현됐지만 실제 Supabase/PostgREST 스냅샷은 남아 있다.
 3. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
-4. KataGo 규칙이 일본식으로 고정되어 있으나 SGF의 `RU`를 해석하거나 거부하지 않는다.
+4. SGF root `RU`의 일본식-only admission과 과금 전 거절은 구현됐다. `PL`, handicap/setup 정합성, 엄격한 `SZ`/`KM`, 실제 대국 메타데이터는 아직 남아 있다.
 5. 마이그레이션 실행 경로는 단일화했지만 기존 운영 DB의 승인된 history baseline과 스테이징 리허설이 남아 있다.
 6. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
 7. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
@@ -252,22 +252,29 @@ flowchart LR
 
 ### COM-005. SGF 규칙과 실제 대국 메타데이터를 정확히 다루기
 
+**상태: 부분 구현 — 일본식 규칙 admission/전파 완료, 규칙 확장·handicap/메타데이터 계약 대기 (2026-07-28)**
+
 **증거**
 
-- [server/worker/analysisEngines/katagoSgfQuery.ts](server/worker/analysisEngines/katagoSgfQuery.ts#L107)는 KataGo 요청의 규칙을 `japanese`로 고정한다.
-- [server/sgfValidation.ts](server/sgfValidation.ts#L13)는 `RU`를 파싱하거나 지원하지 않는 규칙을 거부하지 않는다.
+- [shared/sgfKatagoParseV1.ts](shared/sgfKatagoParseV1.ts)는 첫 root node의 모든 `RU` 값을 bracket-aware 방식으로 읽고, 검토된 일본식 별칭을 typed 값 `japanese`로 정규화한다. `RU` 없음/빈 값은 기존 분석과의 호환을 위해 일본식으로 간주한다.
+- [server/sgfValidation.ts](server/sgfValidation.ts)와 [server/analyzeRoute.ts](server/analyzeRoute.ts)는 같은 규칙 파서를 사용한다. 비지원 값은 raw `RU`를 반사하지 않는 HTTP 400 `SGF_UNSUPPORTED_RULES`로 wallet 준비·차감·enqueue 전에 거절한다.
+- [server/worker/analysisEngines/katagoSgfQuery.ts](server/worker/analysisEngines/katagoSgfQuery.ts)는 규칙을 필수 typed query field로 만들었다. root, spawn Worker, persistent, multi-turn, deep search, benchmark, timeline이 모두 `parsed.rules`를 전달하고 synthetic backend probe만 일본식 고정을 유지한다.
+- 파서·upload validator·DB-backed route·primary query·timeline 회귀 테스트는 comment/후속 node/variation 오인, duplicate/multi-value 우회, 원문 비노출, wallet/원장/enqueue 호출 0을 검사한다.
 - [server/worker/analysisEngines/katagoEngine.ts](server/worker/analysisEngines/katagoEngine.ts#L540)는 플레이어를 Black/White, 날짜를 현재일, 결과를 분석 파이프라인 문자열로 채우고, [client/src/components/AnalysisResultView.tsx](client/src/components/AnalysisResultView.tsx#L480)는 이를 실제 대국 정보처럼 표시한다.
 
 **위험**
 
-- 중국식/AGA/뉴질랜드식 SGF가 일본식으로 분석되어 집계와 승률 해석이 잘못될 수 있다.
+- 중국식/AGA/뉴질랜드식 SGF는 더 이상 일본식으로 조용히 분석되지 않지만 현재 제품에서는 분석 자체가 불가능하다.
+- `JP`, `JPN`, `Japanese:1989` 같은 비표준·세부 버전 표기는 의도적으로 거절한다. 실제 exporter 호환성 관찰과 alias 변경 검토가 필요하다.
+- 배포 전에 이미 queue에 들어간 비일본식 SGF는 새 Worker에서 실패·환불 경로로 전환될 수 있으므로 배포 시 queue drain/감사가 필요하다.
 - 사용자에게 가짜 선수명·날짜·결과를 실제 정보처럼 보여 신뢰를 해친다.
 
 **개선 뼈대**
 
-- 1차 정책을 “일본식만 지원” 또는 “지원 규칙 매핑” 중 하나로 제품 결정한다.
-- 일본식만 지원한다면 `RU`가 없을 때의 기본값을 명시하고, 비지원 값은 분석 전에 설명 가능한 오류로 거절한다.
+- 1차 정책은 “일본식만 지원”으로 결정했다. `RU` 없음/빈 값은 일본식 기본값이며 비지원 값은 과금 전에 고정 오류로 거절한다.
+- 중국식/AGA/뉴질랜드식 등을 제공하려면 규칙별 KataGo 매핑, scoring/ko/tax 차이, 결과 문구와 golden fixture를 하나의 계약으로 추가한다.
 - `PB`, `PW`, `DT`, `RE`, `KM`, `SZ`, `HA`, `AB/AW`, `RU`를 구조적으로 파싱한다.
+- `PL`, `HA`와 setup stone의 일관성, root-only/strict `SZ`·`KM`, rectangular board 정책은 별도 변경 단위로 검증한다.
 - 원본 값과 정규화 값을 함께 보존하고 추정값은 UI에서 “알 수 없음/추정”으로 표시한다.
 
 **완료 조건**
@@ -730,7 +737,7 @@ ops/
 | 1 | COM-001 | P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중 | DB·Worker | 없음 | fault test와 ledger audit 불일치 0 |
 | 2 | COM-002 | P0 | RPC 권한 manifest/검사 — GitHub CI 통과·staging 대기 | DB·Security | 없음 | 실제 staging catalog/HTTP snapshot |
 | 3 | COM-006 | P0 | migration runner/CI — GitHub CI 통과·baseline 대기 | DB·DevEx | COM-002 병행 | 기존 운영 DB baseline 승인 |
-| 4 | COM-005 | P0 | SGF rules/metadata parser | Analysis | 없음 | golden SGF와 UI 정확성 테스트 |
+| 4 | COM-005 | P0 | 일본식 rules admission 완료·handicap/metadata 후속 | Analysis | 없음 | 규칙/handicap golden SGF와 UI 정확성 테스트 |
 | 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
 | 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
 | 7 | COM-003 | P0 | dependency remediation — GitHub CI 완료 | Platform | 없음 | 실행 30019630160에서 알려진 취약점 0 |
@@ -858,7 +865,7 @@ ops/
 
 1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
 2. **COM-001 후속**: 구현된 quarantine 상태 endpoint를 실제 monitoring에 연결하고 staging에서 비식별 응답을 확인한다. 쓰기 reconciliation은 별도 보안 검토를 거친 승인된 append-only command로만 만든다.
-3. **COM-005**: SGF root의 `RU`를 구조적으로 읽고 일본식 지원 정책을 명시한 뒤, 비지원 규칙을 과금 전에 고정 오류로 거절한다. `PL`, `HA`/setup, 엄격한 `SZ`/`KM`은 후속 계약으로 분리한다.
+3. **COM-005 후속**: `PL`, `HA`/setup 일관성, root-only/strict `SZ`·`KM`을 계약화하고 `PB/PW/DT/RE` 원문 메타데이터를 허구의 fallback 없이 결과/UI에 연결한다.
 4. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
 5. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
 
@@ -872,4 +879,4 @@ ops/
 - 아키텍처가 바뀌면 이 문서와 최신 `ARCHITECTURE.md`를 같은 PR에서 갱신한다.
 - 새 P0가 발견되면 일정에 맞춰 등급을 낮추지 않고 출시 범위를 조정한다.
 
-현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 → COM-101/102 → COM-106 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.
+현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 후속 → COM-101/102 → COM-106 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.

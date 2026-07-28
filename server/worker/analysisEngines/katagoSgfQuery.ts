@@ -5,7 +5,12 @@
  * **GTP** 열 문자만 **대문자 I 를 생략**한다 (열 인덱스 → `A`–`H`,`J`–`T`).
  */
 
-import { parseSgfForKatagoV1, SgfKatagoParseError } from "@shared/sgfKatagoParseV1";
+import {
+  parseSgfForKatagoV1,
+  SgfKatagoParseError,
+  type ParsedMinimalSgfV1,
+  type SupportedKatagoRulesV1,
+} from "@shared/sgfKatagoParseV1";
 
 /** SGF 좌표 한 글자 → 0-based 보드 인덱스 (i 포함, shift 없음). */
 export function sgfLetterToCoordIndex(letter: string, boardSize: number): number {
@@ -51,12 +56,7 @@ export function sgfPointToGtp(point: string, boardSize: number): string {
   return `${indexToGtpColumn(col)}${String(gtpRow)}`;
 }
 
-export type ParsedMinimalSgf = {
-  boardSize: number;
-  komi: number;
-  moves: { color: "B" | "W"; sgfPoint: string }[];
-  initialStones: { color: "B" | "W"; sgfPoint: string }[];
-};
+export type ParsedMinimalSgf = Omit<ParsedMinimalSgfV1, "parseWarnings">;
 
 export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
   try {
@@ -64,6 +64,7 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
     return {
       boardSize: parsed.boardSize,
       komi: parsed.komi,
+      rules: parsed.rules,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
     };
@@ -79,7 +80,7 @@ export type KatagoSmokeAnalysisQuery = {
   id: string;
   moves: [string, string][];
   initialStones?: [string, string][];
-  rules: string;
+  rules: SupportedKatagoRulesV1;
   komi: number;
   boardXSize: number;
   boardYSize: number;
@@ -91,6 +92,7 @@ export type KatagoSmokeAnalysisQuery = {
 export function buildKatagoAnalysisQueryObject(params: {
   boardSize: number;
   komi: number;
+  rules: SupportedKatagoRulesV1;
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
@@ -108,7 +110,7 @@ export function buildKatagoAnalysisQueryObject(params: {
     id: params.id,
     moves: pairs,
     ...(initialStones.length > 0 ? { initialStones } : {}),
-    rules: "japanese",
+    rules: params.rules,
     komi: params.komi,
     boardXSize: params.boardSize,
     boardYSize: params.boardSize,
@@ -120,6 +122,7 @@ export function buildKatagoAnalysisQueryObject(params: {
 export function buildKatagoAnalysisQueryLine(params: {
   boardSize: number;
   komi: number;
+  rules: SupportedKatagoRulesV1;
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
