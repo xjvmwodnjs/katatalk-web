@@ -96,7 +96,36 @@ reviewed forward-only reconciliation migration.
 - `anon` and `authenticated` HTTP RPC calls are rejected.
 - Fresh `001 -> 013` and upgrade `011 -> 012 -> 013` both pass, including schema/ACL equivalence.
 
-## 4. Quarantine recovery
+## 4. Quarantine monitoring
+
+The API exposes a separate operations-only status endpoint:
+
+```text
+GET /ops/analysis-finalization-quarantine
+X-Ops-Status-Token: <OPS_STATUS_TOKEN>
+```
+
+The endpoint uses the service role to count only unresolved quarantine rows and
+select only the oldest `first_failed_at` value. It never selects or returns job,
+user, Worker, failure-code, ledger, or database-error details. Every response is
+`Cache-Control: no-store`.
+
+- `200 {"ok":true,"status":"clear","unresolvedCount":0,"oldestFirstFailedAt":null}`
+  means no unresolved row was observed.
+- `503 {"ok":false,"status":"attention_required",...}` means at least one
+  unresolved row exists and must page the billing/operations owner.
+- `503 {"ok":false,"status":"unknown"}` means the database observation failed
+  closed and must page the service owner without exposing the backend error.
+- A missing, unset, or incorrect operations token returns `404` without reading
+  the database.
+
+Do not attach this endpoint to Web liveness or readiness. A quarantine alert
+requires ledger investigation; restarting otherwise healthy Web instances does
+not repair it. Production acceptance requires migrations `012` and `013`, the
+Supabase service-role configuration, `OPS_STATUS_TOKEN`, and a monitor that
+alerts on every non-200 response.
+
+## 5. Quarantine recovery
 
 ```sql
 SELECT f.*, j.status, j.credit_cost, j.credit_log_id
@@ -116,7 +145,7 @@ new reviewed admin migration; do not invent a lease or edit the balance.
 After recovery, verify one canonical usage, at most one canonical refund, the
 expected wallet balance, `status='failed'`, and a non-null `resolved_at`.
 
-## 5. Rollback and evidence
+## 6. Rollback and evidence
 
 Once a new Worker has started, prefer stopping it and fixing forward. Do not
 roll back to a Worker that uses split failure/refund calls. Archive the migration

@@ -1,6 +1,6 @@
 # KataTalk 상용화 코드베이스 리뷰
 
-> 기준일: 2026-07-24
+> 기준일: 2026-07-28
 > 대상 저장소: `xjvmwodnjs/katatalk-web`
 > 기준 브랜치/구현 상태: `agent/atomic-failure-refund` / 이번 리뷰 작업 트리
 > 문서 목적: 현재 구현을 사실에 근거해 진단하고, 공개 유료 서비스로 전환하기 위한 작업 순서와 합격 기준을 단일 기준점으로 만든다.
@@ -45,10 +45,10 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 항목 | 현재 값 |
 |---|---:|
-| Git 추적 파일 | 388개 (이번 변경 포함) |
-| TypeScript/TSX | 278개 파일 / 약 56,950줄 |
-| Vitest 테스트 파일 | 83개 |
-| Vitest 테스트 수 | 821개 |
+| Git 추적 파일 | 390개 (이번 변경 포함) |
+| TypeScript/TSX | 280개 파일 / 약 53,050줄 |
+| Vitest 테스트 파일 | 84개 |
+| Vitest 테스트 수 | 833개 |
 | Playwright 시나리오 | 9개 |
 | Supabase SQL 마이그레이션 | 13개 (`001`~`013`) |
 | GitHub Actions 워크플로 | 4개 |
@@ -57,16 +57,16 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30058581181` |
-| Vitest | **GitHub CI PASS** | 83 files / 821 tests, 실행 `30058581181` |
-| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30058581181` |
-| Playwright Chromium | **GitHub CI PASS** | 9/9, 27.4초, 테스트/모의 분석 모드 |
-| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 취약점 0 (`pnpm audit --prod --audit-level high`) |
+| TypeScript `tsc --noEmit` | **로컬 PASS** | 현재 작업 트리 컴파일 타입 오류 없음 |
+| Vitest | **로컬 PASS** | 현재 작업 트리 84 files / 833 tests |
+| 프로덕션 빌드 | **로컬 PASS** | 현재 작업 트리 Vite 클라이언트 + API + Worker 번들 |
+| Playwright Chromium | **GitHub 기준 커밋 PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30058793346` |
+| 프로덕션 의존성 감사 | **GitHub 기준 커밋 PASS** | 알려진 취약점 0, 실행 `30058793346` |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과 |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub 기준 커밋 PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30058793346` |
 
-최종 검증 근거는 GitHub Actions 실행 [`30058581181`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058581181)이다. `PASS`는 현재 커밋의 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
+현재 작업 트리의 로컬 검증은 타입 검사, 84 files / 833 tests, 프로덕션 Web/API/Worker 빌드와 secret scan을 통과했다. 이전 기준 커밋의 최종 GitHub 근거는 실행 [`30058793346`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058793346)이며, 이번 변경의 GitHub 증거는 push 후 별도로 갱신한다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
 ### 문서 신뢰도
 
@@ -126,12 +126,13 @@ flowchart LR
 
 ### COM-001. 실패 상태와 환불을 한 트랜잭션으로 묶기
 
-**상태: 검증 중 — 코드 및 GitHub PostgreSQL gate 통과, 실제 Supabase 스테이징 출시 증거 대기 (2026-07-20)**
+**상태: 검증 중 — 원자 실패/환불·격리 운영 상태 코드와 GitHub PostgreSQL gate 통과, 실제 Supabase 스테이징 출시 증거 대기 (2026-07-28)**
 
 - migration `012`가 job row, 원래 usage, profile, refund ledger를 잠그고 실패 전환과 환불을 한 트랜잭션으로 처리한다.
 - 정확한 `(locked_by, attempt_count)`만 finalization할 수 있고, 응답 유실 후 같은 lease 재호출은 중복 지급 없이 수렴한다.
 - KataGo, mock, engine mismatch, max-attempt 실패 경로가 새 atomic finalizer를 사용한다. 프로덕션은 external Worker와 atomic enqueue만 허용한다.
 - 손상된 max-attempt 원장은 `analysis_job_finalization_failures`에 격리되어 매 claim마다 반복 처리되지 않는다. 원장을 고친 뒤 같은 lease의 atomic 성공만 격리를 해제한다.
+- `GET /ops/analysis-finalization-quarantine`은 기존 운영 토큰 뒤에서 미해결 건수와 가장 오래된 발생 시각만 반환한다. 정상은 `200 clear`, 미해결은 경보 가능한 `503 attention_required`, 조회 이상은 상세 없는 `503 unknown`이며 Web readiness와 분리된다.
 - 사용자 API는 내부 engine 진단 대신 allowlist 기반 오류 문구만 반환한다. 상세 진단은 Worker 로그에 남긴다.
 - Worker는 claim 전에 새 RPC contract를 preflight하여 migration 누락 시 기동 실패한다.
 - 단위·contract 테스트는 정상 실패, 중복, stale lease, 응답 유실, RPC 장애, free job, leased mock, max-attempt 격리/복구를 검증한다.
@@ -836,11 +837,12 @@ ops/
 3. **Worker 연결**: KataGo, mock, engine mismatch, max-attempt 경로는 split 상태/환불 호출 대신 atomic RPC만 사용한다. transport 결과가 불명확할 때 legacy 환불로 fallback하지 않는다.
 4. **운영 fail-closed**: production은 `ANALYSIS_WORKER_MODE=external`을 강제하고 atomic enqueue 비활성화를 거절한다. Worker는 claim 전 RPC contract를 확인한다.
 5. **quarantine**: 손상 원장으로 finalization이 거절된 max-attempt job은 durable table에 격리한다. 반복 claim 부하를 막고 동일 lease 복구 성공 때만 `resolved_at`을 기록한다.
-6. **오류 경계**: DB와 API에는 allowlist 사용자 문구만 저장·반환하고, 내부 진단은 구조화 Worker 로그로 분리한다.
-7. **감사 강화**: usage 금액, job별 usage/refund 중복, refund owner/amount, non-failed refund를 fail 등급으로 검출한다.
-8. **권한 전진 수정**: `013`이 11개 민감 RPC의 owner와 `search_path=pg_catalog`, runtime execute/table ACL을 하나의 manifest로 고정한다.
-9. **단일 migration runner**: 숫자 순서, SHA-256 이력, advisory lock, 단일 트랜잭션을 강제하고 이력 없는 기존 schema의 자동 baseline을 거절한다.
-10. **실제 DB CI fixture**: PostgreSQL 16에서 fresh `001 → 013`, `011 → 012 → 013` upgrade, checksum drift, ACL/42501, rollback, quarantine, 두 세션 경쟁, 최종 schema/ACL 동등성을 검사한다.
+6. **quarantine 운영 가시성**: 운영 토큰으로 보호한 별도 endpoint가 식별자·실패 코드·DB 오류를 노출하지 않고 미해결 건수와 가장 오래된 발생 시각만 보고한다. `503` 경보는 Web readiness와 분리한다.
+7. **오류 경계**: DB와 API에는 allowlist 사용자 문구만 저장·반환하고, 내부 진단은 구조화 Worker 로그로 분리한다.
+8. **감사 강화**: usage 금액, job별 usage/refund 중복, refund owner/amount, non-failed refund를 fail 등급으로 검출한다.
+9. **권한 전진 수정**: `013`이 11개 민감 RPC의 owner와 `search_path=pg_catalog`, runtime execute/table ACL을 하나의 manifest로 고정한다.
+10. **단일 migration runner**: 숫자 순서, SHA-256 이력, advisory lock, 단일 트랜잭션을 강제하고 이력 없는 기존 schema의 자동 baseline을 거절한다.
+11. **실제 DB CI fixture**: PostgreSQL 16에서 fresh `001 → 013`, `011 → 012 → 013` upgrade, checksum drift, ACL/42501, rollback, quarantine, 두 세션 경쟁, 최종 schema/ACL 동등성을 검사한다.
 
 내부 크레딧은 PostgreSQL 안에서 이동하므로 이번 범위에는 외부 outbox를 추가하지 않았다. 향후 현금 환불이나 외부 지급처럼 트랜잭션 밖의 side effect가 생길 때 durable outbox를 도입한다.
 
@@ -855,9 +857,10 @@ ops/
 ### 다음 변경 단위
 
 1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
-2. **COM-001 후속**: quarantine 관리자 조회·알림과 승인된 append-only reconciliation command를 만든다.
-3. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
-4. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
+2. **COM-001 후속**: 구현된 quarantine 상태 endpoint를 실제 monitoring에 연결하고 staging에서 비식별 응답을 확인한다. 쓰기 reconciliation은 별도 보안 검토를 거친 승인된 append-only command로만 만든다.
+3. **COM-005**: SGF root의 `RU`를 구조적으로 읽고 일본식 지원 정책을 명시한 뒤, 비지원 규칙을 과금 전에 고정 오류로 거절한다. `PL`, `HA`/setup, 엄격한 `SZ`/`KM`은 후속 계약으로 분리한다.
+4. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
+5. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
 
 ---
 
