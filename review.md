@@ -57,16 +57,16 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **로컬 PASS** | 현재 작업 트리 컴파일 타입 오류 없음 |
-| Vitest | **로컬 PASS** | 현재 작업 트리 84 files / 833 tests |
-| 프로덕션 빌드 | **로컬 PASS** | 현재 작업 트리 Vite 클라이언트 + API + Worker 번들 |
-| Playwright Chromium | **GitHub 기준 커밋 PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30058793346` |
-| 프로덕션 의존성 감사 | **GitHub 기준 커밋 PASS** | 알려진 취약점 0, 실행 `30058793346` |
+| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30366360720` |
+| Vitest | **GitHub CI PASS** | 84 files / 833 tests, 실행 `30366360720` |
+| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30366360720` |
+| Playwright Chromium | **GitHub CI PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30366360720` |
+| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 취약점 0, 실행 `30366360720` |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub 기준 커밋 PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30058793346` |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30366360720` |
 
-현재 작업 트리의 로컬 검증은 타입 검사, 84 files / 833 tests, 프로덕션 Web/API/Worker 빌드와 secret scan을 통과했다. 이전 기준 커밋의 최종 GitHub 근거는 실행 [`30058793346`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058793346)이며, 이번 변경의 GitHub 증거는 push 후 별도로 갱신한다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
+quarantine 운영 상태 기능 커밋 `a93e229`의 최종 GitHub 근거는 실행 [`30366360720`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30366360720)이다. 타입·84 files / 833 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
 ### 문서 신뢰도
 
