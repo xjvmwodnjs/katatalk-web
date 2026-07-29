@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import express from "express";
 import http from "http";
 import * as resolve from "./_core/resolveRequestUser";
+import * as creditService from "./creditService";
 import { analyzeRouter } from "./analyzeRoute";
 import { vitestAnalysisJobsStore, vitestSeedAnalysisJob } from "./vitestSetup";
 import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
@@ -76,6 +77,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     delete process.env.ANALYSIS_WORKER_MODE;
     delete process.env.ANALYSIS_ENGINE;
@@ -323,7 +325,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(raw).not.toContain("FAILED_NO_LEAK_SGF_MARKER");
     const body = JSON.parse(raw) as { data?: unknown; error?: { message: string } };
     expect(body.data).toBeUndefined();
-    expect(body.error?.message).toBe("pipeline exploded");
+    expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
 
   it("GET completed normalizes DB status casing and parses stringified result", async () => {
@@ -419,7 +421,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.progress).toBe(0);
   });
 
-  it("GET failed returns error from DB", async () => {
+  it("GET failed returns an allowlisted public error instead of DB diagnostics", async () => {
     vitestSeedAnalysisJob({
       id: "job-fail",
       user_id: "user_a",
@@ -441,10 +443,14 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; error?: { message: string } };
     expect(body.success).toBe(true);
-    expect(body.error?.message).toBe("pipeline exploded");
+    expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
 
   it("POST /api/analyze inserts analysis_jobs row (queued)", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
@@ -466,6 +472,77 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.sgf_content).toBe(minimalSgf);
     expect(row.sgf_sha256).toBe(sha256HexUtf8(minimalSgf));
     expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
+    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      { ensureWallet: false }
+    );
+    expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("POST keeps invalid optional game metadata field-local and enqueues once", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const sgf =
+      "(;FF[4]GM[1]SZ[19]PB[A]PB[B]PW[One][Two]DT[2023-02-29]RE[B+private-marker];B[pd])";
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([sgf], { type: "application/octet-stream" }),
+      "optional-metadata-warnings.sgf"
+    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { jobId: string; success: boolean };
+    expect(body.success).toBe(true);
+    expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
+    expect(vitestAnalysisJobsStore.get(body.jobId)?.sgf_content).toBe(sgf);
+    expect(vitestAnalysisJobsStore.size).toBe(1);
+  });
+
+  it("POST rejects malformed UTF-8 before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const bytes = new Uint8Array([
+      ...Buffer.from("(;FF[4]GM[1]SZ[19]PB[", "utf8"),
+      0xc3,
+      0x28,
+      ...Buffer.from("];B[pd])", "utf8"),
+    ]);
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([bytes], { type: "application/octet-stream" }),
+      "invalid-utf8.sgf"
+    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      success: false,
+      code: "SGF_INVALID_ENCODING",
+      message: "Invalid SGF: the uploaded file must be valid UTF-8.",
+    });
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(vitestAnalysisJobsStore.size).toBe(0);
   });
 
   it("POST rejects after-move setup stones before credit spend/enqueue", async () => {
@@ -483,6 +560,138 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(body.success).toBe(false);
     expect(body.message).toMatch(/AB\/AW\/AE|setup stones/i);
     expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
+  it("POST rejects unsupported root rules before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(creditService, "ensureWalletWithSignupBonus");
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    const legacySpendSpy = vi.spyOn(creditService, "spendCreditForAnalysisJob");
+    const legacyInsertSpy = vi.spyOn(creditService, "insertAnalysisJobQueued");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const marker = "private-rule-marker-947";
+    const sgf = `(;FF[4]GM[1]SZ[19]RU[${marker}];B[pd];W[dp])`;
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([sgf], { type: "application/octet-stream" }),
+      "unsupported-rules.sgf"
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(response.status).toBe(400);
+    const rawBody = await response.text();
+    const body = JSON.parse(rawBody) as {
+      success: boolean;
+      code?: string;
+      message?: string;
+    };
+    expect(body).toEqual({
+      success: false,
+      code: "SGF_UNSUPPORTED_RULES",
+      message: "Invalid SGF: only Japanese rules are supported.",
+    });
+    expect(rawBody).not.toContain(marker);
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(legacySpendSpy).not.toHaveBeenCalled();
+    expect(legacyInsertSpy).not.toHaveBeenCalled();
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
+  it("POST rejects invalid SGF analysis contracts before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    const legacySpendSpy = vi.spyOn(creditService, "spendCreditForAnalysisJob");
+    const legacyInsertSpy = vi.spyOn(creditService, "insertAnalysisJobQueued");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const marker = "private-initial-contract-marker-947";
+    const cases = [
+      {
+        code: "SGF_INVALID_PLAYER_TO_PLAY",
+        sgf: `(;FF[4]GM[1]SZ[19]PL[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_PLAYER_TO_PLAY_CONFLICT",
+        sgf: "(;FF[4]GM[1]SZ[19]PL[B];W[pd])",
+      },
+      {
+        code: "SGF_UNSUPPORTED_PLAYER_TO_PLAY",
+        sgf: "(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])",
+      },
+      {
+        code: "SGF_INVALID_HANDICAP",
+        sgf: `(;FF[4]GM[1]SZ[19]HA[${marker}]AB[pd][dp];W[qq])`,
+      },
+      {
+        code: "SGF_HANDICAP_SETUP_MISMATCH",
+        sgf: "(;FF[4]GM[1]SZ[19]HA[2]AB[pd];W[qq])",
+      },
+      {
+        code: "SGF_INVALID_COORDINATE",
+        sgf: "(;FF[4]GM[1]SZ[19]HA[2]AB[zz][yy];W[qq])",
+      },
+      {
+        code: "SGF_INVALID_BOARD_SIZE",
+        sgf: `(;FF[4]GM[1]SZ[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_UNSUPPORTED_BOARD_SIZE",
+        sgf: "(;FF[4]GM[1]SZ[19:13];B[pd])",
+      },
+      {
+        code: "SGF_INVALID_KOMI",
+        sgf: `(;FF[4]GM[1]SZ[19]KM[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_UNSUPPORTED_KOMI",
+        sgf: "(;FF[4]GM[1]SZ[19]KM[6.25];B[pd])",
+      },
+    ] as const;
+
+    for (const [index, testCase] of cases.entries()) {
+      const fd = new FormData();
+      fd.append("language", "ko");
+      fd.append(
+        SGF_UPLOAD_FORM_FIELD,
+        new Blob([testCase.sgf], { type: "application/octet-stream" }),
+        `invalid-initial-contract-${String(index)}.sgf`
+      );
+      const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+        method: "POST",
+        headers: { Authorization: "Bearer fake" },
+        body: fd,
+      });
+      expect(response.status).toBe(400);
+      const rawBody = await response.text();
+      const body = JSON.parse(rawBody) as {
+        success: boolean;
+        code?: string;
+      };
+      expect(body.success).toBe(false);
+      expect(body.code).toBe(testCase.code);
+      expect(rawBody).not.toContain(marker);
+    }
+
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(legacySpendSpy).not.toHaveBeenCalled();
+    expect(legacyInsertSpy).not.toHaveBeenCalled();
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledTimes(cases.length);
+    for (const [, options] of vi.mocked(resolve.tryResolveUserFromRequest).mock
+      .calls) {
+      expect(options).toEqual({ ensureWallet: false });
+    }
   });
 
   it("POST inserts is_mock=false when ANALYSIS_ENGINE=katago and ANALYSIS_WORKER_MODE=external", async () => {

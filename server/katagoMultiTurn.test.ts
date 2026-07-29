@@ -30,10 +30,15 @@ import { runKatagoAnalysisDbPipeline } from "./worker/katagoAnalysisDbPipeline";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 import type { SpawnFn } from "./worker/analysisEngines/katagoSmokeRun";
 
-function buildSgfWithNMoves(n: number, boardSize = 19): string {
-  let s = `(;FF[4]GM[1]SZ[${boardSize}]KM[6.5]`;
+function buildSgfWithNMoves(
+  n: number,
+  boardSize = 19,
+  firstPlayer: "B" | "W" = "B",
+  rootSetup = ""
+): string {
+  let s = `(;FF[4]GM[1]SZ[${boardSize}]KM[6.5]${rootSetup}`;
   for (let i = 0; i < n; i++) {
-    const c = i % 2 === 0 ? "B" : "W";
+    const c = i % 2 === 0 ? firstPlayer : firstPlayer === "B" ? "W" : "B";
     const col = i % boardSize;
     const row = Math.floor(i / boardSize) % boardSize;
     const lc = String.fromCharCode("a".charCodeAt(0) + col);
@@ -236,12 +241,14 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
     process.env.KATAGO_MULTI_TURN_MAX = "2";
     process.env.KATAGO_MULTI_TURN_BATCH = "1";
 
-    const sgf = buildSgfWithNMoves(25);
+    const sgf = buildSgfWithNMoves(25, 19, "W", "HA[2]AB[pd][dp]PL[W]");
     const parsed = parseMinimalSgfForSmoke(sgf);
     const plan = buildAnalysisPlanV1FromParsed(parsed);
     const sel = selectCandidatesForMultiTurnAnalysis(plan, 2);
     expect(sel.length).toBe(2);
 
+    const observedInitialPlayers: ("B" | "W")[] = [];
+    const observedInitialStones: [string, string][][] = [];
     const mockSpawn: SpawnFn = () => {
       const proc = new EventEmitter() as ChildProcess;
       let stdinBuf = "";
@@ -255,7 +262,13 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
           setImmediate(() => {
             const lines = stdinBuf.split("\n").filter(l => l.trim().length > 0);
             const responses = lines.map(line => {
-              const q = JSON.parse(line) as { id: string };
+              const q = JSON.parse(line) as {
+                id: string;
+                initialPlayer: "B" | "W";
+                initialStones?: [string, string][];
+              };
+              observedInitialPlayers.push(q.initialPlayer);
+              observedInitialStones.push(q.initialStones ?? []);
               const m = /--turn-(\d+)--/.exec(q.id);
               const turn = m ? Number(m[1]) : 0;
               const played = sliceMovesBeforeTurnIndex(
@@ -304,6 +317,17 @@ describe("runMultiTurnKatagoRawV1 (mock KataGo JSONL by id)", () => {
     });
     expect(turnAnalyses).toHaveLength(2);
     expect(turnAnalyses.every(t => t.status === "ok")).toBe(true);
+    expect(observedInitialPlayers).toEqual(["W", "W"]);
+    expect(observedInitialStones).toEqual([
+      [
+        ["B", "Q16"],
+        ["B", "D4"],
+      ],
+      [
+        ["B", "Q16"],
+        ["B", "D4"],
+      ],
+    ]);
     const t20 = turnAnalyses.find(t => t.turnIndex === 20);
     expect(t20?.status).toBe("ok");
     if (t20?.status === "ok") {

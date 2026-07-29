@@ -220,7 +220,7 @@ const SGF_WARN: Record<
   },
   setup_after_move_unsupported: {
     ko: "첫 착수 이후의 AB[]/AW[]/AE[]는 v1에서 지원하지 않아 무시했습니다.",
-    en: "AB[]/AW[]/AE[] after the first move is not supported in v1 and was ignored.",
+    en: "AB[]/AW[]/AE[] in a move node or after the first move is not supported in v1 and was ignored.",
     ja: "初手以降の AB[]/AW[]/AE[] は v1 では未対応のため無視しました。",
     zh: "第一手之后的 AB[]/AW[]/AE[] 在 v1 中不支持，已忽略。",
   },
@@ -617,6 +617,7 @@ type UiBlock = {
   betaNote: string;
   blackPlayer: string;
   whitePlayer: string;
+  gameDate: string;
   gameResult: string;
   analysisModel: string;
   engine: string;
@@ -752,6 +753,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
       "현재 결과는 KataGo 수치 기반 베타 참고 정보이며, 수순에 대한 최종 판단이나 해설은 제공하지 않습니다.",
     blackPlayer: "흑",
     whitePlayer: "백",
+    gameDate: "대국일",
     gameResult: "결과",
     analysisModel: "분석 모델",
     engine: "엔진",
@@ -896,6 +898,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
       "Beta numeric reference from KataGo — no final judgment or move-by-move teaching text.",
     blackPlayer: "Black",
     whitePlayer: "White",
+    gameDate: "Date",
     gameResult: "Result",
     analysisModel: "Analysis model",
     engine: "Engine",
@@ -1045,6 +1048,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
       "KataGo 数値ベータの参考情報であり、各手の最終判断や解説テキストは提供しません。",
     blackPlayer: "黒",
     whitePlayer: "白",
+    gameDate: "対局日",
     gameResult: "結果",
     analysisModel: "解析モデル",
     engine: "エンジン",
@@ -1189,6 +1193,7 @@ const UI: Record<AnalysisResultLang, UiBlock> = {
       "当前为 KataGo 数值型内测参考信息，不提供对每手的最终判断或讲解文本。",
     blackPlayer: "黑",
     whitePlayer: "白",
+    gameDate: "对局日期",
     gameResult: "结果",
     analysisModel: "分析模型",
     engine: "引擎",

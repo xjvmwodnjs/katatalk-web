@@ -47,6 +47,11 @@ test.describe("Product Review result smoke", () => {
         waitUntil: "domcontentloaded",
       });
 
+      await expect(page.getByText("Black E2E", { exact: true })).toBeVisible();
+      await expect(page.getByText("White E2E", { exact: true })).toBeVisible();
+      await expect(page.getByText("2026-05-17", { exact: true })).toBeVisible();
+      await expect(page.getByText("W+R", { exact: true })).toBeVisible();
+
       const board = page.getByRole("img", { name: "바둑판 국면 스냅샷" });
       await expect(board).toBeVisible();
       await expect(

@@ -1,6 +1,6 @@
 import express from "express";
 import http from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildReadinessReport, registerHealthRoutes } from "./_core/healthRoutes";
 
 function minimalProductionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -163,6 +163,119 @@ describe("health routes", () => {
 
       const readiness = await fetch(`http://127.0.0.1:${port}/readyz`);
       expect(readiness.status).toBe(200);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it("hides quarantine status without the exact operations token", async () => {
+    process.env = minimalProductionEnv();
+    const getFinalizationQuarantineStatus = vi.fn(async () => ({
+      status: "clear" as const,
+      unresolvedCount: 0 as const,
+      oldestFirstFailedAt: null,
+    }));
+    const app = express();
+    registerHealthRoutes(app, { getFinalizationQuarantineStatus });
+    const { server, port } = await listen(app);
+    const endpoint = `http://127.0.0.1:${port}/ops/analysis-finalization-quarantine`;
+    try {
+      const missing = await fetch(endpoint);
+      const wrongLength = await fetch(endpoint, {
+        headers: { "X-Ops-Status-Token": "wrong" },
+      });
+      const wrongSameLength = await fetch(endpoint, {
+        headers: {
+          "X-Ops-Status-Token": "x".repeat("ops-status-token-for-vitest".length),
+        },
+      });
+      process.env.OPS_STATUS_TOKEN = "";
+      const unset = await fetch(endpoint, {
+        headers: { "X-Ops-Status-Token": "ops-status-token-for-vitest" },
+      });
+
+      expect(missing.status).toBe(404);
+      expect(wrongLength.status).toBe(404);
+      expect(wrongSameLength.status).toBe(404);
+      expect(unset.status).toBe(404);
+      expect(getFinalizationQuarantineStatus).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it("reports clear and attention-required quarantine states without changing readiness", async () => {
+    process.env = minimalProductionEnv();
+    const getFinalizationQuarantineStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "clear",
+        unresolvedCount: 0,
+        oldestFirstFailedAt: null,
+      })
+      .mockResolvedValueOnce({
+        status: "attention_required",
+        unresolvedCount: 2,
+        oldestFirstFailedAt: "2026-07-20T00:00:00.000Z",
+        analysis_job_id: "private-job-id",
+        lease_worker_id: "private-worker-id",
+        failure_code: "LEDGER_INVARIANT",
+        ops_status_token: "ops-status-token-for-vitest",
+      });
+    const app = express();
+    registerHealthRoutes(app, { getFinalizationQuarantineStatus });
+    const { server, port } = await listen(app);
+    const endpoint = `http://127.0.0.1:${port}/ops/analysis-finalization-quarantine`;
+    const headers = { "X-Ops-Status-Token": "ops-status-token-for-vitest" };
+    try {
+      const clear = await fetch(endpoint, { headers });
+      expect(clear.status).toBe(200);
+      expect(clear.headers.get("cache-control")).toBe("no-store");
+      await expect(clear.json()).resolves.toEqual({
+        ok: true,
+        status: "clear",
+        unresolvedCount: 0,
+        oldestFirstFailedAt: null,
+      });
+
+      const attention = await fetch(endpoint, { headers });
+      expect(attention.status).toBe(503);
+      const rawAttention = await attention.text();
+      expect(JSON.parse(rawAttention)).toEqual({
+        ok: false,
+        status: "attention_required",
+        unresolvedCount: 2,
+        oldestFirstFailedAt: "2026-07-20T00:00:00.000Z",
+      });
+      expect(rawAttention).not.toMatch(
+        /private-job-id|private-worker-id|LEDGER_INVARIANT|ops-status-token-for-vitest/
+      );
+
+      const readiness = await fetch(`http://127.0.0.1:${port}/readyz`);
+      expect(readiness.status).toBe(200);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it("redacts quarantine backend failures", async () => {
+    process.env = minimalProductionEnv();
+    const getFinalizationQuarantineStatus = vi.fn(async () => {
+      throw new Error("database-host private-job-id service-role-key");
+    });
+    const app = express();
+    registerHealthRoutes(app, { getFinalizationQuarantineStatus });
+    const { server, port } = await listen(app);
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${port}/ops/analysis-finalization-quarantine`,
+        { headers: { "X-Ops-Status-Token": "ops-status-token-for-vitest" } }
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const raw = await response.text();
+      expect(JSON.parse(raw)).toEqual({ ok: false, status: "unknown" });
+      expect(raw).not.toMatch(/database-host|private-job-id|service-role-key/);
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }

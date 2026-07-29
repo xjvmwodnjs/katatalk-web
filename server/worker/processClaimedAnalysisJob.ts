@@ -1,18 +1,13 @@
 import type { AnalysisJobLanguage } from "../analysisJobStore.types";
 import type { AnalysisJobDbRow } from "../creditService";
-import {
-  analysisJobProcessingLeaseFromClaimedRow,
-  refundCreditIfJobFailedByProfileId,
-  updateAnalysisJobRow,
-  updateAnalysisJobRowWithLease,
-} from "../creditService";
+import { analysisJobProcessingLeaseFromClaimedRow } from "../creditService";
 import {
   logAnalysisEngineSnapshot,
   resolveWorkerPipelineForClaimedJob,
-  sanitizeAnalysisJobErrorMessage,
 } from "../analysisEngineDeterminism";
 import { runMockAnalysisDbPipeline } from "../mockAnalysisDbPipeline";
 import { getAnalysisEngineName } from "./analysisEngines";
+import { finalizeAnalysisJobFailure } from "./finalizeAnalysisJobFailure";
 import { runKatagoAnalysisDbPipeline } from "./katagoAnalysisDbPipeline";
 import type { AnalysisWorkerJobOutcome } from "./analysisJobOutcome";
 
@@ -27,39 +22,16 @@ function coerceLanguage(raw: string | null | undefined): AnalysisJobLanguage {
 
 async function failClaimedJobEngineMismatch(args: {
   row: AnalysisJobDbRow;
-  lease: ReturnType<typeof analysisJobProcessingLeaseFromClaimedRow>;
+  lease: NonNullable<ReturnType<typeof analysisJobProcessingLeaseFromClaimedRow>>;
   mismatchCode: string;
   mismatchDetail: string;
-  refund: boolean;
-  onRefund?: () => void | Promise<void>;
 }): Promise<AnalysisWorkerJobOutcome> {
-  const error_message = sanitizeAnalysisJobErrorMessage(
-    `${args.mismatchCode}: ${args.mismatchDetail}`
-  );
-  const patch = {
-    status: "failed" as const,
-    progress: null,
-    error_message,
-    completed_at: new Date().toISOString(),
-    locked_at: null,
-    locked_by: null,
-  };
-  if (args.lease) {
-    const r = await updateAnalysisJobRowWithLease(args.row.id, args.lease, patch);
-    if (!r.ok) {
-      console.warn("[analysis-worker] lease_lost skip engine_mismatch failed write", {
-        jobId: args.row.id,
-        mismatchCode: args.mismatchCode,
-      });
-      return "lease_lost";
-    }
-  } else {
-    await updateAnalysisJobRow(args.row.id, patch);
-  }
-  if (args.refund) {
-    await args.onRefund?.();
-  }
-  return "failed";
+  return finalizeAnalysisJobFailure({
+    jobId: args.row.id,
+    rawError: `${args.mismatchCode}: ${args.mismatchDetail}`,
+    lease: args.lease,
+    logPrefix: "analysis-worker",
+  });
 }
 
 /** Claim 된 `analysis_jobs` 행을 job.is_mock + worker `ANALYSIS_ENGINE` 에 따라 처리한다. */
@@ -79,27 +51,20 @@ export async function processClaimedAnalysisJob(
   const fileName = row.file_name?.trim() || "uploaded.sgf";
   const language = coerceLanguage(row.language);
   const lease = analysisJobProcessingLeaseFromClaimedRow(row);
-  const onFail = async (): Promise<void> => {
-    const r = await refundCreditIfJobFailedByProfileId(row.user_id, row.id, row.credit_cost);
-    if (!r.ok) {
-      console.error(
-        "[analysis-worker] refund failed",
-        JSON.stringify({ jobId: row.id, code: r.errorCode })
-      );
-    } else if (r.duplicate) {
-      console.warn("[analysis-worker] refund idempotent duplicate", JSON.stringify({ jobId: row.id }));
-    }
-  };
+  if (!lease) {
+    console.error("[analysis-worker] claimed job is missing a valid processing lease", {
+      jobId: row.id,
+      code: "MISSING_PROCESSING_LEASE",
+    });
+    return "lease_lost";
+  }
 
   if (routing.pipeline === "engine_mismatch") {
-    const refund = row.credit_cost > 0;
     return failClaimedJobEngineMismatch({
       row,
       lease,
       mismatchCode: routing.mismatchCode ?? "ENGINE_MISMATCH",
       mismatchDetail: routing.mismatchDetail ?? "worker engine does not match job.is_mock",
-      refund,
-      onRefund: onFail,
     });
   }
 
@@ -110,7 +75,6 @@ export async function processClaimedAnalysisJob(
       fileName,
       language,
       lease,
-      onJobFailed: onFail,
     });
   }
 
@@ -120,8 +84,6 @@ export async function processClaimedAnalysisJob(
       lease,
       mismatchCode: "ENGINE_MISMATCH_WORKER_MOCK",
       mismatchDetail: "refusing mock pipeline for is_mock=false job",
-      refund: true,
-      onRefund: onFail,
     });
   }
 
@@ -130,6 +92,5 @@ export async function processClaimedAnalysisJob(
     fileName,
     language,
     lease,
-    onJobFailed: onFail,
   });
 }

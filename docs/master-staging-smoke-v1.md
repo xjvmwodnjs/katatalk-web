@@ -100,6 +100,18 @@ corepack pnpm katago:product-suite -- --customer-fixtures --repeat 2 --concurren
 
 ## 2. Local Smoke Procedure
 
+### 2.0 SGF metadata and initial-player admission fixtures
+
+Run accepted root fixtures for `SZ[9]KM[0]`, `SZ[13]KM[6.5]`, `SZ[19]KM[7.5]`, and missing `SZ`/`KM` (expected 19/6.5 with default provenance). Confirm root, multi-turn, Deep Search, timeline, persisted analysis plan, and UI use the same board/komi; both KataGo dimensions must equal the normalized square size.
+
+Run invalid/duplicate/multi-value/unclosed/non-root mainline `SZ` and `KM`, unsupported square/rectangular sizes, comma/exponent/prefix-junk komi, quarter-points, and values outside [-150,150]. Also run comments, unknown-property values, and a closed variation containing parentheses plus `SZ`/`KM`; these must not override or reject the selected mainline.
+
+Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, HA/setup-count mismatch, out-of-board setup coordinates, and setup+move mixing fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return the exact fixed non-reflective HTTP 400 code/message before wallet/debit/enqueue; assert Clerk identity authentication still ran, wallet/job/queue and credit-ledger deltas are zero, and raw SGF/request content is not exposed in responses or logs. For a valid fixture, assert wallet provisioning runs exactly once after admission.
+
+`sgf-game-info-v1` 검증에는 root `PB/PW/DT/RE`가 모두 있는 fixture, 네 필드가 모두 없는 fixture, 일부만 있는 fixture를 각각 사용한다. 화면과 저장 결과에는 안전한 SGF 작성값 또는 `null`만 있어야 하며 `Black`/`White`, 실행 날짜, pipeline 설명문을 합성해서는 안 된다. 유효한 FF4 부분 날짜와 쉼표 단축 `DT`, `B+`/`W+` generic win, resign/time/forfeit/draw/void, 최대 1000이면서 JavaScript decimal exact round-trip이 되는 숫자 `RE`를 확인한다. 잘못된 단축 상태, 중복·다중값·비root 값, 길이·제어문자 위반, 1000 초과 또는 정밀도 손실 숫자는 admission 전체를 거절하지 않고 해당 선택 필드만 warning과 `null`로 축소해야 한다.
+
+marker가 있는 저장 결과의 변조값은 UI 재검증으로 숨겨야 한다. marker가 없는 legacy `katago-worker-v1`는 snake_case `sgf_content`와 camelCase `sgfContent`를 각각 재파싱하고, SGF가 없으면 과거 합성 placeholder를 숨겨야 한다. malformed UTF-8 업로드는 고정 `SGF_INVALID_ENCODING` 400을 반환하고 wallet 준비·debit·enqueue가 모두 0회인지 확인한다. root-only 배치는 FF4 일반 `game-info` 배치보다 좁은 출시 계약이며, 실제 corpus에서는 아래 익명화 규칙을 계속 적용한다.
+
 먼저 선택한 profile env와 로컬 `KATAGO_*` path 를 적용한 터미널에서 제품 경로 스모크를 실행한다. 이 명령은 raw stdout 확인을 넘어 실제 `analyzeSgfKatago` 결과, BSI/ADI 요약, Deep Search 요약, `qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 남긴다.
 
 ```bash
@@ -208,14 +220,27 @@ corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
 인증된 staging 전용 계정의 잔액 조회까지 확인하려면 아래처럼 실행한다. 이 단계도 checkout은 만들지 않는다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+SMOKE_BASE_URL=https://<staging-domain> \
+SMOKE_EXPECTED_ORIGIN=https://<staging-domain> \
+SMOKE_AUTH_TOKEN=<redacted> \
+corepack pnpm deploy:smoke
 ```
 
 Lemon checkout URL 생성까지 확인하는 smoke는 실제 결제 세션을 만들 수 있으므로 staging 전용 계정과 별도 승인 하에서만 실행한다. 카드 결제 완료나 webhook grant 검증은 이 자동 smoke에 포함하지 않는다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> SMOKE_CREATE_CHECKOUT=true corepack pnpm deploy:smoke -- --base-url=https://<staging-domain>
+SMOKE_BASE_URL=https://<staging-domain> \
+SMOKE_EXPECTED_ORIGIN=https://<staging-domain> \
+SMOKE_AUTH_TOKEN=<redacted> \
+SMOKE_CREATE_CHECKOUT=true \
+corepack pnpm deploy:smoke
 ```
+
+credential을 포함한 smoke는 `SMOKE_EXPECTED_ORIGIN`과 대상 HTTPS origin이 정확히 같을 때만 시작한다. redirect는 따라가지 않고 실패 처리하며 응답에서 가져온 값이나 `Location`을 오류에 출력하지 않는다. 응답 본문은 64KiB를 넘으면 읽기를 중단하고 실패 처리한다. GitHub `Staging Smoke` workflow의 대상은 임의 dispatch 입력이 아니라 보호된 `staging` environment 변수 `STAGING_BASE_URL`로 고정한다. 같은 environment에 `SMOKE_AUTH_TOKEN`, `SMOKE_OPS_TOKEN` secret을 두되 두 secret은 설치 후 smoke step에만 주입한다.
+
+GitHub `staging` environment의 deployment branch는 `master`만 허용하고, required reviewer를 지정하며, self-review와 administrator bypass를 금지한다. 이 environment 정책이 실제 secret 경계다. workflow의 `master` ref guard는 우회나 오설정을 조기에 실패시키는 보조 방어일 뿐 environment 정책을 대신하지 않는다.
+
+로컬 공개 endpoint만 확인할 때는 `SMOKE_ALLOW_INSECURE_LOOPBACK=true`로 literal loopback HTTP를 허용할 수 있다. 이 예외에 credential을 결합할 수 없으며 `0.0.0.0`, 사설 IP, 일반 hostname은 허용하지 않는다.
 
 ### 4.3 Worker Service
 

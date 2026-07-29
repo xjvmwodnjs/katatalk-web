@@ -18,6 +18,8 @@
 - [~] Worker 동시성 1/2/4 용량 검증: 격리 process C2/4는 메모리 NO-GO. bounded 단일 공유 KataGo C4 round-robin 8건 mini-soak는 8/8, E2E p95 `81686ms`, `5.88 jobs/min`, peak delta `2059.9MiB`, minimum free `8423MiB`, 품질 0/0으로 로컬 GO. query 실패 격리와 child crash pending 복구 단위 검증 완료. 실제 corpus·Worker RSS/GPU VRAM·Supabase staging queue·30~60분 soak·환불/reclaim fault injection 필요
 - [x] Worker runtime preflight 구현 — `pnpm worker:preflight`이 큐 claim 없이 KataGo 파일·승률 config·backend/GPU·동시성 정책을 fail-closed 검사. 실제 staging Worker 실행은 아직 필요.
 - [~] Worker observability foundation implemented: service-role status RPC and `/ops/analysis-worker-health` distinguish idle Worker liveness from job leases. Supabase migration, staging TTL/restart, and long-running job soak remain required.
+- [~] COM-001 quarantine operations visibility implemented: token-protected `/ops/analysis-finalization-quarantine` returns only unresolved count and oldest timestamp, fails closed without backend details, and stays separate from Web readiness. Staging response verification, monitor wiring, alert drill, and a separately reviewed append-only reconciliation command remain required.
+- [~] COM-005 Japanese-only SGF rules, strict root `SZ`/`KM`, initial-player, and root game-metadata contracts implemented. `sgf-game-info-v1` carries safe authored-or-null `PB`/`PW`/`DT`/`RE`; valid FF4 partial/comma `DT` is accepted while invalid shortcut state is rejected; `RE` keeps raw plus canonical generic `B+`/`W+` win and bounded lexical numeric margins (max 1000, exact decimal round-trip required). Invalid optional fields are field-local; malformed UTF-8 is a fixed 400 before wallet/debit/enqueue. Marked results are revalidated; legacy `katago-worker-v1` reparses `sgf_content`/`sgfContent` or hides placeholders. UI displays `DT` directly and uses common `ProductGameResult` parsing for `RE`. Remaining: post-move transition, compressed setup ranges, full legality, additional rulesets, real-exporter compatibility, staging evidence, and non-UTF8 legacy charset/CA transcoding compatibility. Root-only metadata is narrower than FF4 `game-info`; real-corpus privacy rules remain mandatory.
 - [ ] staging Web/Worker/결제 webhook/credit ledger end-to-end 통과
 - [~] SGF/analysis payload deletion and opt-in retention implemented: result UI now exposes an owner-only confirmed delete action; migration 009 provides API deletion; migration 010 plus `data:retention` defaults to dry-run and only purges completed/failed payloads with an explicit expiry. Supabase migration application, staging UI E2E, scheduler, account-level anonymization, and legal review remain.
 - [~] Public-document drafts added: `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` reflect implemented flows and explicitly flag required legal decisions. Operator identity, jurisdiction, refunds, retention, support contact, and final legal approval remain.
@@ -25,7 +27,8 @@
 - [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
-- [~] 2026-07-16 repository cleanup removed ignored `.tmp/`, `test-results/`, `dist/`, and `analysis_logs/`. Git delivery remains blocked by a 187-entry dirty worktree and an `EPERM` failure updating `.git/FETCH_HEAD`; reconcile cached `origin/master`, split commits, and push CI-verified work before release.
+- [x] 2026-07-24 production dependency remediation completed: locked install audit reports no known vulnerabilities, 81 files / 769 Vitest tests pass, the production build passes, and Playwright passes 9/9 in GitHub Actions run `30019630160`.
+- [x] Git delivery restored: scoped commits are pushed to `agent/atomic-failure-refund` and tracked in draft PR #1 with PostgreSQL, dependency-audit, quality, and E2E gates passing.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 
 ## 결제·법무
@@ -51,7 +54,7 @@
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
-- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. **004+007** 마이그레이션 적용 필요.
+- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. 운영에는 **`001 → 013` 전체 migration** 적용 필요.
 - [x] **analysis_jobs worker heartbeat** — `heartbeatAnalysisJobLease` + running `progress` 갱신 시 `locked_at` 연장 + KataGo 구간 `ANALYSIS_WORKER_HEARTBEAT_SECONDS` 주기 갱신. **heartbeat RPC 예외·`LEASE_LOST`** 는 `completed`/환불 없이 **running** 유지(stale 재시도).
 - [ ] **SGF 원문 보존 정책 확정** — MVP 는 `analysis_jobs.sgf_content` DB 컬럼; 운영 확대 시 **Supabase Storage/S3 이전**, **TTL 삭제**, 사용자 삭제 요청, raw artifact 권한 분리(README «SGF 원문 저장» 절 참고).
 - [ ] **GET 완료 응답 + `data.sgf_content` 용량** — DB 원문을 JSON 응답에 병합하므로 대형 SGF·동시 폴링 시 **payload·대역폭** 부담이 커질 수 있음(업로드 상한은 기존 검증). 운영 전 **p95 응답 크기** 확인; 장기적으로 **`sgfUrl` presigned** 또는 **별도 다운로드 API**로 분리 검토.
@@ -87,12 +90,12 @@
 
 ## 최신 master 배포 전 smoke (체크리스트)
 
-> 저장소에 `006`/`007` SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 동일 마이그레이션이 적용됐는지** 대시보드·SQL로 확인하세요.  
+> 저장소에 migration SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 `001 → 013`이 적용됐는지** history·catalog·SQL로 확인하세요.
 > 아래는 **문서화된 수동 절차**이며, 코드·스키마 변경은 포함하지 않습니다.
 
-### Supabase `006` / `007` 적용 확인 절차
+### Supabase `001 → 013` 적용 확인 절차
 
-1. **적용 순서**: 기존과 동일하게 **001 → … → 005 → 004 → 007 → 006** 권장(007이 무인자 `claim_next_analysis_job()` 을 대체한 뒤, 006이 RPC EXECUTE 를 잠금). 이미 운영에 004만 있는 경우 **007 적용 전 백업·다운타임** 정책을 팀 규칙에 맞출 것.
+1. **적용 순서**: **001 → 002 → … → 013** 숫자순으로 고정한다. 이미 적용된 migration은 수정하지 않으며, 기존 DB는 reviewed baseline 없이는 fail-closed 한다.
 2. **`007` 반영 여부** — SQL Editor 예시:
    - `claim_next_analysis_job` 시그니처: **`public.claim_next_analysis_job(text, integer)`** 존재(인자명은 DB마다 다를 수 있으나 **text + integer** 두 인자).
    - `analysis_jobs` 컬럼 존재: **`locked_at`**, **`locked_by`**, **`attempt_count`**, **`max_attempts`**, **`next_retry_at`**, **`last_error_code`** (`007_analysis_job_lease_retry.sql` 주석과 일치).
@@ -138,8 +141,8 @@
 
 ## 운영 배포 체크리스트
 
-- [ ] **최신 master 배포 전 smoke** — 위 **「최신 master 배포 전 smoke (체크리스트)」** 절(006/007·env·Deep Search OFF/ON) 전부 수행
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (**006**: SECURITY DEFINER RPC EXECUTE 잠금, **007**: `analysis_jobs` lease·`claim_next_analysis_job(worker_id, stale_seconds)` stale 재claim — README「SECURITY DEFINER RPC 권한 검증」·마이그레이션 목록 참고)
+- [ ] **최신 master 배포 전 smoke** — 위 **「최신 master 배포 전 smoke (체크리스트)」** 절(migration/ACL·env·Deep Search OFF/ON) 전부 수행
+- [ ] Supabase migration **`001 → 013` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: 11개 SECURITY DEFINER owner/search path/ACL 고정 — README와 database migration gate 참고)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종
@@ -150,3 +153,7 @@
 - [ ] Production 에서 **mock 전용** 비활성(`KATATALK_ALLOW_MOCK_ANALYSIS`) 및 **KataGo 실분석**(`ANALYSIS_ENGINE=katago` + `ANALYSIS_WORKER_MODE=external`) enqueue 동작 확인
 - [x] **KataGo·LLM 미구현 범위 UI/README 표기** — GPT-4o·자연어 해설·패착 확정 등 과장 문구 완화, BSI/ADI/deepSearchPlan 은 내부 신호임을 명시.
 - [ ] 환불 정책·약관 법무 검토
+
+## Database migration gate
+
+- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 및 GitHub PostgreSQL 16 CI 통과. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.

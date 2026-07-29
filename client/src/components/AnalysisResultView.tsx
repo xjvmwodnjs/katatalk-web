@@ -479,6 +479,7 @@ export default function AnalysisResultView({ data, lang }: Props) {
           </span>
           <span className="text-slate-400">{t.blackPlayer}: <span className="text-amber-100">{gameInfo.blackPlayer ?? "—"}</span></span>
           <span className="text-slate-400">{t.whitePlayer}: <span className="text-amber-100">{gameInfo.whitePlayer ?? "—"}</span></span>
+          <span className="text-slate-400">{t.gameDate}: <span className="text-amber-100">{gameInfo.dateText ?? "—"}</span></span>
           <span className="text-slate-400">{t.gameResult}: <span className="text-amber-100">{gameInfo.resultText ?? "—"}</span></span>
           <span className="text-slate-400">{t.analysisModel}: <span className="font-mono text-amber-100">{s.engine}</span></span>
           <span className="text-slate-400">{t.totalMoves}: <span className="font-mono text-amber-100">{s.totalMoves}</span></span>

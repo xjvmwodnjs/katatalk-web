@@ -3,10 +3,6 @@ name: Staging Smoke
 on:
   workflow_dispatch:
     inputs:
-      base_url:
-        description: Staging base URL, including https://
-        required: true
-        type: string
       create_checkout:
         description: Create one staging checkout URL with the configured smoke account
         required: true
@@ -21,16 +17,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-ref:
+    name: Require the protected deployment branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require master
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
+            echo "Staging smoke can run only from refs/heads/master."
+            exit 1
+          fi
+
   smoke:
     name: Authenticated staging smoke
+    needs: validate-ref
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
-    env:
-      SMOKE_BASE_URL: ${{ inputs.base_url }}
-      SMOKE_AUTH_TOKEN: ${{ secrets.SMOKE_AUTH_TOKEN }}
-      SMOKE_OPS_TOKEN: ${{ secrets.SMOKE_OPS_TOKEN }}
-      SMOKE_CREATE_CHECKOUT: ${{ inputs.create_checkout }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,9 +46,19 @@ jobs:
         run: corepack enable
       - name: Install locked dependencies
         run: corepack pnpm install --frozen-lockfile
-      - name: Require the staging smoke account token
+      - name: Run deploy smoke
         shell: bash
+        env:
+          SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+          SMOKE_EXPECTED_ORIGIN: ${{ vars.STAGING_BASE_URL }}
+          SMOKE_AUTH_TOKEN: ${{ secrets.SMOKE_AUTH_TOKEN }}
+          SMOKE_OPS_TOKEN: ${{ secrets.SMOKE_OPS_TOKEN }}
+          SMOKE_CREATE_CHECKOUT: ${{ inputs.create_checkout }}
         run: |
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "Configure STAGING_BASE_URL as a protected staging environment variable."
+            exit 1
+          fi
           if [ -z "${SMOKE_AUTH_TOKEN:-}" ]; then
             echo "Configure SMOKE_AUTH_TOKEN as a protected staging environment secret."
             exit 1
@@ -51,5 +67,4 @@ jobs:
             echo "Configure SMOKE_OPS_TOKEN as a protected staging environment secret."
             exit 1
           fi
-      - name: Run deploy smoke
-        run: corepack pnpm deploy:smoke
+          corepack pnpm deploy:smoke

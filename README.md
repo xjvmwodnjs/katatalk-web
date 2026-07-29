@@ -2,7 +2,7 @@
 
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
 
-2026-07-14 기준 공개 유료 베타 상용화 readiness는 **76%** 입니다. 현재 출시 판정, 검증 근거와 다음 작업은 [`docs/commercialization-review.md`](docs/commercialization-review.md)를 단일 기준으로 사용합니다.
+2026-07-29 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 현재 출시 판정, 구현 현황, 검증 근거와 다음 작업의 단일 기준은 [`review.md`](review.md)입니다. 최신 검증 기준은 `99e4a7b`와 GitHub Actions [`30441291617`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617)이며, Vitest **86 files / 927 tests**, Playwright **9/9**, type/format/secret scan, Web/API/Worker build, PostgreSQL gate와 production dependency audit가 모두 통과했습니다. 실제 Supabase·Clerk·Lemon·KataGo 스테이징 종단 증거, exporter 호환성과 전체 SGF 합법성은 아직 출시 게이트로 남아 있습니다.
 
 ## 알고리즘 기준 문서
 
@@ -178,6 +178,16 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 
 **금지 조합(운영):** `ANALYSIS_ENGINE=katago` + **`ANALYSIS_WORKER_MODE=inline`** → **503** `KATAGO_INLINE_FORBIDDEN` (웹·워커 역할 혼동·오설정 방지).
 
+### SGF 규칙 지원 (현재 베타)
+
+- 현재 분석 계약은 **일본식 규칙만 지원**합니다. 첫 root node의 `RU`를 구조적으로 읽고 검토된 일본식 표기를 KataGo의 `japanese`로 정규화합니다.
+- `RU`가 없거나 비어 있으면 기존 기보 호환을 위해 일본식으로 간주합니다.
+- 중국식, AGA, 뉴질랜드식 등 비지원 규칙은 원문 값을 응답에 노출하지 않는 **400 `SGF_UNSUPPORTED_RULES`** 로 거절하며, 이 검사는 wallet 준비·크레딧 차감·job enqueue보다 먼저 실행됩니다.
+- `SZ`와 `KM`은 선택한 mainline의 **root node에 각각 하나의 단일 값**만 허용합니다. 출시 보드는 정방형 **9x9·13x13·19x19**이고, 덤은 KataGo v1.16.4 계약에 맞춘 **-150~150의 정수 또는 반집**입니다. 명시된 빈 값·잘못된 형식·중복·다중 값·비루트 mainline 값은 조용히 기본값으로 바꾸지 않고 `SGF_INVALID_*`/`SGF_UNSUPPORTED_*` 400으로 거절합니다. 닫힌 variation 안의 값과 comment/property-value lookalike는 분석 설정에 영향을 주지 않습니다. Clerk 업로드 인증은 이 admission 전에는 신원만 동기화하고, 통과한 요청에서만 wallet을 한 번 준비합니다.
+- `SZ`가 없으면 SGF Go 기본값 `19`, `KM`이 없으면 제품의 일본식 호환 기본값 `6.5`를 사용하고, `analysis-plan-v1`에 각각 `sgf_default_missing`/`product_default_missing` 출처를 남깁니다. 정규화된 값은 primary/spawn/persistent, multi-turn, deep search, benchmark와 timeline의 동일 KataGo query에 전달됩니다.
+- SGF 초기 착수 색은 mainline 첫 착수 전 setup 노드의 `PL[B|W]`를 지원합니다(루트 전용 아님). 우선순위는 `PL` → 첫 수 색 → `HA>=2`이면서 유효한 최종 흑 setup stone count와 일치하면 `W` → `B`이며, `HA[0]`은 exporter 호환 no-handicap이고 HA 자체는 돌을 배치하지 않습니다. invalid/duplicate `PL`, move와 같은 node 또는 첫 착수 뒤의 `PL`, invalid/duplicate `HA`, HA/setup count mismatch, 범위 밖 setup 좌표와 setup+move 혼합은 fixed non-reflective 400으로 wallet/debit/enqueue 전에 거절합니다. `initialPlayer`는 primary/spawn/persistent, multi-turn, deep search, benchmark, timeline, synthetic probe 및 UI playback에 전파됩니다. post-move transition, compressed setup ranges, 전체 legality, 추가 규칙은 [`review.md`](review.md)의 `COM-005` 후속 범위입니다.
+- SGF root game metadata는 version marker `sgf-game-info-v1`로 표시합니다. `PB`/`PW`/`DT`/`RE`는 안전한 SGF 작성값 또는 `null`만 허용하며 합성값을 만들지 않습니다. SimpleText에는 NFC·공백 정규화·길이 제한을 적용하고, 유효한 FF4 부분/쉼표 `DT`는 허용하되 잘못된 단축 상태는 무효화합니다. `RE`는 안전한 작성값과 canonical 값을 함께 보존하며 숫자 margin은 최대 1000이고 정확한 decimal round-trip이 가능한 값만 허용합니다. 잘못된 선택 필드는 해당 필드만 `null`이 되며, malformed UTF-8은 wallet/debit/enqueue 전에 고정 400 `SGF_INVALID_ENCODING`으로 거절합니다. marker가 있는 저장 결과도 UI 직전에 재검증하고, legacy `katago-worker-v1`는 `sgf_content` 또는 `sgfContent`를 재파싱하거나 구 placeholder를 숨깁니다. UI는 `DT`를 직접 표시하고 `RE`에 공통 `ProductGameResult` parser를 사용합니다. 이 출시 계약은 FF4보다 좁은 root-only 계약이며 실제 corpus 개인정보 규칙을 준수합니다.
+
 ### SGF 원문 저장 (MVP)
 
 - **저장 위치:** 검증된 SGF UTF-8 텍스트는 Supabase **`analysis_jobs.sgf_content`** 컬럼에 저장됩니다.
@@ -291,7 +301,7 @@ Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 
 - **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다. cfg의 `reportAnalysisWinratesAs`는 정확히 하나여야 하며 운영에서는 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정합니다.
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
-두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase 에 `004`+`007` 의 `claim_next_analysis_job` RPC 및 `006` SECURITY DEFINER RPC 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(`006` 미적용 시 anon 등에 EXECUTE 가 남을 수 있음 — README「SECURITY DEFINER RPC 권한 검증」).
+두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase migration `001 → 013` 전체와 `013`의 SECURITY DEFINER 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(README「SECURITY DEFINER RPC 권한 검증」·[database migration gate](docs/database-migration-gate.md) 참고).
 
 mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
 
@@ -318,14 +328,27 @@ corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
 staging 전용 계정의 인증 토큰이 있을 때는 잔액 조회까지 확인할 수 있습니다. 이 단계도 checkout은 만들지 않습니다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
+SMOKE_BASE_URL=https://<배포도메인> \
+SMOKE_EXPECTED_ORIGIN=https://<배포도메인> \
+SMOKE_AUTH_TOKEN=<redacted> \
+corepack pnpm deploy:smoke
 ```
 
 Lemon checkout URL 생성까지 확인해야 할 때만, staging 전용 계정과 별도 승인 하에서 아래 옵션을 사용합니다. 카드 결제 완료와 webhook grant 검증은 별도 수동 절차로 분리합니다.
 
 ```bash
-SMOKE_AUTH_TOKEN=<redacted> SMOKE_CREATE_CHECKOUT=true corepack pnpm deploy:smoke -- --base-url=https://<배포도메인>
+SMOKE_BASE_URL=https://<배포도메인> \
+SMOKE_EXPECTED_ORIGIN=https://<배포도메인> \
+SMOKE_AUTH_TOKEN=<redacted> \
+SMOKE_CREATE_CHECKOUT=true \
+corepack pnpm deploy:smoke
 ```
+
+토큰을 사용하는 smoke는 `SMOKE_EXPECTED_ORIGIN`과 대상 origin이 정확히 같아야 하며 HTTPS만 허용합니다. 모든 redirect는 따라가지 않고 실패 처리합니다. GitHub의 `Staging Smoke` workflow는 임의 URL 입력을 받지 않고, 보호된 `staging` environment의 `STAGING_BASE_URL` 변수와 `SMOKE_AUTH_TOKEN`·`SMOKE_OPS_TOKEN` secret만 사용합니다. 두 secret은 의존성 설치가 끝난 뒤 실제 smoke step에만 주입됩니다.
+
+GitHub `staging` environment는 deployment branch를 `master`로 제한하고, required reviewer를 지정하며, self-review와 administrator bypass를 금지해야 합니다. 이 외부 environment 정책이 선택한 feature branch의 코드가 staging secret을 받지 못하게 하는 실제 보안 경계이며 workflow의 ref 검사는 보조 방어입니다.
+
+로컬 공개 경로만 확인할 때는 `SMOKE_ALLOW_INSECURE_LOOPBACK=true`로 `localhost`, `127.0.0.1`, `[::1]`의 HTTP를 명시적으로 허용할 수 있습니다. 이 예외에는 인증 토큰이나 운영 토큰을 함께 사용할 수 없습니다.
 
 결제·분석 smoke 이후에는 service-role 환경에서 크레딧 원장 감사를 실행합니다. 이 명령은 외부 HTTP API가 아니라 운영자 CLI이며, `profiles.credits`와 `credit_logs` 합계, payment 중복 지급, failed job 환불 누락, usage/refund 로그의 job 연결 오류를 점검합니다.
 
@@ -339,7 +362,7 @@ corepack pnpm credits:audit
 corepack pnpm credits:audit -- --limit=100000
 ```
 
-**최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase 006/007 운영 DB 적용 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
+**최신 master(KataGo worker·lease·Deep Search v1) 배포 전**에는 [`docs/TODO.md`](docs/TODO.md) 의 **「최신 master 배포 전 smoke (체크리스트)」** 를 함께 수행하세요. 여기에는 **Supabase `001 → 013` 운영 DB 적용·권한 확인**, **Web/Worker env**, **Deep Search OFF 기본 검증**, **Deep Search ON 은 GPU worker 소규모만** 등이 정리되어 있습니다.
 
 1. 브라우저에서 **GET /** — 정적 홈이 로드되는지
 2. **Clerk 로그인** — 세션 후 홈 복귀
@@ -351,7 +374,7 @@ corepack pnpm credits:audit -- --limit=100000
 
 ### 운영 배포 체크리스트
 
-- [ ] Supabase 마이그레이션 **001 / 002 / 003 / 004 / 005 / 006 / 007** 적용 (`004`: 초기 `claim_next_analysis_job`, `007`: lease·stale 재claim·시도 상한, `006`: SECURITY DEFINER RPC 권한 잠금 — README 참고)
+- [ ] Supabase migration **`001 → 013` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: SECURITY DEFINER/ACL 고정)
 - [ ] Clerk **production** 도메인·Redirect URL
 - [ ] Lemon Squeezy **live** API key·store·**webhook signing secret**
 - [ ] Lemon **live** variant ID 3종(Starter / Standard / Pro)
@@ -503,9 +526,17 @@ order by created_at desc;
 - [`002_payment_provider_neutral_credit_logs.sql`](supabase/migrations/002_payment_provider_neutral_credit_logs.sql) — `credit_logs` provider 중립 컬럼 + `add_credits_from_payment` RPC
 - [`003_analysis_jobs_progress.sql`](supabase/migrations/003_analysis_jobs_progress.sql) — `analysis_jobs.progress`
 - [`004_analysis_job_claim_rpc.sql`](supabase/migrations/004_analysis_job_claim_rpc.sql) — **`claim_next_analysis_job`** 초안(007 적용 시 시그니처 대체)
-- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
 - [`005_analysis_jobs_sgf_content.sql`](supabase/migrations/005_analysis_jobs_sgf_content.sql) — `analysis_jobs` SGF 원문·무결성 메타 컬럼
 - [`006_lock_down_security_definer_rpc.sql`](supabase/migrations/006_lock_down_security_definer_rpc.sql) — **SECURITY DEFINER RPC** 에 대해 `PUBLIC` / `anon` / `authenticated` 의 **EXECUTE 를 REVOKE**하고 **`service_role` 만 GRANT** (임의 크레딧·큐 claim 방지)
+- [`007_analysis_job_lease_retry.sql`](supabase/migrations/007_analysis_job_lease_retry.sql) — **`analysis_jobs` lease 컬럼** + **`claim_next_analysis_job(text, integer)`** (stale running 재claim, `max_attempts` 초과 시 failed+환불)
+- [`008_analysis_worker_observability.sql`](supabase/migrations/008_analysis_worker_observability.sql) — Worker heartbeat/health RPC
+- [`009_analysis_job_data_purge.sql`](supabase/migrations/009_analysis_job_data_purge.sql) — 사용자 요청 기반 분석 payload 삭제
+- [`010_analysis_job_retention.sql`](supabase/migrations/010_analysis_job_retention.sql) — 만료 payload retention RPC
+- [`011_atomic_enqueue_paid_analysis_job.sql`](supabase/migrations/011_atomic_enqueue_paid_analysis_job.sql) — 크레딧 차감과 유료 job enqueue 원자화
+- [`012_atomic_failure_refund.sql`](supabase/migrations/012_atomic_failure_refund.sql) — lease-fenced 실패 확정·환불과 quarantine 원자화
+- [`013_harden_security_definer_functions.sql`](supabase/migrations/013_harden_security_definer_functions.sql) — 11개 민감 RPC의 owner, `search_path`, ACL 및 관련 table ACL 고정
+
+파일을 골라 수동 실행하지 말고 반드시 `001 → 013` 숫자 순서를 사용한다. 새 runner와 실제 PostgreSQL gate는 [database migration gate](docs/database-migration-gate.md)를 따른다. 실제 staging 권한 증거는 SQL Editor 결과를 복사하는 대신 같은 커밋의 CI expected contract와 `pnpm db:evidence:staging` 읽기 전용 collector로 수집한다.
 
 ### SECURITY DEFINER RPC 권한 검증 (006 적용 후)
 
@@ -557,3 +588,7 @@ select has_function_privilege('service_role', 'public.ensure_profile_with_signup
 
 - `.env` 는 `.gitignore` 에 포함되어 있어 기본적으로 커밋되지 않습니다.
 - **Secret key·서비스 롤 키를 커밋하지 마세요.**
+
+## Database migration gate
+
+Supabase migration은 반드시 `001 → 002 → … → 013` 숫자순으로 적용합니다. `pnpm db:migrate:supabase`는 `PG*` 환경변수 또는 CI container를 사용하며, 이력 없는 기존 DB는 reviewed baseline이 없으면 fail-closed 됩니다. `pnpm test:db:migrations`는 명시적으로 확인한 폐기 가능 container에서만 fresh `001→013`, upgrade `011→012→013`, checksum drift, ACL/42501, rollback·quarantine·동시 lock wait 및 schema/ACL/함수 본문 구조 동등성을 검증하고 정제된 artifact를 보존합니다. `013`은 11개 SECURITY DEFINER 함수의 owner/search_path=`pg_catalog`/ACL과 table ACL을 고정합니다. 실제 staging은 master 전용 `Staging database evidence` workflow가 same-commit contract, clean checkout, DB↔HTTP Supabase project binding, read-only catalog와 PostgREST 거절을 검증한 뒤 정제된 evidence만 업로드합니다. 상세 설정과 기존 운영 DB 도입 제한은 [database-migration-gate](docs/database-migration-gate.md)를 참고하세요.

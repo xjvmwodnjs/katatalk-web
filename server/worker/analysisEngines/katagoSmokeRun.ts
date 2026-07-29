@@ -123,6 +123,8 @@ export async function runKatagoSmoke(opts: {
   const queryLine = buildKatagoAnalysisQueryLine({
     boardSize: parsed.boardSize,
     komi: parsed.komi,
+    rules: parsed.rules,
+    initialPlayer: parsed.initialPlayer,
     moves: parsed.moves,
     initialStones: parsed.initialStones,
     maxVisits,
@@ -297,6 +299,8 @@ export async function runKatagoWorkerAnalysisV1(opts: {
   const queryLine = buildKatagoAnalysisQueryLine({
     boardSize: parsed.boardSize,
     komi: parsed.komi,
+    rules: parsed.rules,
+    initialPlayer: parsed.initialPlayer,
     moves: parsed.moves,
     initialStones: parsed.initialStones,
     maxVisits,

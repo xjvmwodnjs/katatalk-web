@@ -23,13 +23,20 @@ import {
   analyzePostUserLimit,
   analyzeTimelineProgressGetUserLimit,
 } from "./middleware/apiRateLimit";
-import { logAnalysisEngineSnapshot, resolveCompletedJobMetaMock } from "./analysisEngineDeterminism";
+import {
+  logAnalysisEngineSnapshot,
+  publicAnalysisJobErrorMessage,
+  resolveCompletedJobMetaMock,
+} from "./analysisEngineDeterminism";
 import {
   requireAnalyzeEnqueueAllowed,
   shouldEnqueueAnalysisJobAsMock,
 } from "./middleware/analyzeEnqueueGuard";
 import { getAnalysisEngineName } from "./worker/analysisEngines/config";
-import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
+import {
+  requireAnalyzeAuth,
+  requireAnalyzeAuthBeforeAdmission,
+} from "./middleware/requireAnalyzeAuth";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
 import { isMockAnalysisAllowed } from "./_core/env";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
@@ -77,7 +84,7 @@ function analysisJobDbRowToGetResponse(row: AnalysisJobDbRow): AnalysisJobGetRes
   if (status === "failed") {
     return {
       ...base,
-      error: { message: row.error_message ?? "Analysis failed." },
+      error: { message: publicAnalysisJobErrorMessage(row.last_error_code) },
     };
   }
 
@@ -97,7 +104,19 @@ const SUPPORTED_LANGUAGES = new Set<AnalysisJobLanguage>(["ko", "en", "zh", "ja"
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_SGF_FILE_BYTES, files: 1 },
+  limits: {
+    // Busboy emits `limit` when bytes reach fileSize, so MAX + 1 preserves the
+    // public contract that exactly MAX_SGF_FILE_BYTES is accepted.
+    fileSize: MAX_SGF_FILE_BYTES + 1,
+    files: 1,
+    fields: 1,
+    // Busboy raises partsLimit when the counter reaches the configured value,
+    // so two accepted parts (one file + language) require a sentinel of three.
+    parts: 3,
+    fieldSize: 32,
+    fieldNameSize: 32,
+    fieldNestingDepth: 0,
+  },
   fileFilter: (_req, file, cb) => {
     if (!file.originalname.toLowerCase().endsWith(".sgf")) {
       cb(
@@ -134,8 +153,20 @@ function parseLanguage(req: Request): AnalysisJobLanguage {
   return "ko";
 }
 
-function sendUploadError(res: Response, status: number, message: string) {
-  res.status(status).json({ success: false, message });
+function sendUploadError(res: Response, status: number, message: string, code?: string) {
+  res.status(status).json({
+    success: false,
+    ...(code ? { code } : {}),
+    message,
+  });
+}
+
+function decodeSgfUploadUtf8(buffer: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return null;
+  }
 }
 
 function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
@@ -332,7 +363,7 @@ analyzeRouter.delete(
 analyzeRouter.post(
   "/api/analyze",
   analyzePostIpLimit,
-  requireAnalyzeAuth,
+  requireAnalyzeAuthBeforeAdmission,
   analyzePostUserLimit,
   requireAnalyzeEnqueueAllowed,
   handleMulterUpload,
@@ -354,11 +385,20 @@ analyzeRouter.post(
         return;
       }
 
-      const sgfContent = file.buffer.toString("utf8");
+      const sgfContent = decodeSgfUploadUtf8(file.buffer);
+      if (sgfContent == null) {
+        sendUploadError(
+          res,
+          400,
+          "Invalid SGF: the uploaded file must be valid UTF-8.",
+          "SGF_INVALID_ENCODING"
+        );
+        return;
+      }
 
       const validation = validateSgfText(sgfContent);
       if (!validation.ok) {
-        sendUploadError(res, 400, validation.message);
+        sendUploadError(res, 400, validation.message, validation.code);
         return;
       }
 

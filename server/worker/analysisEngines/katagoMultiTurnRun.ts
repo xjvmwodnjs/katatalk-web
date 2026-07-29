@@ -276,6 +276,8 @@ function prepareTurns(
     const queryLine = buildKatagoAnalysisQueryLine({
       boardSize: parsed.boardSize,
       komi: parsed.komi,
+      rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
       moves: movesBefore,
       initialStones: parsed.initialStones,
       maxVisits,

@@ -292,7 +292,8 @@ describe("analyzeSgfKatago (worker v1)", () => {
     stdinCaptured = "";
   });
 
-  const sgf = "(;FF[4]GM[1]SZ[19];B[pd];W[dd])";
+  const sgf =
+    "(;FF[4]GM[1]SZ[19]PB[Black Root]PW[White Root]DT[2026-07-29]RE[w+resign];B[pd];W[dd])";
 
   it("throws KATAGO_ENV_MISSING when paths unset", async () => {
     delete process.env.KATAGO_BINARY_PATH;
@@ -360,6 +361,17 @@ describe("analyzeSgfKatago (worker v1)", () => {
 
     expect(r.source).toBe("katago-worker-v1");
     expect(r.ok).toBe(true);
+    expect(r.game_info).toEqual({
+      metadata_version: "sgf-game-info-v1",
+      black_player: "Black Root",
+      white_player: "White Root",
+      date: "2026-07-29",
+      total_moves: 2,
+      result: "W+R",
+      result_raw: "w+resign",
+      metadata_warnings: [{ field: "RE", code: "noncanonical_format" }],
+      komi: 6.5,
+    });
     expect(r.engine as Record<string, unknown>).toMatchObject({
       maxVisits: 40,
       winratePerspective: "black",

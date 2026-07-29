@@ -49,14 +49,117 @@ describe("analysisReviewUiV2 helpers", () => {
 
   it("reads compact game info from result payload", () => {
     expect(
-      readCompactGameInfoV2({
-        game_info: {
-          black_player: "Black A",
-          white_player: "White B",
-          result: { ko: "흑 불계승", en: "B+R" },
+      readCompactGameInfoV2(
+        {
+          game_info: {
+            black_player: "Black A",
+            white_player: "White B",
+            date: "2026-07-29",
+            result: { ko: "흑 불계승", en: "B+R" },
+          },
         },
-      }, "ko")
-    ).toEqual({ blackPlayer: "Black A", whitePlayer: "White B", resultText: "흑 불계승" });
+        "ko"
+      )
+    ).toEqual({
+      blackPlayer: "Black A",
+      whitePlayer: "White B",
+      dateText: "2026-07-29",
+      resultText: "흑 불계승",
+    });
+  });
+
+  it("trusts versioned Worker metadata and exposes the authored date", () => {
+    expect(
+      readCompactGameInfoV2({
+        source: "katago-worker-v1",
+        game_info: {
+          metadata_version: "sgf-game-info-v1",
+          black_player: "Root Black",
+          white_player: "Root White",
+          date: "2026-07-29",
+          result: "W+R",
+        },
+      })
+    ).toEqual({
+      blackPlayer: "Root Black",
+      whitePlayer: "Root White",
+      dateText: "2026-07-29",
+      resultText: "W+R",
+    });
+  });
+
+  it("revalidates marked Worker metadata before rendering", () => {
+    expect(
+      readCompactGameInfoV2({
+        source: "katago-worker-v1",
+        game_info: {
+          metadata_version: "sgf-game-info-v1",
+          black_player: "B".repeat(129),
+          white_player: "White\u202Espoof",
+          date: "2023-02-29",
+          result: "B+1000.5",
+        },
+      })
+    ).toEqual({
+      blackPlayer: null,
+      whitePlayer: null,
+      dateText: null,
+      resultText: null,
+    });
+  });
+
+  it("reparses SGF for unversioned Worker results instead of trusting placeholders", () => {
+    expect(
+      readCompactGameInfoV2({
+        source: "katago-worker-v1",
+        sgf_content: "(;PB[SGF Black]PW[SGF White]DT[2024-05]RE[B+2.5])",
+        game_info: {
+          black_player: "Black",
+          white_player: "White",
+          date: "2099-01-01",
+          result: { en: "analysis pipeline text" },
+        },
+      })
+    ).toEqual({
+      blackPlayer: "SGF Black",
+      whitePlayer: "SGF White",
+      dateText: "2024-05",
+      resultText: "B+2.5",
+    });
+  });
+
+  it("hides unversioned Worker placeholders when the SGF is unavailable", () => {
+    expect(
+      readCompactGameInfoV2({
+        source: "katago-worker-v1",
+        game_info: {
+          black_player: "Black",
+          white_player: "White",
+          date: "2099-01-01",
+          result: { en: "analysis pipeline text" },
+        },
+      })
+    ).toEqual({
+      blackPlayer: null,
+      whitePlayer: null,
+      dateText: null,
+      resultText: null,
+    });
+  });
+
+  it("supports camelCase sgfContent when recovering legacy Worker metadata", () => {
+    expect(
+      readCompactGameInfoV2({
+        source: "katago-worker-v1",
+        sgfContent: "(;PB[Camel Black]PW[Camel White]DT[2025]RE[B+])",
+        game_info: { black_player: "Black", white_player: "White" },
+      })
+    ).toEqual({
+      blackPlayer: "Camel Black",
+      whitePlayer: "Camel White",
+      dateText: "2025",
+      resultText: "B+",
+    });
   });
 
   it("toggles winrate collapsed state", () => {

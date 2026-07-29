@@ -3,8 +3,20 @@
 // =============================================================
 
 import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
+import {
+  parseSgfForKatagoV1,
+  parseSupportedKatagoRulesFromRootV1,
+  SgfKatagoParseError,
+  type SgfKatagoParseErrorCodeV1,
+} from "@shared/sgfKatagoParseV1";
 
-export type SgfValidationResult = { ok: true } | { ok: false; message: string };
+export type SgfValidationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      message: string;
+      code?: SgfKatagoParseErrorCodeV1;
+    };
 
 /**
  * Validates minimal SGF structure expected for a real game record.
@@ -49,7 +61,7 @@ export function validateSgfText(raw: string): SgfValidationResult {
     return {
       ok: false,
       message:
-        "Invalid SGF: AB/AW/AE setup stones after the first move are not supported. Put setup stones before the first move.",
+        "Invalid SGF: AB/AW/AE setup stones in a move node or after the first move are not supported. Put setup stones before the first move.",
     };
   }
 
@@ -59,6 +71,112 @@ export function validateSgfText(raw: string): SgfValidationResult {
       message:
         "Invalid SGF: no Black or White move properties were found. Expected at least one B[...] or W[...] (including passes like B[] or W[]).",
     };
+  }
+
+  let rootRulesValidated = false;
+  try {
+    parseSupportedKatagoRulesFromRootV1(text);
+    rootRulesValidated = true;
+    // Keep upload admission and Worker execution on the same strict parser so
+    // invalid board/setup coordinates fail before wallet/debit/enqueue.
+    parseSgfForKatagoV1(text);
+  } catch (error) {
+    if (error instanceof SgfKatagoParseError) {
+      if (error.code === "SGF_UNSUPPORTED_RULES") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: only Japanese rules are supported.",
+        };
+      }
+      if (error.code === "SGF_PARSE_FAILED") {
+        return {
+          ok: false,
+          code: error.code,
+          message: rootRulesValidated
+            ? "Invalid SGF: the record contains malformed or unsupported structural values."
+            : "Invalid SGF: the root RU property is not closed.",
+        };
+      }
+      if (error.code === "SGF_INVALID_BOARD_SIZE") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: SZ must be a single root property with one integer value.",
+        };
+      }
+      if (error.code === "SGF_UNSUPPORTED_BOARD_SIZE") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: only square 9x9, 13x13, and 19x19 boards are supported.",
+        };
+      }
+      if (error.code === "SGF_INVALID_KOMI") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: KM must be a single root property with one numeric value.",
+        };
+      }
+      if (error.code === "SGF_UNSUPPORTED_KOMI") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: KM must be an integer or half-integer from -150 to 150.",
+        };
+      }
+      if (error.code === "SGF_INVALID_PLAYER_TO_PLAY") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: PL must contain exactly B or W in a setup node before the first move.",
+        };
+      }
+      if (error.code === "SGF_PLAYER_TO_PLAY_CONFLICT") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: PL conflicts with the first move color.",
+        };
+      }
+      if (error.code === "SGF_UNSUPPORTED_PLAYER_TO_PLAY") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: PL after the first move is not supported.",
+        };
+      }
+      if (error.code === "SGF_INVALID_HANDICAP") {
+        return {
+          ok: false,
+          code: error.code,
+          message: "Invalid SGF: HA must be 0 or an integer of at least 2.",
+        };
+      }
+      if (error.code === "SGF_HANDICAP_SETUP_MISMATCH") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: HA does not match the initial black setup stones.",
+        };
+      }
+      if (error.code === "SGF_INVALID_COORDINATE") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: one or more move or setup coordinates are invalid for the board size.",
+        };
+      }
+    }
+    throw error;
   }
 
   return { ok: true };

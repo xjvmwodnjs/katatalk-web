@@ -3,7 +3,7 @@ import express from "express";
 import http from "http";
 import * as resolve from "./_core/resolveRequestUser";
 import { analyzeRouter } from "./analyzeRoute";
-import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
+import { MAX_SGF_FILE_BYTES, SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import type { AuthenticatedUser } from "./_core/sdk";
 
 vi.mock("./_core/resolveRequestUser", () => ({
@@ -134,8 +134,81 @@ describe("POST /api/analyze mock guard (production)", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
 
     const fd = new FormData();
-    fd.append("language", "ko");
     fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    fd.append("language", "ko");
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(202);
+  });
+
+  it("rejects nested multipart fields before analysis processing", async () => {
+    process.env.NODE_ENV = "test";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const fd = new FormData();
+    fd.append("language[0]", "ko");
+    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { success?: boolean; message?: string };
+    expect(body.success).toBe(false);
+    expect(body.message).toMatch(/nesting too deep/i);
+  });
+
+  it("rejects SGF uploads above the in-memory byte limit", async () => {
+    process.env.NODE_ENV = "test";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([new Uint8Array(MAX_SGF_FILE_BYTES + 1)], {
+        type: "application/octet-stream",
+      }),
+      "oversized.sgf"
+    );
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { success?: boolean; message?: string };
+    expect(body.success).toBe(false);
+    expect(body.message).toMatch(/too large/i);
+  });
+
+  it("accepts an SGF upload exactly at the public byte limit", async () => {
+    process.env.NODE_ENV = "test";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const prefix = "(;FF[4]GM[1]SZ[19]C[";
+    const suffix = "];B[pd])";
+    const exactLimitSgf = `${prefix}${"a".repeat(
+      MAX_SGF_FILE_BYTES - prefix.length - suffix.length
+    )}${suffix}`;
+    const exactLimitBlob = new Blob([exactLimitSgf], {
+      type: "application/octet-stream",
+    });
+    expect(exactLimitBlob.size).toBe(MAX_SGF_FILE_BYTES);
+
+    const fd = new FormData();
+    fd.append(SGF_UPLOAD_FORM_FIELD, exactLimitBlob, "maximum.sgf");
+    fd.append("language", "ko");
 
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",

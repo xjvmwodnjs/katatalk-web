@@ -74,6 +74,13 @@ export type SgfPlaybackViewModelV1 = SgfPlaybackActiveV1 | SgfPlaybackPlaceholde
 export type ParsedMainlineMoveV1 = { color: "B" | "W"; sgfPoint: string };
 export type ParsedSetupStoneV1 = { color: "B" | "W"; sgfPoint: string };
 
+export type SgfInitialPositionIssueCodeV1 =
+  | "invalid_player_to_play"
+  | "player_to_play_with_move"
+  | "player_to_play_after_move_unsupported"
+  | "invalid_handicap"
+  | "duplicate_handicap";
+
 /** `[` 직후부터 SGF Text 이스케이프 규칙으로 `]` 까지 읽기 (`\\`, `\]`) */
 export function readSgfBracketValue(s: string, openBracketIdx: number): { text: string; end: number } | null {
   if (openBracketIdx >= s.length || s[openBracketIdx] !== "[") {
@@ -95,6 +102,36 @@ export function readSgfBracketValue(s: string, openBracketIdx: number): { text: 
     i += 1;
   }
   return null;
+}
+
+/** Skips one SGF game-tree branch without counting parentheses inside property values. */
+export function skipSgfVariationTreeV1(
+  s: string,
+  openParenIndex: number
+): { end: number; closed: boolean } {
+  let depth = 0;
+  let i = openParenIndex;
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (ch === "[") {
+      const bracket = readSgfBracketValue(s, i);
+      if (bracket == null) {
+        return { end: s.length, closed: false };
+      }
+      i = bracket.end;
+      continue;
+    }
+    if (ch === "(") {
+      depth += 1;
+    } else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return { end: i + 1, closed: true };
+      }
+    }
+    i += 1;
+  }
+  return { end: s.length, closed: false };
 }
 
 /** SGF 열/행 한 글자 → 0-based (a=0 …, i 포함 연속) */
@@ -199,10 +236,42 @@ export function sgfPointToGtp(point: string, boardSize: number): string | null {
 export type ExtractMainlineBwMovesResultV1 = {
   moves: ParsedMainlineMoveV1[];
   initialStones: ParsedSetupStoneV1[];
+  /** Last valid PL before the first move. */
+  initialPlayerHint: "B" | "W" | null;
+  /** Parsed HA value. `0` is retained as an exporter-compatible no-handicap marker. */
+  handicapHint: number | null;
+  /** Structural PL/HA issues resolved by the stricter KataGo parser. */
+  initialPositionIssueCodes: SgfInitialPositionIssueCodeV1[];
   warnings: SgfPlaybackWarningV1[];
   /** 루트 메인라인에서 첫 유효 SZ (없으면 null → 기본 19) */
   boardSizeHint: number | null;
 };
+
+type SetupParseStateV1 = {
+  sawSetup: boolean;
+  afterMoveSetup: boolean;
+  sawConflict: boolean;
+  sawHa: boolean;
+  initialPlayerHint: "B" | "W" | null;
+  handicapHint: number | null;
+  initialPositionIssueCodes: SgfInitialPositionIssueCodeV1[];
+};
+
+type NodePropertyContextV1 = {
+  duplicateInNode: boolean;
+  hadMoveBeforeNode: boolean;
+  hasMoveInNode: boolean;
+  isRootNode: boolean;
+};
+
+function pushInitialPositionIssueOnce(
+  state: SetupParseStateV1,
+  code: SgfInitialPositionIssueCodeV1
+): void {
+  if (!state.initialPositionIssueCodes.includes(code)) {
+    state.initialPositionIssueCodes.push(code);
+  }
+}
 
 /**
  * `i`에서 한 개의 `PropIdent[value]` 를 읽는다. 호출부는 `s[i]`가 문자로 시작한다고 가정한다.
@@ -213,7 +282,13 @@ function consumeOneProperty(
 ):
   | { ok: true; propId: string; values: string[]; end: number }
   | { ok: false; kind: "bad_prop"; end: number }
-  | { ok: false; kind: "unclosed"; bracketAt: number; end: number } {
+  | {
+      ok: false;
+      kind: "unclosed";
+      propId: string;
+      bracketAt: number;
+      end: number;
+    } {
   let j = i;
   while (j < s.length && /\s/.test(s[j]!)) {
     j += 1;
@@ -240,7 +315,13 @@ function consumeOneProperty(
     const bracketAt = j;
     const br = readSgfBracketValue(s, j);
     if (br == null) {
-      return { ok: false, kind: "unclosed", bracketAt, end: j + 1 };
+      return {
+        ok: false,
+        kind: "unclosed",
+        propId: s.slice(idStart, propIdEnd),
+        bracketAt,
+        end: j + 1,
+      };
     }
     values.push(br.text);
     j = br.end;
@@ -255,13 +336,18 @@ function applyRootProperty(
   moves: ParsedMainlineMoveV1[],
   initialStoneMap: Map<string, "B" | "W">,
   warnings: SgfPlaybackWarningV1[],
-  setupState: { sawSetup: boolean; afterMoveSetup: boolean; sawConflict: boolean; sawHa: boolean },
-  metadataState: { ffSeen: boolean; gmSeen: boolean; unsupportedGm: string | null },
-  recordSz: (raw: string) => void
+  setupState: SetupParseStateV1,
+  metadataState: {
+    ffSeen: boolean;
+    gmSeen: boolean;
+    unsupportedGm: string | null;
+  },
+  recordSz: (raw: string) => void,
+  nodeContext: NodePropertyContextV1
 ): void {
   const up = propId.toUpperCase();
   if (up === "AB" || up === "AW" || up === "AE") {
-    if (moves.length > 0) {
+    if (nodeContext.hasMoveInNode || moves.length > 0) {
       if (!setupState.afterMoveSetup) {
         setupState.afterMoveSetup = true;
         warnings.push({ code: "setup_after_move_unsupported" });
@@ -286,7 +372,7 @@ function applyRootProperty(
       }
       initialStoneMap.set(pt, color);
     }
-  } else if (up === "SZ") {
+  } else if (up === "SZ" && nodeContext.isRootNode) {
     recordSz(values[0] ?? "");
   } else if (up === "FF") {
     metadataState.ffSeen = true;
@@ -301,6 +387,44 @@ function applyRootProperty(
     if (!setupState.sawHa) {
       setupState.sawHa = true;
       warnings.push({ code: "handicap_property_present" });
+    } else {
+      pushInitialPositionIssueOnce(setupState, "duplicate_handicap");
+    }
+    if (nodeContext.duplicateInNode) {
+      pushInitialPositionIssueOnce(setupState, "duplicate_handicap");
+    }
+    const raw = (values[0] ?? "").trim();
+    if (values.length !== 1 || !/^\+?\d+$/.test(raw)) {
+      pushInitialPositionIssueOnce(setupState, "invalid_handicap");
+    } else {
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isSafeInteger(parsed) || (parsed !== 0 && parsed < 2)) {
+        pushInitialPositionIssueOnce(setupState, "invalid_handicap");
+      } else if (setupState.handicapHint == null) {
+        setupState.handicapHint = parsed;
+      }
+    }
+  } else if (up === "PL") {
+    if (nodeContext.hadMoveBeforeNode) {
+      pushInitialPositionIssueOnce(
+        setupState,
+        "player_to_play_after_move_unsupported"
+      );
+      return;
+    }
+    if (nodeContext.hasMoveInNode) {
+      pushInitialPositionIssueOnce(setupState, "player_to_play_with_move");
+      return;
+    }
+    const raw = (values[0] ?? "").trim().toUpperCase();
+    if (
+      nodeContext.duplicateInNode ||
+      values.length !== 1 ||
+      (raw !== "B" && raw !== "W")
+    ) {
+      pushInitialPositionIssueOnce(setupState, "invalid_player_to_play");
+    } else {
+      setupState.initialPlayerHint = raw;
     }
   } else if (propId.length === 1 && /^[BW]$/i.test(propId)) {
     const color = propId.toUpperCase() as "B" | "W";
@@ -316,11 +440,17 @@ function consumeAllPropertiesInNode(
   moves: ParsedMainlineMoveV1[],
   initialStoneMap: Map<string, "B" | "W">,
   warnings: SgfPlaybackWarningV1[],
-  setupState: { sawSetup: boolean; afterMoveSetup: boolean; sawConflict: boolean; sawHa: boolean },
-  metadataState: { ffSeen: boolean; gmSeen: boolean; unsupportedGm: string | null },
-  recordSz: (raw: string) => void
+  setupState: SetupParseStateV1,
+  metadataState: {
+    ffSeen: boolean;
+    gmSeen: boolean;
+    unsupportedGm: string | null;
+  },
+  recordSz: (raw: string) => void,
+  isRootNode: boolean
 ): number {
   let j = start;
+  const properties: { propId: string; values: string[] }[] = [];
   while (j < s.length) {
     while (j < s.length && /\s/.test(s[j]!)) {
       j += 1;
@@ -339,13 +469,44 @@ function consumeAllPropertiesInNode(
     const r = consumeOneProperty(s, j);
     if (!r.ok) {
       if (r.kind === "unclosed") {
-        warnings.push({ code: "unclosed_property", params: { at: r.bracketAt } });
+        warnings.push({
+          code: "unclosed_property",
+          params: { at: r.bracketAt },
+        });
+        const unclosedId = r.propId.toUpperCase();
+        if (unclosedId === "PL") {
+          pushInitialPositionIssueOnce(setupState, "invalid_player_to_play");
+        } else if (unclosedId === "HA") {
+          pushInitialPositionIssueOnce(setupState, "invalid_handicap");
+        }
       }
       j = r.end;
       continue;
     }
-    applyRootProperty(r.propId, r.values, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
+    properties.push({ propId: r.propId, values: r.values });
     j = r.end;
+  }
+
+  const hadMoveBeforeNode = moves.length > 0;
+  const hasMoveInNode = properties.some(
+    ({ propId }) => propId.length === 1 && /^[BW]$/i.test(propId)
+  );
+  const seenPropertyIds = new Set<string>();
+  for (const property of properties) {
+    const normalizedId = property.propId.toUpperCase();
+    const duplicateInNode = seenPropertyIds.has(normalizedId);
+    seenPropertyIds.add(normalizedId);
+    applyRootProperty(
+      property.propId,
+      property.values,
+      moves,
+      initialStoneMap,
+      warnings,
+      setupState,
+      metadataState,
+      recordSz,
+      { duplicateInNode, hadMoveBeforeNode, hasMoveInNode, isRootNode }
+    );
   }
   return j;
 }
@@ -360,24 +521,45 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
   const rootIdx = s.indexOf("(;");
   if (rootIdx < 0) {
     warnings.push({ code: "no_root" });
-    return { moves: [], initialStones: [], warnings, boardSizeHint: null };
+    return {
+      moves: [],
+      initialStones: [],
+      initialPlayerHint: null,
+      handicapHint: null,
+      initialPositionIssueCodes: [],
+      warnings,
+      boardSizeHint: null,
+    };
   }
 
   let i = rootIdx + 2;
-  let parenDepth = 0;
   const moves: ParsedMainlineMoveV1[] = [];
   const initialStoneMap = new Map<string, "B" | "W">();
   let boardSizeHint: number | null = null;
-  const setupState = { sawSetup: false, afterMoveSetup: false, sawConflict: false, sawHa: false };
-  const metadataState = { ffSeen: false, gmSeen: false, unsupportedGm: null as string | null };
+  const setupState: SetupParseStateV1 = {
+    sawSetup: false,
+    afterMoveSetup: false,
+    sawConflict: false,
+    sawHa: false,
+    initialPlayerHint: null,
+    handicapHint: null,
+    initialPositionIssueCodes: [],
+  };
+  const metadataState = {
+    ffSeen: false,
+    gmSeen: false,
+    unsupportedGm: null as string | null,
+  };
   let variationBranchCount = 0;
+  let unclosedVariation = false;
+  let isRootNode = true;
 
   const recordSz = (raw: string) => {
     if (boardSizeHint != null) {
       return;
     }
     const t = raw.trim();
-    const m = /^(\d+)$/.exec(t);
+    const m = /^\+?(\d+)$/.exec(t);
     if (m) {
       const n = Number.parseInt(m[1]!, 10);
       if (Number.isFinite(n)) {
@@ -388,27 +570,32 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
 
   while (i < s.length) {
     const c = s[i]!;
-    if (parenDepth > 0) {
-      if (c === "(") {
-        parenDepth += 1;
-      } else if (c === ")") {
-        parenDepth -= 1;
-      }
-      i += 1;
-      continue;
-    }
     if (c === ")") {
       break;
     }
     if (c === "(") {
       variationBranchCount += 1;
-      parenDepth += 1;
-      i += 1;
+      const skipped = skipSgfVariationTreeV1(s, i);
+      i = skipped.end;
+      if (!skipped.closed) {
+        unclosedVariation = true;
+      }
       continue;
     }
     if (c === ";") {
+      isRootNode = false;
       i += 1;
-      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
+      i = consumeAllPropertiesInNode(
+        s,
+        i,
+        moves,
+        initialStoneMap,
+        warnings,
+        setupState,
+        metadataState,
+        recordSz,
+        isRootNode
+      );
       continue;
     }
     if (/\s/.test(c)) {
@@ -416,13 +603,23 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
       continue;
     }
     if (/[A-Za-z]/.test(c)) {
-      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
+      i = consumeAllPropertiesInNode(
+        s,
+        i,
+        moves,
+        initialStoneMap,
+        warnings,
+        setupState,
+        metadataState,
+        recordSz,
+        isRootNode
+      );
       continue;
     }
     i += 1;
   }
 
-  if (parenDepth > 0) {
+  if (unclosedVariation) {
     warnings.push({ code: "unbalanced_parens" });
   }
   if (variationBranchCount > 0) {
@@ -440,11 +637,30 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
     warnings.push({ code: "setup_stones_applied", params: { count: initialStones.length } });
   }
 
-  return { moves, initialStones, warnings, boardSizeHint };
+  return {
+    moves,
+    initialStones,
+    initialPlayerHint: setupState.initialPlayerHint,
+    handicapHint: setupState.handicapHint,
+    initialPositionIssueCodes: setupState.initialPositionIssueCodes,
+    warnings,
+    boardSizeHint,
+  };
 }
 
-function nextPlayerAfterMoves(moveCount: number): "B" | "W" {
-  return moveCount % 2 === 0 ? "B" : "W";
+function oppositePlayer(player: "B" | "W"): "B" | "W" {
+  return player === "B" ? "W" : "B";
+}
+
+function nextPlayerAfterMoves(
+  moves: ParsedMainlineMoveV1[],
+  moveCount: number,
+  initialPlayer: "B" | "W"
+): "B" | "W" {
+  if (moveCount <= 0) {
+    return initialPlayer;
+  }
+  return oppositePlayer(moves[moveCount - 1]!.color);
 }
 
 type StoneCellV1 = { color: "B" | "W"; turnIndex: number };
@@ -589,10 +805,25 @@ export function buildSgfPlaybackStateV1(args: BuildSgfPlaybackStateV1Args): SgfP
   const {
     moves: mainline,
     initialStones,
+    initialPlayerHint,
+    handicapHint,
+    initialPositionIssueCodes,
     warnings: parseWarnings,
     boardSizeHint,
   } = extractMainlineBwMoves(args.sgfText);
   const warnings: SgfPlaybackWarningV1[] = [...parseWarnings];
+  const firstMovePlayer = mainline[0]?.color ?? null;
+  const initialContractInvalid =
+    initialPositionIssueCodes.length > 0 ||
+    (initialPlayerHint != null &&
+      firstMovePlayer != null &&
+      initialPlayerHint !== firstMovePlayer);
+  const initialPlayer =
+    (initialContractInvalid ? null : initialPlayerHint) ??
+    firstMovePlayer ??
+    (!initialContractInvalid && handicapHint != null && handicapHint >= 2
+      ? "W"
+      : "B");
 
   let boardSize = 19;
   if (boardSizeHint != null && Number.isFinite(boardSizeHint) && boardSizeHint >= 2 && boardSizeHint <= 25) {
@@ -677,7 +908,7 @@ export function buildSgfPlaybackStateV1(args: BuildSgfPlaybackStateV1Args): SgfP
     boardSize,
     totalMoves,
     selectedTurnIndex: sel,
-    currentPlayer: nextPlayerAfterMoves(sel),
+    currentPlayer: nextPlayerAfterMoves(mainline, sel, initialPlayer),
     stones,
     lastMove: lastNonPass,
     warnings,

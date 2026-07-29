@@ -159,6 +159,20 @@ describe("productReviewWorkbenchV1", () => {
     expect(report.candidatePoolSummary.some((candidate) => candidate.turnIndex === 2 && candidate.deepSearchEvidence)).toBe(true);
   });
 
+  it("keeps generic RE[B+] winner semantics in the workbench", () => {
+    const report = buildProductReviewWorkbenchV1({
+      ...completedResultFixture(),
+      sgf_content: "(;FF[4]GM[1]SZ[19]KM[6.5]RE[B+];B[pd];W[dd])",
+    });
+    expect(report.gameSummary).toMatchObject({
+      resultType: "win",
+      winnerColor: "B",
+      loserColor: "W",
+      margin: null,
+    });
+    expect(report.decisiveMoveTrace.selected).not.toBeNull();
+  });
+
   it("includes decisive selected reason and rejected candidate reasons", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
 

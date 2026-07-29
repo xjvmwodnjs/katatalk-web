@@ -80,9 +80,9 @@ flowchart TD
 
 | 단계 | 입력 | 출력 | 주요 파일 | 주요 env | 실패 시 동작 | 테스트 파일 |
 |---|---|---|---|---|---|---|
-| 1. SGF upload | multipart `.sgf`, language | request body | `client/src/pages/Home.tsx`, `server/analyzeRoute.ts` | `VITE_AUTH_PROVIDER`, `AUTH_PROVIDER` | missing file/invalid auth는 400/401 | `server/analyzeRoute.db.test.ts` |
-| 2. validation | SGF text | valid SGF metadata or 400 | `server/sgfValidation.ts`, `shared/sgfPlaybackV1.ts` | 없음 | invalid root/no move/non-Go/after-move setup은 reject | `server/sgfValidation.test.ts`, `server/sgfPlaybackV1.test.ts` |
-| 3. credit spend/refund | user, jobId, cost=1 | debit ledger | `server/creditService.ts`, `server/analyzeRoute.ts` | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | insufficient credit 402, insert 실패 시 refund | `server/creditRpc.test.ts`, `server/refundCreditForAnalysis.test.ts` |
+| 1. SGF upload | multipart `.sgf`, language | authenticated request body | `client/src/pages/Home.tsx`, `server/analyzeRoute.ts`, `server/_core/clerkAuth.ts` | `VITE_AUTH_PROVIDER`, `AUTH_PROVIDER` | POST auth는 identity만 동기화하고 missing file/invalid auth는 400/401 | Clerk auth·route tests |
+| 2. validation | SGF text | normalized metadata or fixed 400 | `server/sgfValidation.ts`, `shared/sgfKatagoParseV1.ts`, `shared/sgfPlaybackV1.ts` | 없음 | malformed/duplicate/non-root/unsupported `SZ`/`KM`도 wallet 전에 reject; missing만 19/6.5 | parser·validation·playback·route tests |
+| 3. wallet/credit spend/refund | admitted user, jobId, cost=1 | wallet 준비 + debit ledger | `server/creditService.ts`, `server/analyzeRoute.ts` | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | admission 뒤 wallet 1회; insufficient credit 402, insert 실패 시 refund | route·credit RPC·refund tests |
 | 4. job enqueue | SGF, sha256, fileName, language | `analysis_jobs` queued row | `server/analyzeRoute.ts`, `server/middleware/analyzeEnqueueGuard.ts` | `ANALYSIS_ENGINE`, `ANALYSIS_WORKER_MODE`, `KATATALK_ALLOW_MOCK_ANALYSIS` | Supabase 실패 시 refund 후 500 | `server/analyzeRoute.mockGuard.test.ts` |
 | 5. Worker claim/lease/retry | queued/stale job | running lease row | `server/worker/analysisWorkerLoop.ts`, `server/creditService.ts`, `supabase/migrations/007_analysis_job_lease_retry.sql` | `ANALYSIS_WORKER_ID`, `ANALYSIS_CLAIM_STALE_SECONDS` | claim RPC 실패는 log 후 idle retry | `server/analysisClaim.test.ts`, `server/analysisWorkerLoop.test.ts` |
 | 6. engine route | claimed row | mock/katago/mismatch path | `server/worker/processClaimedAnalysisJob.ts`, `server/analysisEngineDeterminism.ts` | `ANALYSIS_ENGINE` | mismatch는 failed + paid job refund | `server/analysisEngineDeterminism.test.ts` |
@@ -99,6 +99,8 @@ flowchart TD
 | 17. UI rendering | ViewModel | result screen | `client/src/components/AnalysisResultView.tsx`, `BadukBoardView.tsx`, `AnalysisWinratePanel.tsx` | browser `localStorage` lang | mock/unknown/placeholder guarded UI | `e2e/product-review-result.spec.ts` |
 | 18. PV overlay | selected candidate/reference | numbered overlay | `AnalysisResultView.tsx`, `BadukBoardView.tsx` | 없음 | invalid/pass/occupied-only PV does not enter variation mode | `server/analysisReviewUiV2.test.ts`, E2E |
 | 19. try-play | local board click | local virtual stones only | `AnalysisResultView.tsx`, `BadukBoardView.tsx` | 없음 | no server/KataGo/LLM call | E2E |
+
+SGF game metadata는 `sgf-game-info-v1` marker 아래 root `PB/PW/DT/RE`를 안전한 작성값 또는 `null`로 전달한다. SimpleText에는 NFC·공백·길이 제한을 적용하고, FF4 부분/쉼표 `DT`와 최대 1000의 exact decimal round-trip `RE`만 허용한다. 잘못된 선택 필드는 해당 필드만 숨기지만 malformed UTF-8은 wallet/debit/enqueue 전에 거절한다. marker 결과는 UI 직전에 재검증하고, legacy `katago-worker-v1`는 `sgf_content`/`sgfContent`를 재파싱하거나 구 placeholder를 숨긴다. UI는 `DT`를 직접 표시하고 `RE`는 공통 `ProductGameResult` parser로 해석한다. 이 root-only 출시 계약은 FF4 일반 `game-info` 배치보다 좁으며 corpus 개인정보 규칙은 그대로 유지한다.
 
 ## 5. Current Feature Inventory
 

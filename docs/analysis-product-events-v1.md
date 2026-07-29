@@ -27,6 +27,10 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 
 ## Schema 개요
 
+### SGF game-info v1 metadata contract
+
+공통 `sgf-game-info-v1` marker는 root-only 출시 metadata를 표시한다. `PB/PW/DT/RE`는 안전한 SGF 작성값 또는 `null`이며 Black/White, 현재 날짜, pipeline 결과를 합성하지 않는다. SimpleText에는 NFC·trim·공백·길이 제한을 적용한다. 유효한 FF4 부분 날짜와 쉼표 단축 `DT`는 허용하고 잘못된 단축 상태는 무효화한다. `RE`는 안전한 작성 원문과 canonical 값을 함께 보존하며 generic `B+`/`W+`를 `resultType="win"`으로 해석한다. 숫자 margin은 문자열 기준 최대 1000이고 JavaScript decimal exact round-trip이 되지 않으면 무효화한다. 잘못된 선택 필드는 해당 필드만 `null`이 되어 admission을 거절하지 않지만 malformed UTF-8 업로드는 거절한다. marker 결과는 UI 직전에 재검증하고, legacy `katago-worker-v1`는 `sgf_content` 또는 `sgfContent`를 재파싱하거나 오래된 placeholder를 숨긴다. UI는 `DT`를 직접 표시하고 `RE`는 공통 `ProductGameResult` parser로 해석한다. 이 root-only 출시는 FF4 일반 `game-info` 배치보다 좁으며 실제 corpus 개인정보 규칙은 그대로 적용한다.
+
 `shared/analysisProductEventsV1.ts`는 다음 pure schema/helper를 제공한다.
 
 - `ProductGameResultV1`: SGF `RE[]`에서 계산한 winner/loser/result metadata
@@ -42,11 +46,14 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 지원 정책:
 
 - `B+R`, `W+R`, `B+Resign`, `W+Resign`: `resultType="resign"`
+- `B+`, `W+`: 승자/패자 색을 유지하는 `resultType="win"`, `margin=null`
 - `B+2.5`, `W+2.5`: `resultType="points"`, `margin=2.5`
 - `B+T`, `W+T`: `resultType="time"`
 - `B+F`, `W+F`: `resultType="forfeit"`
 - `0`, `Draw`, `Jigo`: `resultType="draw"`, winner/loser 없음, `margin=null`
 - `RE[]`가 없거나 해석할 수 없으면 `resultType="unknown"`, winner/loser 없음, `margin=null`
+
+숫자 margin은 canonical decimal 문자열 기준 최대 `1000`이며, JavaScript `number`로 변환한 뒤 같은 decimal 문자열로 정확히 왕복되지 않으면 `unknown`으로 처리한다.
 
 원문은 `rawResult`에 보존하되, secret이나 path를 포함하지 않는다.
 
@@ -54,7 +61,7 @@ Analysis Product Events v1은 현재 분석 신호를 최종 제품 문구와 UI
 
 승자가 `B`이면 패자는 `W`, 승자가 `W`이면 패자는 `B`다.
 
-무승부 또는 unknown 결과에서는 `winnerColor=null`, `loserColor=null`로 둔다. v1에서는 malformed `B+...` 또는 `W+...` suffix에서도 winner/loser를 추론하지 않는다.
+무승부 또는 unknown 결과에서는 `winnerColor=null`, `loserColor=null`로 둔다. suffix가 없는 유효한 `B+`/`W+`는 각각 승자/패자 색을 유지하고, malformed suffix에서는 winner/loser를 추론하지 않는다.
 
 ## Decisive Move 정책
 

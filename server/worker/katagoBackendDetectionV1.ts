@@ -204,6 +204,7 @@ function buildKatagoBackendSmokeQueryLine(visits: number): string {
   return `${JSON.stringify({
     id: "katatalk-backend-smoke",
     moves: [],
+    initialPlayer: "B",
     rules: "japanese",
     komi: 6.5,
     boardXSize: 19,

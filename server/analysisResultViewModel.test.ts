@@ -356,6 +356,25 @@ describe("buildAnalysisResultViewModel", () => {
     expect(vm.productReviewV1?.reviewMoves.length).toBeGreaterThan(0);
   });
 
+  it("preserves winner and loser semantics for generic RE[B+]", () => {
+    const vm = buildAnalysisResultViewModel(
+      baseKatagoResult({
+        sgf_content: "(;FF[4]GM[1]SZ[19]RE[B+];B[pd];W[dd])",
+      })
+    );
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind !== "katago-worker-v1") {
+      return;
+    }
+    expect(vm.productReviewV1?.gameResult).toMatchObject({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "win",
+      margin: null,
+    });
+    expect(vm.productReviewV1?.decisiveMove).not.toBeNull();
+  });
+
   it("falls back to learningEvents UI candidates when product review has no product moves", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult({
       sgf_content: "(;FF[4]GM[1]SZ[19];B[pd];W[dd])",

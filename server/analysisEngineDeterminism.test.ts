@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
+  analysisJobErrorCodeFromMessage,
   isLegacyMockResultPayload,
+  publicAnalysisJobErrorMessage,
   resolveCompletedJobMetaMock,
   resolveWorkerPipelineForClaimedJob,
   sanitizeAnalysisJobErrorMessage,
@@ -19,7 +21,16 @@ vi.mock("./creditService", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./creditService")>();
   return {
     ...actual,
-    analysisJobProcessingLeaseFromClaimedRow: vi.fn(() => null),
+    analysisJobProcessingLeaseFromClaimedRow: vi.fn(() => ({
+      lockedBy: "worker-test",
+      attemptCount: 1,
+    })),
+    failAnalysisJobAndRefundWithLease: vi.fn(async () => ({
+      ok: true as const,
+      code: "FAILED_AND_REFUNDED" as const,
+      duplicate: false,
+      refunded: true,
+    })),
     refundCreditIfJobFailedByProfileId: vi.fn(async () => ({ ok: true, duplicate: false })),
     updateAnalysisJobRow: vi.fn(async () => undefined),
     updateAnalysisJobRowWithLease: vi.fn(async () => ({ ok: true as const })),
@@ -46,7 +57,7 @@ function makeRow(overrides: Partial<AnalysisJobDbRow> = {}): AnalysisJobDbRow {
     updated_at: new Date().toISOString(),
     completed_at: null,
     locked_at: null,
-    locked_by: null,
+    locked_by: "worker-test",
     attempt_count: 1,
     max_attempts: 3,
     next_retry_at: null,
@@ -126,51 +137,65 @@ describe("processClaimedAnalysisJob engine mismatch", () => {
     vi.clearAllMocks();
   });
 
+  it("fails closed when a claimed row has no processing lease", async () => {
+    process.env.ANALYSIS_ENGINE = "katago";
+    const { analysisJobProcessingLeaseFromClaimedRow, failAnalysisJobAndRefundWithLease } = await import("./creditService");
+    const { runKatagoAnalysisDbPipeline } = await import("./worker/katagoAnalysisDbPipeline");
+    vi.mocked(analysisJobProcessingLeaseFromClaimedRow).mockReturnValueOnce(null);
+
+    await expect(processClaimedAnalysisJob(makeRow({ is_mock: false }))).resolves.toBe("lease_lost");
+
+    expect(failAnalysisJobAndRefundWithLease).not.toHaveBeenCalled();
+    expect(runKatagoAnalysisDbPipeline).not.toHaveBeenCalled();
+  });
+
   it("is_mock=false + worker mock does not run mock pipeline", async () => {
     process.env.ANALYSIS_ENGINE = "mock";
     const { runMockAnalysisDbPipeline } = await import("./mockAnalysisDbPipeline");
     const { runKatagoAnalysisDbPipeline } = await import("./worker/katagoAnalysisDbPipeline");
-    const { updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
+    const { failAnalysisJobAndRefundWithLease, updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
 
     await processClaimedAnalysisJob(makeRow({ is_mock: false, credit_cost: 1 }));
 
     expect(runMockAnalysisDbPipeline).not.toHaveBeenCalled();
     expect(runKatagoAnalysisDbPipeline).not.toHaveBeenCalled();
-    expect(updateAnalysisJobRow).toHaveBeenCalled();
-    const patch = vi.mocked(updateAnalysisJobRow).mock.calls[0]?.[1] as {
-      status?: string;
-      error_message?: string;
-    };
-    expect(patch.status).toBe("failed");
-    expect(patch.error_message).toContain("ENGINE_MISMATCH_WORKER_MOCK");
-    expect(refundCreditIfJobFailedByProfileId).toHaveBeenCalled();
+    expect(failAnalysisJobAndRefundWithLease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: "job-1",
+        errorCode: "ENGINE_MISMATCH_WORKER_MOCK",
+      })
+    );
+    expect(updateAnalysisJobRow).not.toHaveBeenCalled();
+    expect(refundCreditIfJobFailedByProfileId).not.toHaveBeenCalled();
   });
 
   it("is_mock=true + worker katago refunds paid job without running pipelines", async () => {
     process.env.ANALYSIS_ENGINE = "katago";
     const { runMockAnalysisDbPipeline } = await import("./mockAnalysisDbPipeline");
     const { runKatagoAnalysisDbPipeline } = await import("./worker/katagoAnalysisDbPipeline");
-    const { updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
+    const { failAnalysisJobAndRefundWithLease, updateAnalysisJobRow, refundCreditIfJobFailedByProfileId } = await import("./creditService");
 
     await processClaimedAnalysisJob(makeRow({ is_mock: true, credit_cost: 1 }));
 
     expect(runKatagoAnalysisDbPipeline).not.toHaveBeenCalled();
     expect(runMockAnalysisDbPipeline).not.toHaveBeenCalled();
-    const patch = vi.mocked(updateAnalysisJobRow).mock.calls[0]?.[1] as {
-      status?: string;
-      error_message?: string;
-    };
-    expect(patch.status).toBe("failed");
-    expect(patch.error_message).toContain("ENGINE_MISMATCH_JOB_MOCK");
-    expect(refundCreditIfJobFailedByProfileId).toHaveBeenCalled();
+    expect(failAnalysisJobAndRefundWithLease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: "job-1",
+        errorCode: "ENGINE_MISMATCH_JOB_MOCK",
+      })
+    );
+    expect(updateAnalysisJobRow).not.toHaveBeenCalled();
+    expect(refundCreditIfJobFailedByProfileId).not.toHaveBeenCalled();
   });
 
-  it("engine mismatch with credit_cost=0 does not refund", async () => {
+  it("engine mismatch with credit_cost=0 still uses the DB-derived atomic command", async () => {
     process.env.ANALYSIS_ENGINE = "katago";
-    const { refundCreditIfJobFailedByProfileId } = await import("./creditService");
+    const { failAnalysisJobAndRefundWithLease, refundCreditIfJobFailedByProfileId } = await import("./creditService");
 
     await processClaimedAnalysisJob(makeRow({ is_mock: true, credit_cost: 0 }));
 
+    expect(failAnalysisJobAndRefundWithLease).toHaveBeenCalledWith(expect.not.objectContaining({ cost: expect.anything() }));
     expect(refundCreditIfJobFailedByProfileId).not.toHaveBeenCalled();
   });
 });
@@ -210,5 +235,17 @@ describe("sanitizeAnalysisJobErrorMessage", () => {
   it("leaves short non-SGF errors readable", () => {
     const out = sanitizeAnalysisJobErrorMessage("KATAGO_EXIT_NONZERO: exit 1");
     expect(out).toBe("KATAGO_EXIT_NONZERO: exit 1");
+  });
+
+  it("extracts only a stable uppercase failure code", () => {
+    expect(analysisJobErrorCodeFromMessage("KATAGO_EXIT_NONZERO: exit 1")).toBe("KATAGO_EXIT_NONZERO");
+    expect(analysisJobErrorCodeFromMessage("plain failure detail")).toBe("ANALYSIS_FAILED");
+  });
+
+  it("maps failure codes to allowlisted public messages", () => {
+    expect(publicAnalysisJobErrorMessage("KATAGO_TIMEOUT")).toBe("Analysis timed out. Please try again.");
+    expect(publicAnalysisJobErrorMessage("SGF_PARSE_FAILED")).toBe("The game record could not be analyzed.");
+    expect(publicAnalysisJobErrorMessage("KATAGO_EXIT_NONZERO")).toBe("Analysis failed. Please try again.");
+    expect(publicAnalysisJobErrorMessage(undefined)).toBe("Analysis failed. Please try again.");
   });
 });

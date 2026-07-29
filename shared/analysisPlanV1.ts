@@ -3,6 +3,11 @@
  * 근거: `docs/algorithm/KataTalk_Algorithm_V2.5.md` (전체 알고리즘은 미구현).
  */
 
+import type {
+  SgfBoardSizeSourceV1,
+  SgfKomiSourceV1,
+} from "./sgfKatagoParseV1";
+
 export const ANALYSIS_PLAN_V1_VERSION = "analysis-plan-v1" as const;
 
 export type AnalysisPlanCandidateReasonV1 =
@@ -34,7 +39,11 @@ export type AnalysisPlanV1 = {
   version: typeof ANALYSIS_PLAN_V1_VERSION;
   totalMoves: number;
   boardSize: number;
+  /** Optional only for backward compatibility with stored analysis-plan-v1 rows. */
+  boardSizeSource?: SgfBoardSizeSourceV1;
   komi: number;
+  /** Optional only for backward compatibility with stored analysis-plan-v1 rows. */
+  komiSource?: SgfKomiSourceV1;
   candidateTurns: AnalysisPlanCandidateTurnV1[];
   strategy: AnalysisPlanStrategyV1;
 };

@@ -114,10 +114,21 @@ describe("katago backend detection v1", () => {
         if (args[0] === "version") {
           return { stdout: "KataGo CUDA backend", stderr: "", code: 0 };
         }
-        expect(args).toEqual(["analysis", "-config", env.KATAGO_CONFIG_PATH, "-model", env.KATAGO_MODEL_PATH]);
-        expect(opts?.stdinPayload).toContain("\"analyzeTurns\":[0]");
-        expect(opts?.stdinPayload).toContain("\"maxVisits\":10");
-        return { stdout: "{\"rootInfo\":{\"winrate\":0.5},\"moveInfos\":[]}\n", stderr: "CUDA initialized", code: 0 };
+        expect(args).toEqual([
+          "analysis",
+          "-config",
+          env.KATAGO_CONFIG_PATH,
+          "-model",
+          env.KATAGO_MODEL_PATH,
+        ]);
+        expect(opts?.stdinPayload).toContain('"analyzeTurns":[0]');
+        expect(opts?.stdinPayload).toContain('"initialPlayer":"B"');
+        expect(opts?.stdinPayload).toContain('"maxVisits":10');
+        return {
+          stdout: '{"rootInfo":{"winrate":0.5},"moveInfos":[]}\n',
+          stderr: "CUDA initialized",
+          code: 0,
+        };
       },
     });
     expect(result).toMatchObject({

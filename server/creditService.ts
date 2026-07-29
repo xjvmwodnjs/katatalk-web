@@ -256,6 +256,98 @@ export async function refundCreditIfJobFailedByProfileId(
   }
 }
 
+export type FailAnalysisJobAndRefundResult =
+  | {
+      ok: true;
+      code: string;
+      duplicate: boolean;
+      refunded: boolean;
+    }
+  | {
+      ok: false;
+      code: string;
+    };
+
+/**
+ * Atomically finalize a leased Worker job and refund its internal credits.
+ *
+ * Transport failures are safe to retry because the database fences replays by
+ * the exact finalizing lease. Never fall back to the legacy split refund path
+ * when this call is uncertain.
+ */
+export async function failAnalysisJobAndRefundWithLease(args: {
+  jobId: string;
+  lease: AnalysisJobProcessingLease;
+  errorCode: string;
+  errorMessage: string;
+}): Promise<FailAnalysisJobAndRefundResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const sb = getSupabaseAdmin();
+      const { data, error } = await sb.rpc("fail_analysis_job_and_refund_with_lease", {
+        p_analysis_job_id: args.jobId,
+        p_locked_by: args.lease.lockedBy,
+        p_attempt_count: args.lease.attemptCount,
+        p_error_code: args.errorCode,
+        p_error_message: args.errorMessage,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const row = parseRpcJson(data);
+      const code = str(row?.code);
+      if (!row || !code) {
+        throw new Error("invalid RPC response");
+      }
+      if (row.ok !== true) {
+        return { ok: false, code };
+      }
+      if (typeof row.duplicate !== "boolean" || typeof row.refunded !== "boolean") {
+        throw new Error("invalid RPC success response");
+      }
+      return {
+        ok: true,
+        code,
+        duplicate: row.duplicate,
+        refunded: row.refunded,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn("[creditService] atomic failure finalization transport error", {
+        jobId: args.jobId,
+        attempt,
+        error: lastError.message,
+      });
+    }
+  }
+
+  throw new Error(
+    `fail_analysis_job_and_refund_with_lease failed after 3 attempt(s): ${lastError?.message ?? "unknown error"}`
+  );
+}
+
+/** Fail Worker startup before claiming jobs when migration 012 is unavailable. */
+export async function assertAtomicFailureRefundRpcReady(): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.rpc("fail_analysis_job_and_refund_with_lease", {
+    p_analysis_job_id: "",
+    p_locked_by: "",
+    p_attempt_count: 0,
+    p_error_code: "PREFLIGHT",
+    p_error_message: "preflight",
+  });
+  if (error) {
+    throw new Error(`ATOMIC_FAILURE_RPC_UNAVAILABLE: ${error.message}`);
+  }
+  const row = parseRpcJson(data);
+  if (row?.ok !== false || str(row.code) !== "INVALID_ARGUMENT") {
+    throw new Error("ATOMIC_FAILURE_RPC_CONTRACT_MISMATCH");
+  }
+}
+
 /** 웹훅에서만 호출 — idempotency_key 는 `payment:<provider>:<stable_event_or_order_id>` 형태 권장 */
 export async function addCreditsFromPaymentWebhook(args: {
   clerkUserId: string;
@@ -342,6 +434,9 @@ export type AnalysisJobDbRow = {
   max_attempts?: number;
   next_retry_at?: string | null;
   last_error_code?: string | null;
+  /** Migration 012 — terminal failure idempotency fence. */
+  failure_worker_id?: string | null;
+  failure_attempt_count?: number | null;
 };
 
 /** Claim 직후 DB 행 기준으로만 유효한 처리 lease (stale 재claim 시 이전 worker 차단). */
@@ -357,7 +452,7 @@ export type UpdateAnalysisJobLeaseResult =
 export function analysisJobProcessingLeaseFromClaimedRow(row: AnalysisJobDbRow): AnalysisJobProcessingLease | null {
   const lockedBy = row.locked_by?.trim();
   const ac = row.attempt_count;
-  if (!lockedBy || typeof ac !== "number" || !Number.isFinite(ac)) {
+  if (!lockedBy || typeof ac !== "number" || !Number.isInteger(ac) || ac < 1) {
     return null;
   }
   return { lockedBy, attemptCount: ac };
@@ -586,6 +681,14 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
     last_error_code:
       typeof row.last_error_code === "string" || row.last_error_code === null
         ? (row.last_error_code as string | null)
+        : undefined,
+    failure_worker_id:
+      typeof row.failure_worker_id === "string" || row.failure_worker_id === null
+        ? (row.failure_worker_id as string | null)
+        : undefined,
+    failure_attempt_count:
+      typeof row.failure_attempt_count === "number" || row.failure_attempt_count === null
+        ? (row.failure_attempt_count as number | null)
         : undefined,
   };
 }

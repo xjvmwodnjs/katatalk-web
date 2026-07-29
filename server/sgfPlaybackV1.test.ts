@@ -96,6 +96,30 @@ describe("sgfPlaybackV1", () => {
     expect(moves).toEqual([{ color: "B", sgfPoint: "aa" }]);
   });
 
+  it("keeps playback aligned with accepted signed and zero-padded root SZ", () => {
+    const sgf = "(;FF[4]GM[1]SZ[+009]KM[6.5];B[ee])";
+    const extracted = extractMainlineBwMoves(sgf);
+    const playback = buildSgfPlaybackStateV1({
+      sgfText: sgf,
+      selectedTurnIndex: null,
+    });
+    expect(extracted.boardSizeHint).toBe(9);
+    expect(playback.boardSize).toBe(9);
+  });
+
+  it("does not let a later mainline or variation SZ override the root board", () => {
+    const laterMainline = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[19];B[pd];SZ[9];W[dd])"
+    );
+    expect(laterMainline.boardSizeHint).toBe(19);
+
+    const variation = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[13];B[gg](;C[parentheses ) ( stay text]SZ[9];W[ee]);W[ff])"
+    );
+    expect(variation.boardSizeHint).toBe(13);
+    expect(variation.moves.map(move => move.sgfPoint)).toEqual(["gg", "ff"]);
+  });
+
   it("extracts B/W when they follow C on the same node", () => {
     const sgf = "(;C[text]B[pd];W[dd])";
     const { moves } = extractMainlineBwMoves(sgf);
@@ -131,6 +155,53 @@ describe("sgfPlaybackV1", () => {
         expect.objectContaining({ color: "W", turnIndex: 0 }),
         expect.objectContaining({ x: 16, y: 16, color: "B", turnIndex: 1 }),
       ])
+    );
+  });
+
+  it("uses PL and first-move color instead of assuming Black by move-count parity", () => {
+    const handicapSgf = "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp];PL[W];W[qq];B[dd])";
+    const extracted = extractMainlineBwMoves(handicapSgf);
+    expect(extracted.initialPlayerHint).toBe("W");
+    expect(extracted.handicapHint).toBe(2);
+    expect(extracted.initialPositionIssueCodes).toEqual([]);
+
+    const atStart = buildSgfPlaybackStateV1({
+      sgfText: handicapSgf,
+      selectedTurnIndex: 0,
+    });
+    expect(atStart.currentPlayer).toBe("W");
+
+    const afterWhite = buildSgfPlaybackStateV1({
+      sgfText: handicapSgf,
+      selectedTurnIndex: 1,
+    });
+    expect(afterWhite.currentPlayer).toBe("B");
+
+    const whiteFirstWithoutPl = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]AB[pd];W[qq];B[dd])",
+      selectedTurnIndex: 0,
+    });
+    expect(whiteFirstWithoutPl.currentPlayer).toBe("W");
+
+    const duplicatePlFallback = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]PL[B]PL[W];W[qq])",
+      selectedTurnIndex: 0,
+    });
+    expect(duplicatePlFallback.currentPlayer).toBe("W");
+
+    const conflictingPlFallback = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]PL[B];W[qq])",
+      selectedTurnIndex: 0,
+    });
+    expect(conflictingPlFallback.currentPlayer).toBe("W");
+  });
+
+  it("records unsupported PL after the first move for strict admission", () => {
+    const extracted = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])"
+    );
+    expect(extracted.initialPositionIssueCodes).toContain(
+      "player_to_play_after_move_unsupported"
     );
   });
 

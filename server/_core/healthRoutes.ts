@@ -4,6 +4,10 @@ import {
   getAnalysisWorkerHealth,
   type AnalysisWorkerHealth,
 } from "../worker/analysisWorkerStatus";
+import {
+  getAnalysisFinalizationQuarantineStatus,
+  type AnalysisFinalizationQuarantineStatus,
+} from "../worker/analysisFinalizationQuarantineStatus";
 
 export type ReadinessCheckStatus = "ok" | "warn" | "fail";
 
@@ -228,6 +232,7 @@ export function registerHealthRoutes(
     getWorkerHealth?: (args: {
       expectedEngine: "mock" | "katago";
     }) => Promise<AnalysisWorkerHealth>;
+    getFinalizationQuarantineStatus?: () => Promise<AnalysisFinalizationQuarantineStatus>;
   }
 ): void {
   app.get("/healthz", (_req, res) => {
@@ -266,5 +271,45 @@ export function registerHealthRoutes(
         expectedEngine,
       });
     }
+  });
+
+  app.get("/ops/analysis-finalization-quarantine", async (req, res) => {
+    const opsStatusToken = readTrimmed(process.env, "OPS_STATUS_TOKEN");
+    if (!opsStatusToken || !hasValidOpsStatusToken(req, opsStatusToken)) {
+      res.status(404).set("Cache-Control", "no-store").end();
+      return;
+    }
+
+    const readStatus =
+      opts?.getFinalizationQuarantineStatus ??
+      getAnalysisFinalizationQuarantineStatus;
+    try {
+      const report = await readStatus();
+      if (report.status === "clear") {
+        res.status(200).set("Cache-Control", "no-store").json({
+          ok: true,
+          status: "clear",
+          unresolvedCount: 0,
+          oldestFirstFailedAt: null,
+        });
+        return;
+      }
+      if (report.status === "attention_required") {
+        res.status(503).set("Cache-Control", "no-store").json({
+          ok: false,
+          status: "attention_required",
+          unresolvedCount: report.unresolvedCount,
+          oldestFirstFailedAt: report.oldestFirstFailedAt,
+        });
+        return;
+      }
+    } catch {
+      // The response below intentionally omits database and row details.
+    }
+
+    res.status(503).set("Cache-Control", "no-store").json({
+      ok: false,
+      status: "unknown",
+    });
   });
 }

@@ -35,6 +35,9 @@ describe("analysisPlan v1", () => {
     const plan = buildAnalysisPlanV1FromSgf(raw);
     expect(plan.totalMoves).toBe(2);
     expect(plan.boardSize).toBe(19);
+    expect(plan.boardSizeSource).toBe("root_sz");
+    expect(plan.komi).toBe(6.5);
+    expect(plan.komiSource).toBe("product_default_missing");
     expect(plan.version).toBe("analysis-plan-v1");
     expect(plan.candidateTurns.some(c => c.reason === "final_position" && c.turnIndex === 2)).toBe(true);
   });

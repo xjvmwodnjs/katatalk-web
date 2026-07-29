@@ -6,6 +6,7 @@ import {
   updateAnalysisJobRowWithLease,
 } from "./creditService";
 import type { AnalysisWorkerJobOutcome } from "./worker/analysisJobOutcome";
+import { finalizeAnalysisJobFailure } from "./worker/finalizeAnalysisJobFailure";
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -88,28 +89,12 @@ export async function runMockAnalysisDbPipeline(args: {
     }
     return "completed";
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    try {
-      const r = await updateJobForPipeline(jobId, lease, {
-        status: "failed",
-        progress: null,
-        error_message: message,
-        completed_at: new Date().toISOString(),
-        locked_at: null,
-        locked_by: null,
-      });
-      if (!r.ok) {
-        console.warn("[mockAnalysisDbPipeline] lease_lost skip failed write/refund", { jobId });
-        return "lease_lost";
-      }
-    } catch (patchErr) {
-      console.error("[mockAnalysisDbPipeline] failed to persist failure state", patchErr);
-    }
-    try {
-      await onJobFailed?.();
-    } catch (refundErr) {
-      console.error("[mockAnalysisDbPipeline] onJobFailed refund error", refundErr);
-    }
-    return "failed";
+    return finalizeAnalysisJobFailure({
+      jobId,
+      rawError: e instanceof Error ? e.message : "ANALYSIS_FAILED: unknown error",
+      lease,
+      onLegacyJobFailed: onJobFailed,
+      logPrefix: "mockAnalysisDbPipeline",
+    });
   }
 }

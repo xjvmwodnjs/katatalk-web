@@ -6,12 +6,15 @@
 
 `katago:corpus-validate`는 다음 조건을 KataGo 실행 전에 검사한다.
 
+corpus validator는 malformed UTF-8을 KataGo 실행 전에 자체 오류로 거절한다. HTTP 업로드 경로는 같은 입력을 고정 `SGF_INVALID_ENCODING` 400으로 wallet/debit/enqueue 전에 거절하지만, corpus CLI에는 HTTP 상태나 wallet 단계가 없다. `sgf-game-info-v1` 보존 검증은 `PB/PW/DT`를 포함할 수 있는 합성 fixture 또는 접근이 통제된 비커밋 staging fixture에서 수행한다. 아래 실제 corpus 익명화 규칙은 `PB/PW/DT`를 계속 금지하며 `RE`만 허용한다. root-only 출시는 FF4 일반 `game-info` 배치보다 좁고, legacy charset/`CA` transcoding은 후속 호환 범위다.
+
 - manifest version과 필드 구조
 - 최소 10개의 서로 다른 SGF
 - 상대 경로 confinement와 symlink 탈출 차단
 - 파일당 1MB 이하, UTF-8, SHA-256 일치
 - 중복 id, 경로, 파일 내용 차단
 - 9x9, 13x13, 19x19, 접바둑, pass, setup stone, 100수 이상 기보 coverage
+- 제품과 같은 strict parser로 root `SZ`/`KM` cardinality·placement·형식·지원 범위를 검사하고, 누락 시 19/6.5와 명시적 provenance를 적용
 - SGF 식별 가능 metadata 제거
 - 기대 board size와 move 범위
 - 선택적으로 기보당 서로 다른 검수자 2명의 승인과 rejection 부재
@@ -23,6 +26,8 @@
 - 실패한 multi-turn 상한
 - 최소 BSI/ADI signal 수
 - quality warning/failure 상한
+
+`SZ`는 root의 단일 9/13/19 값이어야 하고 `KM`은 root의 단일 -150~150 정수·반집이어야 한다. 누락은 호환 기본값으로 허용하지만 explicit blank/malformed, duplicate/multi-value, non-root mainline, rectangular board, quarter-point komi는 corpus validator 단계에서 실패한다. 닫힌 variation과 comment/property value 안의 lookalike는 선택 mainline 설정에 영향을 주지 않는다.
 
 이 검사는 사람의 바둑 판단을 자동으로 대체하지 않는다. checksum과 metadata 검사는 파일 무결성과 기본 익명화만 보장하며, 코멘트 안의 자유 형식 개인정보와 데이터 사용 동의는 담당자가 별도로 확인해야 한다.
 
