@@ -447,6 +447,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   it("POST /api/analyze inserts analysis_jobs row (queued)", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
@@ -468,6 +472,11 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.sgf_content).toBe(minimalSgf);
     expect(row.sgf_sha256).toBe(sha256HexUtf8(minimalSgf));
     expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
+    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      { ensureWallet: false }
+    );
+    expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
   });
 
   it("POST rejects after-move setup stones before credit spend/enqueue", async () => {
@@ -529,7 +538,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(vitestAnalysisJobsStore.size).toBe(0);
   });
 
-  it("POST rejects invalid initial-player and handicap contracts before wallet, debit, or enqueue", async () => {
+  it("POST rejects invalid SGF analysis contracts before wallet, debit, or enqueue", async () => {
     const ensureWalletSpy = vi.spyOn(
       creditService,
       "ensureWalletWithSignupBonus"
@@ -565,6 +574,22 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
         code: "SGF_INVALID_COORDINATE",
         sgf: "(;FF[4]GM[1]SZ[19]HA[2]AB[zz][yy];W[qq])",
       },
+      {
+        code: "SGF_INVALID_BOARD_SIZE",
+        sgf: `(;FF[4]GM[1]SZ[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_UNSUPPORTED_BOARD_SIZE",
+        sgf: "(;FF[4]GM[1]SZ[19:13];B[pd])",
+      },
+      {
+        code: "SGF_INVALID_KOMI",
+        sgf: `(;FF[4]GM[1]SZ[19]KM[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_UNSUPPORTED_KOMI",
+        sgf: "(;FF[4]GM[1]SZ[19]KM[6.25];B[pd])",
+      },
     ] as const;
 
     for (const [index, testCase] of cases.entries()) {
@@ -596,6 +621,11 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(legacySpendSpy).not.toHaveBeenCalled();
     expect(legacyInsertSpy).not.toHaveBeenCalled();
     expect(vitestAnalysisJobsStore.size).toBe(0);
+    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledTimes(cases.length);
+    for (const [, options] of vi.mocked(resolve.tryResolveUserFromRequest).mock
+      .calls) {
+      expect(options).toEqual({ ensureWallet: false });
+    }
   });
 
   it("POST inserts is_mock=false when ANALYSIS_ENGINE=katago and ANALYSIS_WORKER_MODE=external", async () => {

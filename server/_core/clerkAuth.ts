@@ -39,7 +39,8 @@ function buildClerkUserWithoutDb(
  * DATABASE_URL 이 없으면 DB upsert 없이 JWT 클레임만으로 사용자를 반환한다.
  */
 export async function verifyClerkBearerAndSyncUser(
-  accessToken: string
+  accessToken: string,
+  options: { ensureWallet?: boolean } = {}
 ): Promise<AuthenticatedUser | null> {
   if (!ENV.clerkSecretKey) {
     console.error("[clerkAuth] CLERK_SECRET_KEY 가 비어 있습니다.");
@@ -76,11 +77,14 @@ export async function verifyClerkBearerAndSyncUser(
           : null;
 
   const openId = `clerk:${payload.sub}`;
+  const shouldEnsureWallet = options.ensureWallet !== false;
 
   const hasDatabaseUrl = Boolean(ENV.databaseUrl?.trim());
   if (!hasDatabaseUrl) {
     const u = buildClerkUserWithoutDb(openId, email, name);
-    await ensureWalletWithSignupBonus(u);
+    if (shouldEnsureWallet) {
+      await ensureWalletWithSignupBonus(u);
+    }
     return u;
   }
 
@@ -99,6 +103,8 @@ export async function verifyClerkBearerAndSyncUser(
   }
 
   const authed = mapRow(row);
-  await ensureWalletWithSignupBonus(authed);
+  if (shouldEnsureWallet) {
+    await ensureWalletWithSignupBonus(authed);
+  }
   return authed;
 }

@@ -178,22 +178,121 @@ describe("sgfKatagoParseV1", () => {
     expect(parsed.handicapStones).toBeNull();
   });
 
-  it("reads KM property from actual SGF property values", () => {
-    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[6.5]SZ[19];B[pd])").komi).toBe(6.5);
-    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[7.5]SZ[19];B[pd])").komi).toBe(7.5);
-    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[0]SZ[19];B[pd])").komi).toBe(0);
-    expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[-0.5]SZ[19];B[pd])").komi).toBe(-0.5);
+  it("accepts the supported root SZ and exact KataGo KM contract", () => {
+    const fixtures = [
+      { sgf: "(;GM[1]FF[4]SZ[9]KM[0];B[ee])", boardSize: 9, komi: 0 },
+      { sgf: "(;GM[1]FF[4]SZ[13]KM[6.5];B[gg])", boardSize: 13, komi: 6.5 },
+      { sgf: "(;GM[1]FF[4]SZ[19]KM[+7.5];B[pd])", boardSize: 19, komi: 7.5 },
+      { sgf: "(;GM[1]FF[4]SZ[19]KM[-0.5];B[pd])", boardSize: 19, komi: -0.5 },
+      {
+        sgf: "(;GM[1]FF[4]SZ[+019]KM[ 6.50 ];B[pd])",
+        boardSize: 19,
+        komi: 6.5,
+      },
+      { sgf: "(;GM[1]FF[4]SZ[19]KM[150];B[pd])", boardSize: 19, komi: 150 },
+      { sgf: "(;GM[1]FF[4]SZ[19]KM[-150.0];B[pd])", boardSize: 19, komi: -150 },
+    ] as const;
+    for (const fixture of fixtures) {
+      const parsed = parseSgfForKatagoV1(fixture.sgf);
+      expect(parsed.boardSize).toBe(fixture.boardSize);
+      expect(parsed.boardSizeSource).toBe("root_sz");
+      expect(parsed.komi).toBe(fixture.komi);
+      expect(parsed.komiSource).toBe("root_km");
+    }
   });
 
-  it("ignores KM-looking text inside comments and property values", () => {
-    expect(parseSgfForKatagoV1("(;GM[1]C[KM[999]]KM[7.5];B[pd])").komi).toBe(7.5);
-    expect(parseSgfForKatagoV1("(;GM[1]KM[6.5]C[KM[999]];B[pd])").komi).toBe(6.5);
-    expect(parseSgfForKatagoV1("(;GM[1]C[escaped \\] text KM[999]]KM[6.5];B[pd])").komi).toBe(6.5);
+  it("ignores SZ/KM-looking text inside comments, property values, and variations", () => {
+    expect(parseSgfForKatagoV1("(;GM[1]C[KM[999]]KM[7.5];B[pd])").komi).toBe(
+      7.5
+    );
+    expect(parseSgfForKatagoV1("(;GM[1]KM[6.5]C[KM[999]];B[pd])").komi).toBe(
+      6.5
+    );
+    expect(
+      parseSgfForKatagoV1("(;GM[1]C[escaped \\] text KM[999]]KM[6.5];B[pd])")
+        .komi
+    ).toBe(6.5);
+    const variation = parseSgfForKatagoV1(
+      "(;GM[1]SZ[19]KM[6.5];B[pd](;C[parentheses ) ( stay text]SZ[9]KM[0];W[dd]);W[dp])"
+    );
+    expect(variation.boardSize).toBe(19);
+    expect(variation.komi).toBe(6.5);
+    expect(variation.moves).toHaveLength(2);
   });
 
-  it("falls back to default komi when KM is absent or invalid", () => {
-    expect(parseSgfForKatagoV1("(;GM[1]SZ[19];B[pd])").komi).toBe(6.5);
-    expect(parseSgfForKatagoV1("(;GM[1]KM[abc]SZ[19];B[pd])").komi).toBe(6.5);
+  it("defaults only absent SZ/KM to 19 and 6.5", () => {
+    const parsed = parseSgfForKatagoV1("(;GM[1];B[pd])");
+    expect(parsed.boardSize).toBe(19);
+    expect(parsed.boardSizeSource).toBe("sgf_default_missing");
+    expect(parsed.komi).toBe(6.5);
+    expect(parsed.komiSource).toBe("product_default_missing");
+  });
+
+  it("rejects malformed, repeated, multi-valued, non-root, or unclosed SZ", () => {
+    const marker = "private-board-marker-947";
+    for (const sgf of [
+      "(;GM[1]SZ[];B[pd])",
+      `(;GM[1]SZ[${marker}];B[pd])`,
+      "(;GM[1]SZ[19.0];B[pd])",
+      "(;GM[1]SZ[0];B[pd])",
+      "(;GM[1]SZ[-1];B[pd])",
+      "(;GM[1]SZ[53];B[pd])",
+      "(;GM[1]SZ[19:19];B[pd])",
+      "(;GM[1]SZ[19][13];B[pd])",
+      "(;GM[1]SZ[19]SZ[19];B[pd])",
+      "(;GM[1];SZ[19];B[pd])",
+      `(;GM[1]SZ[${marker}`,
+    ]) {
+      const error = expectParseErrorCode(sgf, "SGF_INVALID_BOARD_SIZE");
+      expect(error.message).not.toContain(marker);
+    }
+  });
+
+  it("rejects rectangular or launch-unsupported board sizes", () => {
+    for (const raw of ["1", "2", "5", "21", "25", "26", "52", "19:13"]) {
+      expectParseErrorCode(
+        `(;GM[1]SZ[${raw}];B[aa])`,
+        "SGF_UNSUPPORTED_BOARD_SIZE"
+      );
+    }
+  });
+
+  it("rejects malformed, repeated, multi-valued, non-root, or unclosed KM", () => {
+    const marker = "private-komi-marker-947";
+    for (const sgf of [
+      "(;GM[1]SZ[19]KM[];B[pd])",
+      `(;GM[1]SZ[19]KM[${marker}];B[pd])`,
+      "(;GM[1]SZ[19]KM[6,5];B[pd])",
+      "(;GM[1]SZ[19]KM[.5];B[pd])",
+      "(;GM[1]SZ[19]KM[6.];B[pd])",
+      "(;GM[1]SZ[19]KM[6.5e1];B[pd])",
+      "(;GM[1]SZ[19]KM[6.5points];B[pd])",
+      "(;GM[1]SZ[19]KM[6.5][7.5];B[pd])",
+      "(;GM[1]SZ[19]KM[6.5]KM[6.5];B[pd])",
+      "(;GM[1]SZ[19];KM[6.5];B[pd])",
+      `(;GM[1]SZ[19]KM[${marker}`,
+    ]) {
+      const error = expectParseErrorCode(sgf, "SGF_INVALID_KOMI");
+      expect(error.message).not.toContain(marker);
+    }
+  });
+
+  it("rejects KM values KataGo cannot analyze exactly", () => {
+    for (const raw of ["6.25", "-0.25", "150.5", "-150.5", "151", "-151"]) {
+      expectParseErrorCode(
+        `(;GM[1]SZ[19]KM[${raw}];B[pd])`,
+        "SGF_UNSUPPORTED_KOMI"
+      );
+    }
+  });
+
+  it("rejects an unclosed variation without reflecting its content", () => {
+    const marker = "private-variation-marker-947";
+    const error = expectParseErrorCode(
+      `(;GM[1]SZ[19]KM[6.5];B[pd](;C[${marker}`,
+      "SGF_PARSE_FAILED"
+    );
+    expect(error.message).not.toContain(marker);
   });
 
   it("does not treat ;B[] inside comment as a move", () => {
@@ -255,7 +354,7 @@ describe("sgfKatagoParseV1", () => {
   });
 
   it("rejects invalid coordinates", () => {
-    const sgf = "(;SZ[5];B[zz])";
+    const sgf = "(;SZ[9];B[zz])";
     expect(() => parseSgfForKatagoV1(sgf)).toThrow(SgfKatagoParseError);
     try {
       parseSgfForKatagoV1(sgf);

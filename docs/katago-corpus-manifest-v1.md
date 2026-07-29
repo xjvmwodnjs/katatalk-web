@@ -12,6 +12,7 @@
 - 파일당 1MB 이하, UTF-8, SHA-256 일치
 - 중복 id, 경로, 파일 내용 차단
 - 9x9, 13x13, 19x19, 접바둑, pass, setup stone, 100수 이상 기보 coverage
+- 제품과 같은 strict parser로 root `SZ`/`KM` cardinality·placement·형식·지원 범위를 검사하고, 누락 시 19/6.5와 명시적 provenance를 적용
 - SGF 식별 가능 metadata 제거
 - 기대 board size와 move 범위
 - 선택적으로 기보당 서로 다른 검수자 2명의 승인과 rejection 부재
@@ -23,6 +24,8 @@
 - 실패한 multi-turn 상한
 - 최소 BSI/ADI signal 수
 - quality warning/failure 상한
+
+`SZ`는 root의 단일 9/13/19 값이어야 하고 `KM`은 root의 단일 -150~150 정수·반집이어야 한다. 누락은 호환 기본값으로 허용하지만 explicit blank/malformed, duplicate/multi-value, non-root mainline, rectangular board, quarter-point komi는 corpus validator 단계에서 실패한다. 닫힌 variation과 comment/property value 안의 lookalike는 선택 mainline 설정에 영향을 주지 않는다.
 
 이 검사는 사람의 바둑 판단을 자동으로 대체하지 않는다. checksum과 metadata 검사는 파일 무결성과 기본 익명화만 보장하며, 코멘트 안의 자유 형식 개인정보와 데이터 사용 동의는 담당자가 별도로 확인해야 한다.
 

@@ -63,7 +63,9 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
     const parsed = parseSgfForKatagoV1(sgf);
     return {
       boardSize: parsed.boardSize,
+      boardSizeSource: parsed.boardSizeSource,
       komi: parsed.komi,
+      komiSource: parsed.komiSource,
       rules: parsed.rules,
       initialPlayer: parsed.initialPlayer,
       initialPlayerSource: parsed.initialPlayerSource,

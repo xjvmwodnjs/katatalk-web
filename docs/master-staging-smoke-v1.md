@@ -100,9 +100,13 @@ corepack pnpm katago:product-suite -- --customer-fixtures --repeat 2 --concurren
 
 ## 2. Local Smoke Procedure
 
-### 2.0 SGF initial-player admission fixtures
+### 2.0 SGF metadata and initial-player admission fixtures
 
-Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, HA/setup-count mismatch, out-of-board setup coordinates, and setup+move mixing fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return fixed non-reflective HTTP 400 before wallet/debit/enqueue; assert job/queue and credit-ledger deltas are zero and raw SGF/request content is not exposed in responses or logs.
+Run accepted root fixtures for `SZ[9]KM[0]`, `SZ[13]KM[6.5]`, `SZ[19]KM[7.5]`, and missing `SZ`/`KM` (expected 19/6.5 with default provenance). Confirm root, multi-turn, Deep Search, timeline, persisted analysis plan, and UI use the same board/komi; both KataGo dimensions must equal the normalized square size.
+
+Run invalid/duplicate/multi-value/unclosed/non-root mainline `SZ` and `KM`, unsupported square/rectangular sizes, comma/exponent/prefix-junk komi, quarter-points, and values outside [-150,150]. Also run comments, unknown-property values, and a closed variation containing parentheses plus `SZ`/`KM`; these must not override or reject the selected mainline.
+
+Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, HA/setup-count mismatch, out-of-board setup coordinates, and setup+move mixing fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return the exact fixed non-reflective HTTP 400 code/message before wallet/debit/enqueue; assert Clerk identity authentication still ran, wallet/job/queue and credit-ledger deltas are zero, and raw SGF/request content is not exposed in responses or logs. For a valid fixture, assert wallet provisioning runs exactly once after admission.
 
 먼저 선택한 profile env와 로컬 `KATAGO_*` path 를 적용한 터미널에서 제품 경로 스모크를 실행한다. 이 명령은 raw stdout 확인을 넘어 실제 `analyzeSgfKatago` 결과, BSI/ADI 요약, Deep Search 요약, `qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 남긴다.
 

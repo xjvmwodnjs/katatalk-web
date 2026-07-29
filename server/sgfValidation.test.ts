@@ -60,6 +60,55 @@ describe("validateSgfText", () => {
     ).toEqual({ ok: true });
   });
 
+  it("enforces fixed root SZ admission errors without reflecting submitted values", () => {
+    const marker = "private-board-marker-947";
+    const invalid = validateSgfText(`(;GM[1]SZ[${marker}];B[pd])`);
+    expect(invalid).toEqual({
+      ok: false,
+      code: "SGF_INVALID_BOARD_SIZE",
+      message:
+        "Invalid SGF: SZ must be a single root property with one integer value.",
+    });
+    expect(JSON.stringify(invalid)).not.toContain(marker);
+
+    expect(validateSgfText("(;GM[1]SZ[19:13];B[pd])")).toEqual({
+      ok: false,
+      code: "SGF_UNSUPPORTED_BOARD_SIZE",
+      message:
+        "Invalid SGF: only square 9x9, 13x13, and 19x19 boards are supported.",
+    });
+  });
+
+  it("enforces fixed root KM admission errors without reflecting submitted values", () => {
+    const marker = "private-komi-marker-947";
+    const invalid = validateSgfText(`(;GM[1]SZ[19]KM[${marker}];B[pd])`);
+    expect(invalid).toEqual({
+      ok: false,
+      code: "SGF_INVALID_KOMI",
+      message:
+        "Invalid SGF: KM must be a single root property with one numeric value.",
+    });
+    expect(JSON.stringify(invalid)).not.toContain(marker);
+
+    expect(validateSgfText("(;GM[1]SZ[19]KM[6.25];B[pd])")).toEqual({
+      ok: false,
+      code: "SGF_UNSUPPORTED_KOMI",
+      message:
+        "Invalid SGF: KM must be an integer or half-integer from -150 to 150.",
+    });
+  });
+
+  it("preserves missing SZ/KM defaults and accepted 9/13/19 half-point fixtures", () => {
+    expect(validateSgfText("(;GM[1];B[pd])")).toEqual({ ok: true });
+    for (const sgf of [
+      "(;GM[1]SZ[9]KM[0];B[ee])",
+      "(;GM[1]SZ[13]KM[6.5];B[gg])",
+      "(;GM[1]SZ[19]KM[-0.5];B[pd])",
+    ]) {
+      expect(validateSgfText(sgf)).toEqual({ ok: true });
+    }
+  });
+
   it("accepts a consistent handicap and pre-move PL contract", () => {
     const sgf = "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp];PL[W];W[qq];B[dd])";
     expect(validateSgfText(sgf)).toEqual({ ok: true });

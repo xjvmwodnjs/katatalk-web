@@ -164,6 +164,28 @@ describe("katagoSgfQuery", () => {
     expect(p.moves).toHaveLength(1);
   });
 
+  it("strict SZ·KM values propagate unchanged to both KataGo board dimensions", () => {
+    const parsed = parseMinimalSgfForSmoke(
+      "(;FF[4]GM[1]SZ[9]KM[0.5]RU[Japanese];B[ee];W[dd])"
+    );
+    const query = buildKatagoAnalysisQueryObject({
+      boardSize: parsed.boardSize,
+      komi: parsed.komi,
+      rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
+      moves: parsed.moves,
+      initialStones: parsed.initialStones,
+      maxVisits: 25,
+      id: "strict-metadata",
+    });
+    expect(query).toMatchObject({
+      boardXSize: 9,
+      boardYSize: 9,
+      komi: 0.5,
+      rules: "japanese",
+    });
+  });
+
   it("19x19 필수 GTP 좌표 (SGF i 포함·GTP 열만 I 생략)", () => {
     expect(sgfPointToGtp("aa", 19)).toBe("A19");
     expect(sgfPointToGtp("dd", 19)).toBe("D16");

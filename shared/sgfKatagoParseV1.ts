@@ -7,6 +7,7 @@ import {
   readSgfBracketValue,
   sgfLetterToCoordIndex,
   sgfPointToGtp,
+  skipSgfVariationTreeV1,
   type ExtractMainlineBwMovesResultV1,
   type ParsedMainlineMoveV1,
   type ParsedSetupStoneV1,
@@ -15,7 +16,9 @@ import {
 
 export type ParsedMinimalSgfV1 = {
   boardSize: number;
+  boardSizeSource: SgfBoardSizeSourceV1;
   komi: number;
+  komiSource: SgfKomiSourceV1;
   rules: SupportedKatagoRulesV1;
   initialPlayer: "B" | "W";
   initialPlayerSource: SgfInitialPlayerSourceV1;
@@ -26,6 +29,9 @@ export type ParsedMinimalSgfV1 = {
 };
 
 export type SupportedKatagoRulesV1 = "japanese";
+
+export type SgfBoardSizeSourceV1 = "root_sz" | "sgf_default_missing";
+export type SgfKomiSourceV1 = "root_km" | "product_default_missing";
 
 export type SgfInitialPlayerSourceV1 =
   | "setup_pl"
@@ -38,6 +44,10 @@ export type SgfKatagoParseErrorCodeV1 =
   | "SGF_UNSUPPORTED_SETUP_STONES"
   | "SGF_UNSUPPORTED_GAME_TYPE"
   | "SGF_UNSUPPORTED_RULES"
+  | "SGF_INVALID_BOARD_SIZE"
+  | "SGF_UNSUPPORTED_BOARD_SIZE"
+  | "SGF_INVALID_KOMI"
+  | "SGF_UNSUPPORTED_KOMI"
   | "SGF_INVALID_PLAYER_TO_PLAY"
   | "SGF_PLAYER_TO_PLAY_CONFLICT"
   | "SGF_UNSUPPORTED_PLAYER_TO_PLAY"
@@ -56,62 +66,43 @@ export class SgfKatagoParseError extends Error {
   }
 }
 
-function readOneSgfPropertyValue(
-  s: string,
-  i: number
-): { propId: string; value: string; end: number } | null {
-  let j = i;
-  while (j < s.length && /\s/.test(s[j]!)) {
-    j += 1;
-  }
-  if (j >= s.length || !/[A-Za-z]/.test(s[j]!)) {
-    return null;
-  }
-  const idStart = j;
-  while (j < s.length && /[A-Za-z]/.test(s[j]!)) {
-    j += 1;
-  }
-  if (j >= s.length || s[j] !== "[") {
-    return null;
-  }
-  const br = readSgfBracketValue(s, j);
-  if (br == null) {
-    return null;
-  }
-  return { propId: s.slice(idStart, j), value: br.text, end: br.end };
-}
+type MainlinePropertyOccurrenceV1 = {
+  nodeIndex: number;
+  values: string[];
+};
 
-function findFirstMainlinePropertyValue(sgf: string, propId: string): string | null {
+type MainlinePropertyScanV1 = {
+  malformed: boolean;
+  occurrences: MainlinePropertyOccurrenceV1[];
+};
+
+/** Reads actual properties on the selected mainline while ignoring values and variations. */
+function scanMainlinePropertyV1(
+  sgf: string,
+  propId: string
+): MainlinePropertyScanV1 {
   const s = sgf.replace(/\r\n|\r|\n/g, " ");
   const rootIdx = s.indexOf("(;");
   if (rootIdx < 0) {
-    return null;
+    return { malformed: false, occurrences: [] };
   }
 
   const target = propId.toUpperCase();
   let i = rootIdx + 2;
-  let parenDepth = 0;
+  let nodeIndex = 0;
+  const occurrences: MainlinePropertyOccurrenceV1[] = [];
 
   while (i < s.length) {
     const ch = s[i]!;
-    if (parenDepth > 0) {
-      if (ch === "(") {
-        parenDepth += 1;
-      } else if (ch === ")") {
-        parenDepth -= 1;
-      }
-      i += 1;
-      continue;
-    }
     if (ch === ")") {
       break;
     }
     if (ch === "(") {
-      parenDepth += 1;
-      i += 1;
+      i = skipSgfVariationTreeV1(s, i).end;
       continue;
     }
     if (ch === ";") {
+      nodeIndex += 1;
       i += 1;
       continue;
     }
@@ -123,17 +114,41 @@ function findFirstMainlinePropertyValue(sgf: string, propId: string): string | n
       i += 1;
       continue;
     }
-    const prop = readOneSgfPropertyValue(s, i);
-    if (prop == null) {
+    const idStart = i;
+    while (i < s.length && /[A-Za-z]/.test(s[i]!)) {
       i += 1;
+    }
+    const currentId = s.slice(idStart, i).toUpperCase();
+    if (i >= s.length || s[i] !== "[") {
+      if (currentId === target) {
+        return { malformed: true, occurrences };
+      }
       continue;
     }
-    if (prop.propId.toUpperCase() === target) {
-      return prop.value;
+
+    const values: string[] = [];
+    while (i < s.length) {
+      while (i < s.length && /\s/.test(s[i]!)) {
+        i += 1;
+      }
+      if (i >= s.length || s[i] !== "[") {
+        break;
+      }
+      const bracket = readSgfBracketValue(s, i);
+      if (bracket == null) {
+        return {
+          malformed: currentId === target,
+          occurrences,
+        };
+      }
+      values.push(bracket.text);
+      i = bracket.end;
     }
-    i = prop.end;
+    if (currentId === target) {
+      occurrences.push({ nodeIndex, values });
+    }
   }
-  return null;
+  return { malformed: false, occurrences };
 }
 
 const JAPANESE_RULE_ALIASES_V1 = new Set([
@@ -325,27 +340,151 @@ export function resolveSgfInitialTurnContractV1(
   };
 }
 
-function readKomiFromSgf(sgf: string): number {
-  const rawKomi = findFirstMainlinePropertyValue(sgf, "KM");
-  if (rawKomi == null) {
-    return 6.5;
+const DEFAULT_BOARD_SIZE_V1 = 19;
+const DEFAULT_KOMI_V1 = 6.5;
+const SUPPORTED_BOARD_SIZES_V1 = new Set([9, 13, 19]);
+const MIN_KATAGO_KOMI_V1 = -150;
+const MAX_KATAGO_KOMI_V1 = 150;
+
+function readSingleRootScalarPropertyV1(
+  sgf: string,
+  propId: "SZ" | "KM",
+  invalidCode: "SGF_INVALID_BOARD_SIZE" | "SGF_INVALID_KOMI"
+): string | null {
+  const scan = scanMainlinePropertyV1(sgf, propId);
+  if (
+    scan.malformed ||
+    scan.occurrences.length > 1 ||
+    scan.occurrences.some(occurrence => occurrence.nodeIndex !== 0) ||
+    scan.occurrences.some(occurrence => occurrence.values.length !== 1)
+  ) {
+    throw new SgfKatagoParseError(
+      invalidCode,
+      `${propId} must be one closed scalar property in the root node`
+    );
   }
-  const raw = rawKomi.trim().replace(",", ".");
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) ? parsed : 6.5;
+  return scan.occurrences[0]?.values[0]?.trim() ?? null;
 }
 
-function resolveBoardSize(hint: number | null): number {
-  const n = hint ?? 19;
-  if (!Number.isFinite(n) || n < 2 || n > 25) {
-    throw new SgfKatagoParseError("SGF_PARSE_FAILED", `invalid board size SZ=${String(hint)}`);
+function readBoardSizeFromSgfV1(sgf: string): {
+  boardSize: number;
+  boardSizeSource: SgfBoardSizeSourceV1;
+} {
+  const raw = readSingleRootScalarPropertyV1(
+    sgf,
+    "SZ",
+    "SGF_INVALID_BOARD_SIZE"
+  );
+  if (raw == null) {
+    return {
+      boardSize: DEFAULT_BOARD_SIZE_V1,
+      boardSizeSource: "sgf_default_missing",
+    };
   }
-  return n;
+  const rectangular = /^([+-]?\d+):([+-]?\d+)$/.exec(raw);
+  if (rectangular) {
+    const width = Number(rectangular[1]);
+    const height = Number(rectangular[2]);
+    if (
+      !Number.isSafeInteger(width) ||
+      !Number.isSafeInteger(height) ||
+      width < 1 ||
+      width > 52 ||
+      height < 1 ||
+      height > 52 ||
+      width === height
+    ) {
+      throw new SgfKatagoParseError(
+        "SGF_INVALID_BOARD_SIZE",
+        "SZ must contain one valid FF[4] Go board size"
+      );
+    }
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_BOARD_SIZE",
+      "only square 9x9, 13x13, and 19x19 boards are supported"
+    );
+  }
+  if (!/^[+-]?\d+$/.test(raw)) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_BOARD_SIZE",
+      "SZ must contain one integer"
+    );
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 52) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_BOARD_SIZE",
+      "SZ must contain one valid FF[4] Go board size"
+    );
+  }
+  if (!SUPPORTED_BOARD_SIZES_V1.has(parsed)) {
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_BOARD_SIZE",
+      "only square 9x9, 13x13, and 19x19 boards are supported"
+    );
+  }
+  return { boardSize: parsed, boardSizeSource: "root_sz" };
+}
+
+function readKomiFromSgfV1(sgf: string): {
+  komi: number;
+  komiSource: SgfKomiSourceV1;
+} {
+  const raw = readSingleRootScalarPropertyV1(sgf, "KM", "SGF_INVALID_KOMI");
+  if (raw == null) {
+    return {
+      komi: DEFAULT_KOMI_V1,
+      komiSource: "product_default_missing",
+    };
+  }
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(raw)) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_KOMI",
+      "KM must contain one numeric value"
+    );
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_KOMI",
+      "KM must contain one finite numeric value"
+    );
+  }
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(raw)!;
+  const fraction = match[3] ?? "";
+  const isWholePoint = fraction.length === 0 || /^0+$/.test(fraction);
+  const isHalfPoint = /^50*$/.test(fraction);
+  if (!isWholePoint && !isHalfPoint) {
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_KOMI",
+      "KM must be an integer or half-integer from -150 to 150"
+    );
+  }
+  const absoluteWhole = Number(match[2]);
+  const signedHalfUnits =
+    (match[1] === "-" ? -1 : 1) * (absoluteWhole * 2 + (isHalfPoint ? 1 : 0));
+  if (
+    !Number.isSafeInteger(signedHalfUnits) ||
+    signedHalfUnits < MIN_KATAGO_KOMI_V1 * 2 ||
+    signedHalfUnits > MAX_KATAGO_KOMI_V1 * 2
+  ) {
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_KOMI",
+      "KM must be an integer or half-integer from -150 to 150"
+    );
+  }
+  return { komi: signedHalfUnits / 2, komiSource: "root_km" };
 }
 
 function assertParseableMainline(warnings: SgfPlaybackWarningV1[]): void {
   if (warnings.some((w) => w.code === "no_root")) {
     throw new SgfKatagoParseError("SGF_PARSE_FAILED", "SGF root (; missing");
+  }
+  if (warnings.some((w) => w.code === "unbalanced_parens")) {
+    throw new SgfKatagoParseError(
+      "SGF_PARSE_FAILED",
+      "SGF variation tree is not closed"
+    );
   }
   const unsupportedGm = warnings.find((w) => w.code === "unsupported_game_type");
   if (unsupportedGm) {
@@ -407,17 +546,21 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
     throw new SgfKatagoParseError("SGF_PARSE_FAILED", "empty SGF");
   }
   const extracted = extractMainlineBwMoves(sgf);
-  const { moves, initialStones, warnings, boardSizeHint } = extracted;
+  const { moves, initialStones, warnings } = extracted;
   assertParseableMainline(warnings);
   const rules = parseSupportedKatagoRulesFromRootV1(sgf);
   const initialTurn = resolveSgfInitialTurnContractV1(extracted);
-  const boardSize = resolveBoardSize(boardSizeHint);
+  const boardContract = readBoardSizeFromSgfV1(sgf);
+  const { boardSize } = boardContract;
   validateSetupStoneCoordinates(initialStones, boardSize);
   validateMoveCoordinates(moves, boardSize);
-  const komi = readKomiFromSgf(sgf);
+  const komiContract = readKomiFromSgfV1(sgf);
+  const { komi } = komiContract;
   return {
     boardSize,
+    boardSizeSource: boardContract.boardSizeSource,
     komi,
+    komiSource: komiContract.komiSource,
     rules,
     initialPlayer: initialTurn.initialPlayer,
     initialPlayerSource: initialTurn.initialPlayerSource,

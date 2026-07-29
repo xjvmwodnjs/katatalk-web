@@ -116,7 +116,9 @@ export function buildAnalysisPlanV1FromParsed(
     version: ANALYSIS_PLAN_V1_VERSION,
     totalMoves: parsed.moves.length,
     boardSize: parsed.boardSize,
+    boardSizeSource: parsed.boardSizeSource,
     komi: parsed.komi,
+    komiSource: parsed.komiSource,
     candidateTurns: buildCandidateTurnsV1(parsed, opts),
     strategy: {
       mode: opts.mode ?? "light",

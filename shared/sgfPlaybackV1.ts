@@ -104,6 +104,36 @@ export function readSgfBracketValue(s: string, openBracketIdx: number): { text: 
   return null;
 }
 
+/** Skips one SGF game-tree branch without counting parentheses inside property values. */
+export function skipSgfVariationTreeV1(
+  s: string,
+  openParenIndex: number
+): { end: number; closed: boolean } {
+  let depth = 0;
+  let i = openParenIndex;
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (ch === "[") {
+      const bracket = readSgfBracketValue(s, i);
+      if (bracket == null) {
+        return { end: s.length, closed: false };
+      }
+      i = bracket.end;
+      continue;
+    }
+    if (ch === "(") {
+      depth += 1;
+    } else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return { end: i + 1, closed: true };
+      }
+    }
+    i += 1;
+  }
+  return { end: s.length, closed: false };
+}
+
 /** SGF 열/행 한 글자 → 0-based (a=0 …, i 포함 연속) */
 export function sgfLetterToCoordIndex(letter: string, boardSize: number): number | null {
   if (letter.length !== 1) {
@@ -231,6 +261,7 @@ type NodePropertyContextV1 = {
   duplicateInNode: boolean;
   hadMoveBeforeNode: boolean;
   hasMoveInNode: boolean;
+  isRootNode: boolean;
 };
 
 function pushInitialPositionIssueOnce(
@@ -341,7 +372,7 @@ function applyRootProperty(
       }
       initialStoneMap.set(pt, color);
     }
-  } else if (up === "SZ") {
+  } else if (up === "SZ" && nodeContext.isRootNode) {
     recordSz(values[0] ?? "");
   } else if (up === "FF") {
     metadataState.ffSeen = true;
@@ -415,7 +446,8 @@ function consumeAllPropertiesInNode(
     gmSeen: boolean;
     unsupportedGm: string | null;
   },
-  recordSz: (raw: string) => void
+  recordSz: (raw: string) => void,
+  isRootNode: boolean
 ): number {
   let j = start;
   const properties: { propId: string; values: string[] }[] = [];
@@ -473,7 +505,7 @@ function consumeAllPropertiesInNode(
       setupState,
       metadataState,
       recordSz,
-      { duplicateInNode, hadMoveBeforeNode, hasMoveInNode }
+      { duplicateInNode, hadMoveBeforeNode, hasMoveInNode, isRootNode }
     );
   }
   return j;
@@ -501,7 +533,6 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
   }
 
   let i = rootIdx + 2;
-  let parenDepth = 0;
   const moves: ParsedMainlineMoveV1[] = [];
   const initialStoneMap = new Map<string, "B" | "W">();
   let boardSizeHint: number | null = null;
@@ -520,13 +551,15 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
     unsupportedGm: null as string | null,
   };
   let variationBranchCount = 0;
+  let unclosedVariation = false;
+  let isRootNode = true;
 
   const recordSz = (raw: string) => {
     if (boardSizeHint != null) {
       return;
     }
     const t = raw.trim();
-    const m = /^(\d+)$/.exec(t);
+    const m = /^\+?(\d+)$/.exec(t);
     if (m) {
       const n = Number.parseInt(m[1]!, 10);
       if (Number.isFinite(n)) {
@@ -537,27 +570,32 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
 
   while (i < s.length) {
     const c = s[i]!;
-    if (parenDepth > 0) {
-      if (c === "(") {
-        parenDepth += 1;
-      } else if (c === ")") {
-        parenDepth -= 1;
-      }
-      i += 1;
-      continue;
-    }
     if (c === ")") {
       break;
     }
     if (c === "(") {
       variationBranchCount += 1;
-      parenDepth += 1;
-      i += 1;
+      const skipped = skipSgfVariationTreeV1(s, i);
+      i = skipped.end;
+      if (!skipped.closed) {
+        unclosedVariation = true;
+      }
       continue;
     }
     if (c === ";") {
+      isRootNode = false;
       i += 1;
-      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
+      i = consumeAllPropertiesInNode(
+        s,
+        i,
+        moves,
+        initialStoneMap,
+        warnings,
+        setupState,
+        metadataState,
+        recordSz,
+        isRootNode
+      );
       continue;
     }
     if (/\s/.test(c)) {
@@ -565,13 +603,23 @@ export function extractMainlineBwMoves(sgf: string): ExtractMainlineBwMovesResul
       continue;
     }
     if (/[A-Za-z]/.test(c)) {
-      i = consumeAllPropertiesInNode(s, i, moves, initialStoneMap, warnings, setupState, metadataState, recordSz);
+      i = consumeAllPropertiesInNode(
+        s,
+        i,
+        moves,
+        initialStoneMap,
+        warnings,
+        setupState,
+        metadataState,
+        recordSz,
+        isRootNode
+      );
       continue;
     }
     i += 1;
   }
 
-  if (parenDepth > 0) {
+  if (unclosedVariation) {
     warnings.push({ code: "unbalanced_parens" });
   }
   if (variationBranchCount > 0) {

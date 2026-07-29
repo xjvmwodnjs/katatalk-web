@@ -33,7 +33,10 @@ import {
   shouldEnqueueAnalysisJobAsMock,
 } from "./middleware/analyzeEnqueueGuard";
 import { getAnalysisEngineName } from "./worker/analysisEngines/config";
-import { requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
+import {
+  requireAnalyzeAuth,
+  requireAnalyzeAuthBeforeAdmission,
+} from "./middleware/requireAnalyzeAuth";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
 import { isMockAnalysisAllowed } from "./_core/env";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
@@ -352,7 +355,7 @@ analyzeRouter.delete(
 analyzeRouter.post(
   "/api/analyze",
   analyzePostIpLimit,
-  requireAnalyzeAuth,
+  requireAnalyzeAuthBeforeAdmission,
   analyzePostUserLimit,
   requireAnalyzeEnqueueAllowed,
   handleMulterUpload,

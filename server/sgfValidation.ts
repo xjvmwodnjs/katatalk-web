@@ -98,6 +98,38 @@ export function validateSgfText(raw: string): SgfValidationResult {
             : "Invalid SGF: the root RU property is not closed.",
         };
       }
+      if (error.code === "SGF_INVALID_BOARD_SIZE") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: SZ must be a single root property with one integer value.",
+        };
+      }
+      if (error.code === "SGF_UNSUPPORTED_BOARD_SIZE") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: only square 9x9, 13x13, and 19x19 boards are supported.",
+        };
+      }
+      if (error.code === "SGF_INVALID_KOMI") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: KM must be a single root property with one numeric value.",
+        };
+      }
+      if (error.code === "SGF_UNSUPPORTED_KOMI") {
+        return {
+          ok: false,
+          code: error.code,
+          message:
+            "Invalid SGF: KM must be an integer or half-integer from -150 to 150.",
+        };
+      }
       if (error.code === "SGF_INVALID_PLAYER_TO_PLAY") {
         return {
           ok: false,

@@ -9,14 +9,15 @@ import type { AuthenticatedUser } from "./sdk";
  * Bearer(Clerk/Supabase) 우선, 그 외 쿠키 기반 authProvider.
  */
 export async function tryResolveUserFromRequest(
-  req: Request
+  req: Request,
+  options: { ensureWallet?: boolean } = {}
 ): Promise<AuthenticatedUser | null> {
   if (ENV.authProvider === "clerk") {
     const token = parseBearerAuthorization(req.headers.authorization);
     if (!token) {
       return null;
     }
-    return verifyClerkBearerAndSyncUser(token);
+    return verifyClerkBearerAndSyncUser(token, options);
   }
 
   if (ENV.authProvider === "supabase") {

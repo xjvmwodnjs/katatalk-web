@@ -96,6 +96,30 @@ describe("sgfPlaybackV1", () => {
     expect(moves).toEqual([{ color: "B", sgfPoint: "aa" }]);
   });
 
+  it("keeps playback aligned with accepted signed and zero-padded root SZ", () => {
+    const sgf = "(;FF[4]GM[1]SZ[+009]KM[6.5];B[ee])";
+    const extracted = extractMainlineBwMoves(sgf);
+    const playback = buildSgfPlaybackStateV1({
+      sgfText: sgf,
+      selectedTurnIndex: null,
+    });
+    expect(extracted.boardSizeHint).toBe(9);
+    expect(playback.boardSize).toBe(9);
+  });
+
+  it("does not let a later mainline or variation SZ override the root board", () => {
+    const laterMainline = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[19];B[pd];SZ[9];W[dd])"
+    );
+    expect(laterMainline.boardSizeHint).toBe(19);
+
+    const variation = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[13];B[gg](;C[parentheses ) ( stay text]SZ[9];W[ee]);W[ff])"
+    );
+    expect(variation.boardSizeHint).toBe(13);
+    expect(variation.moves.map(move => move.sgfPoint)).toEqual(["gg", "ff"]);
+  });
+
   it("extracts B/W when they follow C on the same node", () => {
     const sgf = "(;C[text]B[pd];W[dd])";
     const { moves } = extractMainlineBwMoves(sgf);
