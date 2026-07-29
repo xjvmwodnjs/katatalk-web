@@ -2,7 +2,7 @@
 
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
 
-2026-07-14 기준 공개 유료 베타 상용화 readiness는 **76%** 입니다. 현재 출시 판정, 검증 근거와 다음 작업은 [`docs/commercialization-review.md`](docs/commercialization-review.md)를 단일 기준으로 사용합니다.
+2026-07-29 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 현재 출시 판정, 구현 현황, 검증 근거와 다음 작업의 단일 기준은 [`review.md`](review.md)입니다. 최신 검증 기준은 `99e4a7b`와 GitHub Actions [`30441291617`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617)이며, Vitest **86 files / 927 tests**, Playwright **9/9**, type/format/secret scan, Web/API/Worker build, PostgreSQL gate와 production dependency audit가 모두 통과했습니다. 실제 Supabase·Clerk·Lemon·KataGo 스테이징 종단 증거, exporter 호환성과 전체 SGF 합법성은 아직 출시 게이트로 남아 있습니다.
 
 ## 알고리즘 기준 문서
 
