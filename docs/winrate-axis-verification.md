@@ -64,6 +64,10 @@
 
 Contract fixtures verify initial-player admission and propagation: pre-mainline `PL` priority, first-move fallback, matching `HA>=2`/final black setup count, `HA[0]` no-handicap, and fixed 400 rejection for invalid conflicts and setup coordinates. Primary/spawn/persistent, multi-turn, deep search, benchmark, timeline, synthetic probe, and UI playback propagation are covered. The focused suite passed 207 tests, the complete local suite passed 84 files / 857 tests, and GitHub CI [run 30426033948](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30426033948) passed type/unit/build/secret/format, Playwright, PostgreSQL, and production dependency gates for functional commit `e02f3d1`. Real-engine/staging reruns remain pending; the historical 2026-07-14 table above is unchanged.
 
+## Strict SGF metadata admission CI verified; exporter/staging rerun pending
+
+Functional commit `4a75b70` adds strict root `SZ`/`KM` cardinality, placement, launch-size, and exact-komi admission; missing-value provenance; common KataGo query propagation; root-only UI playback; and identity-only Clerk upload authentication before validation. Invalid fixtures leave wallet, debit, enqueue, and job state untouched, while an accepted upload provisions its wallet exactly once after admission. GitHub CI [run 30433097938](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30433097938) passed 85 files / 871 tests plus formatting, type, secret, production Web/API/Worker build, Playwright, PostgreSQL migration/ACL/atomicity, and production dependency gates across all four jobs. Real-exporter, real-engine, and staging reruns remain pending; the historical 2026-07-14 table above is unchanged.
+
 ## 6. 배포 절차
 
 1. Worker analysis config에 `reportAnalysisWinratesAs`를 정확히 하나 설정한다.

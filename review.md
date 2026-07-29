@@ -70,6 +70,8 @@ COM-005 일본식 규칙 admission 커밋 `9392d77`의 GitHub 근거는 실행 [
 
 COM-005 초기 착수 계약 커밋 `e02f3d1`의 GitHub 근거는 실행 [`30426033948`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30426033948)이다. 타입·84 files / 857 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. 이 근거는 `PL`·`HA`/setup `initialPlayer`와 과금 전 admission 회귀를 닫지만 실제 KataGo/실제 exporter/staging 증거를 대신하지 않는다.
 
+COM-005 strict `SZ`/`KM` 계약 커밋 `4a75b70`은 GitHub CI [`30433097938`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30433097938)에서 85 files / 871 tests, format/type/secret scan, 프로덕션 Web/API/Worker 빌드, Playwright, PostgreSQL migration/ACL/atomicity, 프로덕션 의존성 감사 등 4개 job 전체를 통과했다. 이 근거는 root metadata 구조·지원 범위·query/UI 전파와 validation 전 wallet 0회/통과 후 1회 회귀를 닫지만 실제 exporter/real-engine/staging 증거를 대신하지 않는다.
+
 ### 문서 신뢰도
 
 - 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 Manus OAuth, MySQL, Stripe, LLM 중심의 과거 구조를 설명해 현재 Clerk, Supabase, Lemon Squeezy, KataGo Worker 구조와 맞지 않는다.
