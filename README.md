@@ -183,7 +183,7 @@ Railway/Render 프로젝트 **Root directory** 는 저장소 루트( `package.js
 - 현재 분석 계약은 **일본식 규칙만 지원**합니다. 첫 root node의 `RU`를 구조적으로 읽고 검토된 일본식 표기를 KataGo의 `japanese`로 정규화합니다.
 - `RU`가 없거나 비어 있으면 기존 기보 호환을 위해 일본식으로 간주합니다.
 - 중국식, AGA, 뉴질랜드식 등 비지원 규칙은 원문 값을 응답에 노출하지 않는 **400 `SGF_UNSUPPORTED_RULES`** 로 거절하며, 이 검사는 wallet 준비·크레딧 차감·job enqueue보다 먼저 실행됩니다.
-- `PL`, handicap/setup 정합성, 엄격한 root `SZ`/`KM`, 추가 규칙 지원은 [`review.md`](review.md)의 `COM-005` 후속 범위입니다.
+- SGF 초기 착수 색은 mainline 첫 착수 전 setup 노드의 `PL[B|W]`를 지원합니다(루트 전용 아님). 우선순위는 `PL` → 첫 수 색 → `HA>=2`이면서 유효한 최종 흑 setup stone count와 일치하면 `W` → `B`이며, `HA[0]`은 exporter 호환 no-handicap이고 HA 자체는 돌을 배치하지 않습니다. invalid/duplicate/mixed/post-move `PL`, invalid/duplicate `HA`, HA/setup count mismatch는 fixed non-reflective 400으로 wallet/debit/enqueue 전에 거절합니다. `initialPlayer`는 primary/spawn/persistent, multi-turn, deep search, benchmark, timeline, synthetic probe 및 UI playback에 전파됩니다. post-move transition, strict root `SZ`/`KM`, compressed setup ranges, 전체 legality, 추가 규칙과 PB/PW/DT/RE metadata는 [`review.md`](review.md)의 `COM-005` 후속 범위입니다.
 
 ### SGF 원문 저장 (MVP)
 

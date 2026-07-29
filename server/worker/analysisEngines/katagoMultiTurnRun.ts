@@ -277,6 +277,7 @@ function prepareTurns(
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
       moves: movesBefore,
       initialStones: parsed.initialStones,
       maxVisits,

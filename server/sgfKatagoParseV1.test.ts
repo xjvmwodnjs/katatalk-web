@@ -7,6 +7,20 @@ import {
 import { extractMainlineBwMoves } from "@shared/sgfPlaybackV1";
 import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery";
 
+function expectParseErrorCode(
+  sgf: string,
+  code: SgfKatagoParseError["code"]
+): SgfKatagoParseError {
+  try {
+    parseSgfForKatagoV1(sgf);
+    throw new Error("expected failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(SgfKatagoParseError);
+    expect((error as SgfKatagoParseError).code).toBe(code);
+    return error as SgfKatagoParseError;
+  }
+}
+
 describe("sgfKatagoParseV1", () => {
   it("defaults missing or blank root RU to Japanese rules", () => {
     expect(parseSgfForKatagoV1("(;GM[1]SZ[19];B[pd])").rules).toBe("japanese");
@@ -68,6 +82,102 @@ describe("sgfKatagoParseV1", () => {
     }
   });
 
+  it("resolves initial player from setup PL, first move, handicap, then the standard default", () => {
+    const explicit = parseSgfForKatagoV1(
+      "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp];PL[ W ];W[qq];B[dd])"
+    );
+    expect(explicit.initialPlayer).toBe("W");
+    expect(explicit.initialPlayerSource).toBe("setup_pl");
+    expect(explicit.handicapStones).toBe(2);
+
+    const firstMove = parseSgfForKatagoV1(
+      "(;FF[4]GM[1]SZ[19]AB[pd]AW[dp];W[qq];B[dd])"
+    );
+    expect(firstMove.initialPlayer).toBe("W");
+    expect(firstMove.initialPlayerSource).toBe("first_move");
+    expect(firstMove.handicapStones).toBeNull();
+
+    const handicapOnly = parseSgfForKatagoV1(
+      "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp])"
+    );
+    expect(handicapOnly.initialPlayer).toBe("W");
+    expect(handicapOnly.initialPlayerSource).toBe("handicap_default_white");
+
+    const emptyBoard = parseSgfForKatagoV1("(;FF[4]GM[1]SZ[19])");
+    expect(emptyBoard.initialPlayer).toBe("B");
+    expect(emptyBoard.initialPlayerSource).toBe("standard_default_black");
+  });
+
+  it("allows HA[0] as a no-handicap exporter marker", () => {
+    const parsed = parseSgfForKatagoV1("(;FF[4]GM[1]SZ[19]HA[0];B[pd];W[dp])");
+    expect(parsed.handicapStones).toBeNull();
+    expect(parsed.initialPlayer).toBe("B");
+    expect(parsed.initialPlayerSource).toBe("first_move");
+  });
+
+  it("rejects invalid, conflicting, mixed-node, or post-move PL", () => {
+    const invalidMarker = "private-player-marker-947";
+    const invalid = expectParseErrorCode(
+      `(;FF[4]GM[1]SZ[19]PL[${invalidMarker}];B[pd])`,
+      "SGF_INVALID_PLAYER_TO_PLAY"
+    );
+    expect(invalid.message).not.toContain(invalidMarker);
+
+    expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19]PL[B];W[pd])",
+      "SGF_PLAYER_TO_PLAY_CONFLICT"
+    );
+    expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19]PL[B]B[pd])",
+      "SGF_INVALID_PLAYER_TO_PLAY"
+    );
+    expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19]PL[B]PL[B];B[pd])",
+      "SGF_INVALID_PLAYER_TO_PLAY"
+    );
+    expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])",
+      "SGF_UNSUPPORTED_PLAYER_TO_PLAY"
+    );
+    const unclosed = expectParseErrorCode(
+      `(;FF[4]GM[1]SZ[19];B[pd];PL[${invalidMarker}`,
+      "SGF_INVALID_PLAYER_TO_PLAY"
+    );
+    expect(unclosed.message).not.toContain(invalidMarker);
+  });
+
+  it("rejects invalid or duplicate HA and HA/setup mismatches", () => {
+    for (const sgf of [
+      "(;FF[4]GM[1]SZ[19]HA[1]AB[pd];W[qq])",
+      "(;FF[4]GM[1]SZ[19]HA[-2]AB[pd][dp];W[qq])",
+      "(;FF[4]GM[1]SZ[19]HA[private-handicap-marker-947]AB[pd][dp];W[qq])",
+      "(;FF[4]GM[1]SZ[19]HA[2][3]AB[pd][dp];W[qq])",
+      "(;FF[4]GM[1]SZ[19]HA[2]HA[2]AB[pd][dp];W[qq])",
+    ]) {
+      const error = expectParseErrorCode(sgf, "SGF_INVALID_HANDICAP");
+      expect(error.message).not.toContain("private-handicap-marker-947");
+    }
+
+    expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19]HA[2]AB[pd];W[qq])",
+      "SGF_HANDICAP_SETUP_MISMATCH"
+    );
+    const unclosed = expectParseErrorCode(
+      "(;FF[4]GM[1]SZ[19];B[pd];HA[private-handicap-marker-947",
+      "SGF_INVALID_HANDICAP"
+    );
+    expect(unclosed.message).not.toContain("private-handicap-marker-947");
+  });
+
+  it("ignores PL and HA lookalikes inside comments and variations", () => {
+    const parsed = parseSgfForKatagoV1(
+      "(;FF[4]GM[1]SZ[19]C[PL[X\\] HA[9\\]];B[pd](;PL[W];W[dd]);W[dp])"
+    );
+    expect(parsed.initialPlayer).toBe("B");
+    expect(parsed.initialPlayerSource).toBe("first_move");
+    expect(parsed.handicapStones).toBeNull();
+  });
+
   it("reads KM property from actual SGF property values", () => {
     expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[6.5]SZ[19];B[pd])").komi).toBe(6.5);
     expect(parseSgfForKatagoV1("(;GM[1]FF[4]KM[7.5]SZ[19];B[pd])").komi).toBe(7.5);
@@ -124,6 +234,23 @@ describe("sgfKatagoParseV1", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(SgfKatagoParseError);
       expect((e as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_SETUP_STONES");
+    }
+  });
+
+  it("rejects setup stones mixed with a move regardless of property order", () => {
+    for (const sgf of [
+      "(;FF[4]GM[1]SZ[19]AB[pd]B[qq])",
+      "(;FF[4]GM[1]SZ[19]B[qq]AB[pd])",
+    ]) {
+      try {
+        parseSgfForKatagoV1(sgf);
+        throw new Error("expected failure");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SgfKatagoParseError);
+        expect((error as SgfKatagoParseError).code).toBe(
+          "SGF_UNSUPPORTED_SETUP_STONES"
+        );
+      }
     }
   });
 

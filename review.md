@@ -26,7 +26,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 1. 실패 확정·환불 원자 명령과 PostgreSQL CI 게이트는 구현됐고 GitHub Actions에서 통과했다. 실제 Supabase 스테이징 증거는 아직 남아 있다.
 2. Supabase `SECURITY DEFINER` 권한 manifest와 SQL 거절 검사는 구현됐지만 실제 Supabase/PostgREST 스냅샷은 남아 있다.
 3. Lemon Squeezy 결제 성공만 처리하고 환불·차지백·취소 및 상품 실체 검증은 완성되지 않았다.
-4. SGF root `RU`의 일본식-only admission과 과금 전 거절은 구현됐다. `PL`, handicap/setup 정합성, 엄격한 `SZ`/`KM`, 실제 대국 메타데이터는 아직 남아 있다.
+4. SGF root `RU`의 일본식-only admission과 pre-mainline `PL`·`HA`/setup 기반 `initialPlayer` 계약은 구현됐다. post-move setup transition, 엄격한 `SZ`/`KM`, 실제 대국 메타데이터와 staging 증거는 아직 남아 있다.
 5. 마이그레이션 실행 경로는 단일화했지만 기존 운영 DB의 승인된 history baseline과 스테이징 리허설이 남아 있다.
 6. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
 7. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
@@ -252,7 +252,7 @@ flowchart LR
 
 ### COM-005. SGF 규칙과 실제 대국 메타데이터를 정확히 다루기
 
-**상태: 부분 구현 — 일본식 규칙 admission/전파 완료, 규칙 확장·handicap/메타데이터 계약 대기 (2026-07-28)**
+**상태: 부분 구현 — 일본식 규칙 admission과 초기 착수 색 계약/전파 완료, 후속 전환·메타데이터 및 staging 증거 대기 (2026-07-29)**
 
 **증거**
 
@@ -260,6 +260,9 @@ flowchart LR
 - [server/sgfValidation.ts](server/sgfValidation.ts)와 [server/analyzeRoute.ts](server/analyzeRoute.ts)는 같은 규칙 파서를 사용한다. 비지원 값은 raw `RU`를 반사하지 않는 HTTP 400 `SGF_UNSUPPORTED_RULES`로 wallet 준비·차감·enqueue 전에 거절한다.
 - [server/worker/analysisEngines/katagoSgfQuery.ts](server/worker/analysisEngines/katagoSgfQuery.ts)는 규칙을 필수 typed query field로 만들었다. root, spawn Worker, persistent, multi-turn, deep search, benchmark, timeline이 모두 `parsed.rules`를 전달하고 synthetic backend probe만 일본식 고정을 유지한다.
 - 파서·upload validator·DB-backed route·primary query·timeline 회귀 테스트는 comment/후속 node/variation 오인, duplicate/multi-value 우회, 원문 비노출, wallet/원장/enqueue 호출 0을 검사한다.
+- [shared/sgfKatagoParseV1.ts](shared/sgfKatagoParseV1.ts)는 mainline 첫 착수 전 setup node의 `PL[B|W]`, `HA`, 최종 흑 setup stone을 하나의 초기 착수 계약으로 해석한다. 우선순위는 `PL` → 첫 수 색 → 검증된 `HA>=2`의 `W` → 일반 기본 `B`이고 `HA[0]`은 exporter 호환 no-handicap이다.
+- invalid/duplicate `PL`, move와 같은 node 또는 첫 착수 뒤의 `PL`, `PL`-첫 수 충돌, invalid/duplicate `HA`, `HA`-최종 흑 setup stone count 불일치는 raw 값을 반사하지 않는 고정 HTTP 400으로 wallet 준비·차감·enqueue 전에 거절한다.
+- typed `initialPlayer`는 primary/spawn/persistent, multi-turn, Deep Search, benchmark, timeline query와 synthetic backend probe에 전달된다. [shared/sgfPlaybackV1.ts](shared/sgfPlaybackV1.ts)의 turn 0 및 마지막 실제 착수 색 기반 계산도 같은 시작색을 사용해 try-play/PV UI와 엔진의 착수자를 맞춘다.
 - [server/worker/analysisEngines/katagoEngine.ts](server/worker/analysisEngines/katagoEngine.ts#L540)는 플레이어를 Black/White, 날짜를 현재일, 결과를 분석 파이프라인 문자열로 채우고, [client/src/components/AnalysisResultView.tsx](client/src/components/AnalysisResultView.tsx#L480)는 이를 실제 대국 정보처럼 표시한다.
 
 **위험**
@@ -274,12 +277,13 @@ flowchart LR
 - 1차 정책은 “일본식만 지원”으로 결정했다. `RU` 없음/빈 값은 일본식 기본값이며 비지원 값은 과금 전에 고정 오류로 거절한다.
 - 중국식/AGA/뉴질랜드식 등을 제공하려면 규칙별 KataGo 매핑, scoring/ko/tax 차이, 결과 문구와 golden fixture를 하나의 계약으로 추가한다.
 - `PB`, `PW`, `DT`, `RE`, `KM`, `SZ`, `HA`, `AB/AW`, `RU`를 구조적으로 파싱한다.
-- `PL`, `HA`와 setup stone의 일관성, root-only/strict `SZ`·`KM`, rectangular board 정책은 별도 변경 단위로 검증한다.
+- pre-mainline `PL[B|W]`는 `PL` → 첫 수 색 → matching `HA>=2`/final black setup count의 `W` → `B` 순으로 결정하며, `HA[0]`은 no-handicap이고 HA 자체는 돌을 배치하지 않는다. post-move transition, strict `SZ`/`KM`, compressed ranges, 전체 move legality, rectangular policy는 별도 변경 단위로 검증한다.
 - 원본 값과 정규화 값을 함께 보존하고 추정값은 UI에서 “알 수 없음/추정”으로 표시한다.
 
 **완료 조건**
 
 - 지원 규칙별 golden SGF와 handicap/setup stone 테스트가 있다.
+- handicap/setup의 root·timeline·multi-turn·Deep Search·UI 착수자가 일치하고, 잘못된 초기 착수 계약은 job/ledger를 만들기 전에 거절된다.
 - 실제 `PB/PW/DT/RE`가 결과에 보이고 없을 때는 허구의 값이 생성되지 않는다.
 - 같은 SGF·엔진·모델·설정에서 결정론적 결과 계약이 유지된다.
 
@@ -737,7 +741,7 @@ ops/
 | 1 | COM-001 | P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중 | DB·Worker | 없음 | fault test와 ledger audit 불일치 0 |
 | 2 | COM-002 | P0 | RPC 권한 manifest/검사 — GitHub CI 통과·staging 대기 | DB·Security | 없음 | 실제 staging catalog/HTTP snapshot |
 | 3 | COM-006 | P0 | migration runner/CI — GitHub CI 통과·baseline 대기 | DB·DevEx | COM-002 병행 | 기존 운영 DB baseline 승인 |
-| 4 | COM-005 | P0 | 일본식 rules admission 완료·handicap/metadata 후속 | Analysis | 없음 | 규칙/handicap golden SGF와 UI 정확성 테스트 |
+| 4 | COM-005 | P0 | RU + PL/HA/setup initialPlayer 완료·strict SZ/KM/metadata 후속 | Analysis | 없음 | 규칙/handicap golden SGF와 엔진·UI 착수자 일치 테스트 |
 | 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
 | 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
 | 7 | COM-003 | P0 | dependency remediation — GitHub CI 완료 | Platform | 없음 | 실행 30019630160에서 알려진 취약점 0 |
@@ -865,7 +869,7 @@ ops/
 
 1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
 2. **COM-001 후속**: 구현된 quarantine 상태 endpoint를 실제 monitoring에 연결하고 staging에서 비식별 응답을 확인한다. 쓰기 reconciliation은 별도 보안 검토를 거친 승인된 append-only command로만 만든다.
-3. **COM-005 후속**: `PL`, `HA`/setup 일관성, root-only/strict `SZ`·`KM`을 계약화하고 `PB/PW/DT/RE` 원문 메타데이터를 허구의 fallback 없이 결과/UI에 연결한다.
+3. **COM-005 후속**: post-move `PL`/setup transition, strict root `SZ`·`KM`, compressed setup ranges, 전체 move legality와 extra rulesets를 계약화하고 `PB/PW/DT/RE` 원문 metadata를 결과/UI에 연결한다. 실제 exporter/real-engine/staging 증거를 추가한다.
 4. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
 5. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
 

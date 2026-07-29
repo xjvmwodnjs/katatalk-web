@@ -529,6 +529,75 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(vitestAnalysisJobsStore.size).toBe(0);
   });
 
+  it("POST rejects invalid initial-player and handicap contracts before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    const legacySpendSpy = vi.spyOn(creditService, "spendCreditForAnalysisJob");
+    const legacyInsertSpy = vi.spyOn(creditService, "insertAnalysisJobQueued");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const marker = "private-initial-contract-marker-947";
+    const cases = [
+      {
+        code: "SGF_INVALID_PLAYER_TO_PLAY",
+        sgf: `(;FF[4]GM[1]SZ[19]PL[${marker}];B[pd])`,
+      },
+      {
+        code: "SGF_PLAYER_TO_PLAY_CONFLICT",
+        sgf: "(;FF[4]GM[1]SZ[19]PL[B];W[pd])",
+      },
+      {
+        code: "SGF_UNSUPPORTED_PLAYER_TO_PLAY",
+        sgf: "(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])",
+      },
+      {
+        code: "SGF_INVALID_HANDICAP",
+        sgf: `(;FF[4]GM[1]SZ[19]HA[${marker}]AB[pd][dp];W[qq])`,
+      },
+      {
+        code: "SGF_HANDICAP_SETUP_MISMATCH",
+        sgf: "(;FF[4]GM[1]SZ[19]HA[2]AB[pd];W[qq])",
+      },
+      {
+        code: "SGF_INVALID_COORDINATE",
+        sgf: "(;FF[4]GM[1]SZ[19]HA[2]AB[zz][yy];W[qq])",
+      },
+    ] as const;
+
+    for (const [index, testCase] of cases.entries()) {
+      const fd = new FormData();
+      fd.append("language", "ko");
+      fd.append(
+        SGF_UPLOAD_FORM_FIELD,
+        new Blob([testCase.sgf], { type: "application/octet-stream" }),
+        `invalid-initial-contract-${String(index)}.sgf`
+      );
+      const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+        method: "POST",
+        headers: { Authorization: "Bearer fake" },
+        body: fd,
+      });
+      expect(response.status).toBe(400);
+      const rawBody = await response.text();
+      const body = JSON.parse(rawBody) as {
+        success: boolean;
+        code?: string;
+      };
+      expect(body.success).toBe(false);
+      expect(body.code).toBe(testCase.code);
+      expect(rawBody).not.toContain(marker);
+    }
+
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(legacySpendSpy).not.toHaveBeenCalled();
+    expect(legacyInsertSpy).not.toHaveBeenCalled();
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
   it("POST inserts is_mock=false when ANALYSIS_ENGINE=katago and ANALYSIS_WORKER_MODE=external", async () => {
     process.env.ANALYSIS_ENGINE = "katago";
     process.env.ANALYSIS_WORKER_MODE = "external";

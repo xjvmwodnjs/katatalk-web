@@ -189,6 +189,7 @@ describe("katagoSgfQuery", () => {
       boardSize: 19,
       komi: 6.5,
       rules: "japanese",
+      initialPlayer: "B",
       moves: [
         { color: "B", sgfPoint: "" },
         { color: "W", sgfPoint: "dd" },
@@ -210,6 +211,7 @@ describe("katagoSgfQuery", () => {
       boardSize: 19,
       komi: 6.5,
       rules: "japanese",
+      initialPlayer: "B",
       moves: [{ color: "B", sgfPoint: "dd" }],
       maxVisits: 123,
       id: "x",
@@ -221,6 +223,7 @@ describe("katagoSgfQuery", () => {
       boardSize: 19,
       komi: 6.5,
       rules: "japanese",
+      initialPlayer: "B",
       moves: [{ color: "B", sgfPoint: "dd" }],
       maxVisits: 123,
       id: "x",
@@ -229,12 +232,15 @@ describe("katagoSgfQuery", () => {
     expect(JSON.parse(line.trim())).toEqual(q);
   });
 
-  it("AB/AW/AE setup stones become KataGo initialStones", () => {
-    const parsed = parseMinimalSgfForSmoke("(;FF[4]GM[1]SZ[19]AB[pd][dd]AW[pp]AE[dd];B[qq];W[dc])");
+  it("handicap setup and initial player become one KataGo query contract", () => {
+    const parsed = parseMinimalSgfForSmoke(
+      "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dd]PL[W];W[qq];B[dc])"
+    );
     const q = buildKatagoAnalysisQueryObject({
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
       maxVisits: 10,
@@ -242,11 +248,12 @@ describe("katagoSgfQuery", () => {
     });
     expect(q.initialStones).toEqual([
       ["B", "Q16"],
-      ["W", "Q4"],
+      ["B", "D16"],
     ]);
+    expect(q.initialPlayer).toBe("W");
     expect(q.moves).toEqual([
-      ["B", "R3"],
-      ["W", "D17"],
+      ["W", "R3"],
+      ["B", "D17"],
     ]);
   });
 });

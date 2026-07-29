@@ -209,6 +209,7 @@ async function runKatagoRootAnalysis(args: {
       boardSize: args.parsed.boardSize,
       komi: args.parsed.komi,
       rules: args.parsed.rules,
+      initialPlayer: args.parsed.initialPlayer,
       moves: args.parsed.moves,
       initialStones: args.parsed.initialStones,
       maxVisits: args.maxVisits,

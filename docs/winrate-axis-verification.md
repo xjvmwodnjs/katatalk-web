@@ -60,6 +60,10 @@
 - result quality gate: 관점 metadata 누락 시 실패
 - UI E2E: `390x844`, `430x932`, `1440x900`에서 흑/백 토글과 SVG 축 라벨 전환
 
+## Contract tests verified locally; GitHub CI and real-engine rerun pending
+
+Local contract fixtures verify initial-player admission and propagation: pre-mainline `PL` priority, first-move fallback, matching `HA>=2`/final black setup count, `HA[0]` no-handicap, and fixed 400 rejection for invalid conflicts. Primary/spawn/persistent, multi-turn, deep search, benchmark, timeline, synthetic probe, and UI playback propagation are covered. The changed focused suite passed 207 tests and the complete local suite passed 84 files / 857 tests. GitHub CI and real-engine/staging reruns remain pending; the historical 2026-07-14 table above is unchanged.
+
 ## 6. 배포 절차
 
 1. Worker analysis config에 `reportAnalysisWinratesAs`를 정확히 하나 설정한다.

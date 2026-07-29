@@ -220,7 +220,7 @@ const SGF_WARN: Record<
   },
   setup_after_move_unsupported: {
     ko: "첫 착수 이후의 AB[]/AW[]/AE[]는 v1에서 지원하지 않아 무시했습니다.",
-    en: "AB[]/AW[]/AE[] after the first move is not supported in v1 and was ignored.",
+    en: "AB[]/AW[]/AE[] in a move node or after the first move is not supported in v1 and was ignored.",
     ja: "初手以降の AB[]/AW[]/AE[] は v1 では未対応のため無視しました。",
     zh: "第一手之后的 AB[]/AW[]/AE[] 在 v1 中不支持，已忽略。",
   },

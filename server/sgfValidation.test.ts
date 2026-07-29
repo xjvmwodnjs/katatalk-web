@@ -60,6 +60,69 @@ describe("validateSgfText", () => {
     ).toEqual({ ok: true });
   });
 
+  it("accepts a consistent handicap and pre-move PL contract", () => {
+    const sgf = "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp];PL[W];W[qq];B[dd])";
+    expect(validateSgfText(sgf)).toEqual({ ok: true });
+    const parsed = parseSgfForKatagoV1(sgf);
+    expect(parsed.initialPlayer).toBe("W");
+    expect(parsed.handicapStones).toBe(2);
+  });
+
+  it("rejects invalid PL contracts with fixed non-reflective errors", () => {
+    const marker = "private-player-marker-947";
+    expect(validateSgfText(`(;FF[4]GM[1]SZ[19]PL[${marker}];B[pd])`)).toEqual({
+      ok: false,
+      code: "SGF_INVALID_PLAYER_TO_PLAY",
+      message:
+        "Invalid SGF: PL must contain exactly B or W in a setup node before the first move.",
+    });
+    expect(validateSgfText("(;FF[4]GM[1]SZ[19]PL[B];W[pd])")).toEqual({
+      ok: false,
+      code: "SGF_PLAYER_TO_PLAY_CONFLICT",
+      message: "Invalid SGF: PL conflicts with the first move color.",
+    });
+    expect(validateSgfText("(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])")).toEqual({
+      ok: false,
+      code: "SGF_UNSUPPORTED_PLAYER_TO_PLAY",
+      message: "Invalid SGF: PL after the first move is not supported.",
+    });
+    expect(
+      JSON.stringify(validateSgfText(`(;FF[4]GM[1]SZ[19]PL[${marker}];B[pd])`))
+    ).not.toContain(marker);
+  });
+
+  it("rejects invalid or inconsistent HA with fixed non-reflective errors", () => {
+    const marker = "private-handicap-marker-947";
+    expect(
+      validateSgfText(`(;FF[4]GM[1]SZ[19]HA[${marker}]AB[pd][dp];W[qq])`)
+    ).toEqual({
+      ok: false,
+      code: "SGF_INVALID_HANDICAP",
+      message: "Invalid SGF: HA must be 0 or an integer of at least 2.",
+    });
+    expect(validateSgfText("(;FF[4]GM[1]SZ[19]HA[2]AB[pd];W[qq])")).toEqual({
+      ok: false,
+      code: "SGF_HANDICAP_SETUP_MISMATCH",
+      message: "Invalid SGF: HA does not match the initial black setup stones.",
+    });
+    expect(
+      JSON.stringify(
+        validateSgfText(`(;FF[4]GM[1]SZ[19]HA[${marker}]AB[pd][dp];W[qq])`)
+      )
+    ).not.toContain(marker);
+  });
+
+  it("rejects out-of-board setup coordinates before paid admission", () => {
+    expect(
+      validateSgfText("(;FF[4]GM[1]SZ[19]HA[2]AB[zz][yy];W[qq])")
+    ).toEqual({
+      ok: false,
+      code: "SGF_INVALID_COORDINATE",
+      message:
+        "Invalid SGF: one or more move or setup coordinates are invalid for the board size.",
+    });
+  });
+
   it("accepts the learning events smoke fixture", () => {
     expect(validateSgfText(LEARNING_EVENTS_SMOKE_SGF)).toEqual({ ok: true });
     expect(() => parseSgfForKatagoV1(LEARNING_EVENTS_SMOKE_SGF)).not.toThrow();
@@ -134,6 +197,19 @@ describe("validateSgfText", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(SgfKatagoParseError);
       expect((e as SgfKatagoParseError).code).toBe("SGF_UNSUPPORTED_SETUP_STONES");
+    }
+  });
+
+  it("rejects setup stones mixed with a move regardless of property order", () => {
+    for (const sgf of [
+      "(;FF[4]GM[1]SZ[19]AB[pd]B[qq])",
+      "(;FF[4]GM[1]SZ[19]B[qq]AB[pd])",
+    ]) {
+      const result = validateSgfText(sgf);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.message).toMatch(/move node|setup stones/i);
+      }
     }
   });
 

@@ -414,6 +414,7 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
     });
     const q = JSON.parse(line.trim()) as Record<string, unknown>;
     expect(q.rules).toBe(parsed.rules);
+    expect(q.initialPlayer).toBe(parsed.initialPlayer);
     expect(q.analyzeTurns).toEqual([0, 1, 2, 3]);
     expect(q.maxVisits).toBe(200);
     expect(q.analysisPVLen).toBe(1);
@@ -423,9 +424,9 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
     expect(q.includePolicy).toBe(false);
   });
 
-  it("includes initialStones for analyzeTurns queries", () => {
+  it("includes handicap initialStones and initialPlayer for analyzeTurns queries", () => {
     const parsed = parseMinimalSgfForSmoke(
-      "(;FF[4]GM[1]SZ[19]AB[pd]AW[dd];B[qq])"
+      "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dd];PL[W];W[qq])"
     );
     const line = buildKatagoAnalyzeTurnsQueryLine({
       parsed,
@@ -438,9 +439,10 @@ describe("buildKatagoAnalyzeTurnsQueryLine", () => {
     const q = JSON.parse(line.trim()) as Record<string, unknown>;
     expect(q.initialStones).toEqual([
       ["B", "Q16"],
-      ["W", "D16"],
+      ["B", "D16"],
     ]);
-    expect(q.moves).toEqual([["B", "R3"]]);
+    expect(q.initialPlayer).toBe("W");
+    expect(q.moves).toEqual([["W", "R3"]]);
     expect(q.analyzeTurns).toEqual([0, 1]);
   });
 });

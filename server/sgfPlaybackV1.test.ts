@@ -134,6 +134,53 @@ describe("sgfPlaybackV1", () => {
     );
   });
 
+  it("uses PL and first-move color instead of assuming Black by move-count parity", () => {
+    const handicapSgf = "(;FF[4]GM[1]SZ[19]HA[2]AB[pd][dp];PL[W];W[qq];B[dd])";
+    const extracted = extractMainlineBwMoves(handicapSgf);
+    expect(extracted.initialPlayerHint).toBe("W");
+    expect(extracted.handicapHint).toBe(2);
+    expect(extracted.initialPositionIssueCodes).toEqual([]);
+
+    const atStart = buildSgfPlaybackStateV1({
+      sgfText: handicapSgf,
+      selectedTurnIndex: 0,
+    });
+    expect(atStart.currentPlayer).toBe("W");
+
+    const afterWhite = buildSgfPlaybackStateV1({
+      sgfText: handicapSgf,
+      selectedTurnIndex: 1,
+    });
+    expect(afterWhite.currentPlayer).toBe("B");
+
+    const whiteFirstWithoutPl = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]AB[pd];W[qq];B[dd])",
+      selectedTurnIndex: 0,
+    });
+    expect(whiteFirstWithoutPl.currentPlayer).toBe("W");
+
+    const duplicatePlFallback = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]PL[B]PL[W];W[qq])",
+      selectedTurnIndex: 0,
+    });
+    expect(duplicatePlFallback.currentPlayer).toBe("W");
+
+    const conflictingPlFallback = buildSgfPlaybackStateV1({
+      sgfText: "(;FF[4]GM[1]SZ[19]PL[B];W[qq])",
+      selectedTurnIndex: 0,
+    });
+    expect(conflictingPlFallback.currentPlayer).toBe("W");
+  });
+
+  it("records unsupported PL after the first move for strict admission", () => {
+    const extracted = extractMainlineBwMoves(
+      "(;FF[4]GM[1]SZ[19];B[pd];PL[W];W[dp])"
+    );
+    expect(extracted.initialPositionIssueCodes).toContain(
+      "player_to_play_after_move_unsupported"
+    );
+  });
+
   it("uses the later setup color on AB/AW conflict and warns", () => {
     const sgf = "(;FF[4]GM[1]SZ[19]AB[aa]AW[aa];B[bb])";
     const st = buildSgfPlaybackStateV1({ sgfText: sgf, selectedTurnIndex: 0 });

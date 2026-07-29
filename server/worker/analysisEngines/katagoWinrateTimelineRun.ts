@@ -62,6 +62,7 @@ export function buildKatagoAnalyzeTurnsQueryLine(params: {
     id: `katatalk-wt-${params.jobId}-${timestampSuffix()}`,
     moves: pairs,
     ...(initialStones.length > 0 ? { initialStones } : {}),
+    initialPlayer: params.parsed.initialPlayer,
     rules: params.parsed.rules,
     komi: params.parsed.komi,
     boardXSize: params.parsed.boardSize,

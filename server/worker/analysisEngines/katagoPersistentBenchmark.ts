@@ -314,6 +314,7 @@ async function prepareTarget(args: {
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
       maxVisits: args.maxVisits,

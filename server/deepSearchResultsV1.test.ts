@@ -18,10 +18,15 @@ import { parseMinimalSgfForSmoke } from "./worker/analysisEngines/katagoSgfQuery
 import * as katagoSmokeRun from "./worker/analysisEngines/katagoSmokeRun";
 import type { SpawnFn } from "./worker/analysisEngines/katagoSmokeRun";
 
-function buildSgfWithNMoves(n: number, boardSize = 19): string {
-  let s = `(;FF[4]GM[1]SZ[${boardSize}]KM[6.5]`;
+function buildSgfWithNMoves(
+  n: number,
+  boardSize = 19,
+  firstPlayer: "B" | "W" = "B",
+  rootSetup = ""
+): string {
+  let s = `(;FF[4]GM[1]SZ[${boardSize}]KM[6.5]${rootSetup}`;
   for (let i = 0; i < n; i++) {
-    const c = i % 2 === 0 ? "B" : "W";
+    const c = i % 2 === 0 ? firstPlayer : firstPlayer === "B" ? "W" : "B";
     const col = i % boardSize;
     const row = Math.floor(i / boardSize) % boardSize;
     const lc = String.fromCharCode("a".charCodeAt(0) + col);
@@ -135,10 +140,12 @@ describe("computeDeepSearchResultsV1", () => {
       KATAGO_DEEP_SEARCH_ENABLED: "true",
       KATAGO_DEEP_SEARCH_MAX_CANDIDATES: "1",
     };
-    const sgf = buildSgfWithNMoves(30);
+    const sgf = buildSgfWithNMoves(30, 19, "W", "HA[2]AB[pd][dp]PL[W]");
     const parsed = parseMinimalSgfForSmoke(sgf);
     const turnIndex = 12;
     const sliced = sliceMovesBeforeTurnIndex(parsed, turnIndex);
+    let observedInitialPlayer: "B" | "W" | null = null;
+    let observedInitialStones: [string, string][] = [];
     const mockSpawn: SpawnFn = () => {
       const proc = new EventEmitter() as ChildProcess;
       let stdinBuf = "";
@@ -149,8 +156,14 @@ describe("computeDeepSearchResultsV1", () => {
         },
         final(cb) {
           setImmediate(() => {
-            const line = stdinBuf.split("\n").filter((l) => l.trim())[0]!;
-            const q = JSON.parse(line) as { id: string };
+            const line = stdinBuf.split("\n").filter(l => l.trim())[0]!;
+            const q = JSON.parse(line) as {
+              id: string;
+              initialPlayer: "B" | "W";
+              initialStones?: [string, string][];
+            };
+            observedInitialPlayer = q.initialPlayer;
+            observedInitialStones = q.initialStones ?? [];
             const played = sliced.playedMoveGtp;
             out.end(`${JSON.stringify(validResponseObject(q.id, "D16", played))}\n`, "utf8");
             err.end();
@@ -178,6 +191,11 @@ describe("computeDeepSearchResultsV1", () => {
       spawnFn: mockSpawn,
     });
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(observedInitialPlayer).toBe("W");
+    expect(observedInitialStones).toEqual([
+      ["B", "Q16"],
+      ["B", "D4"],
+    ]);
     expect(r.enabled).toBe(true);
     expect(r.results).toHaveLength(1);
     const row = r.results[0]!;

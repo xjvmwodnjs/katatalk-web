@@ -7,6 +7,7 @@ import {
   readSgfBracketValue,
   sgfLetterToCoordIndex,
   sgfPointToGtp,
+  type ExtractMainlineBwMovesResultV1,
   type ParsedMainlineMoveV1,
   type ParsedSetupStoneV1,
   type SgfPlaybackWarningV1,
@@ -16,6 +17,9 @@ export type ParsedMinimalSgfV1 = {
   boardSize: number;
   komi: number;
   rules: SupportedKatagoRulesV1;
+  initialPlayer: "B" | "W";
+  initialPlayerSource: SgfInitialPlayerSourceV1;
+  handicapStones: number | null;
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones: { color: "B" | "W"; sgfPoint: string }[];
   parseWarnings: SgfPlaybackWarningV1[];
@@ -23,11 +27,22 @@ export type ParsedMinimalSgfV1 = {
 
 export type SupportedKatagoRulesV1 = "japanese";
 
+export type SgfInitialPlayerSourceV1 =
+  | "setup_pl"
+  | "first_move"
+  | "handicap_default_white"
+  | "standard_default_black";
+
 export type SgfKatagoParseErrorCodeV1 =
   | "SGF_PARSE_FAILED"
   | "SGF_UNSUPPORTED_SETUP_STONES"
   | "SGF_UNSUPPORTED_GAME_TYPE"
   | "SGF_UNSUPPORTED_RULES"
+  | "SGF_INVALID_PLAYER_TO_PLAY"
+  | "SGF_PLAYER_TO_PLAY_CONFLICT"
+  | "SGF_UNSUPPORTED_PLAYER_TO_PLAY"
+  | "SGF_INVALID_HANDICAP"
+  | "SGF_HANDICAP_SETUP_MISMATCH"
   | "SGF_INVALID_COORDINATE"
   | "KATAGO_QUERY_BUILD_FAILED";
 
@@ -218,6 +233,98 @@ export function parseSupportedKatagoRulesFromRootV1(
   return "japanese";
 }
 
+export type SgfInitialTurnContractV1 = {
+  initialPlayer: "B" | "W";
+  initialPlayerSource: SgfInitialPlayerSourceV1;
+  handicapStones: number | null;
+};
+
+/**
+ * Resolves the initial side-to-move contract shared by upload admission,
+ * KataGo queries, and SGF playback. PL is accepted only before the first move.
+ */
+export function resolveSgfInitialTurnContractV1(
+  extracted: ExtractMainlineBwMovesResultV1
+): SgfInitialTurnContractV1 {
+  const issues = new Set(extracted.initialPositionIssueCodes);
+  if (
+    issues.has("invalid_player_to_play") ||
+    issues.has("player_to_play_with_move")
+  ) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_PLAYER_TO_PLAY",
+      "PL must contain exactly B or W in a setup node before the first move"
+    );
+  }
+  if (issues.has("player_to_play_after_move_unsupported")) {
+    throw new SgfKatagoParseError(
+      "SGF_UNSUPPORTED_PLAYER_TO_PLAY",
+      "PL after the first move is not supported"
+    );
+  }
+  if (issues.has("invalid_handicap") || issues.has("duplicate_handicap")) {
+    throw new SgfKatagoParseError(
+      "SGF_INVALID_HANDICAP",
+      "HA must contain one integer that is 0 or at least 2"
+    );
+  }
+
+  const firstMovePlayer = extracted.moves[0]?.color ?? null;
+  if (
+    extracted.initialPlayerHint != null &&
+    firstMovePlayer != null &&
+    extracted.initialPlayerHint !== firstMovePlayer
+  ) {
+    throw new SgfKatagoParseError(
+      "SGF_PLAYER_TO_PLAY_CONFLICT",
+      "PL conflicts with the first move color"
+    );
+  }
+
+  const handicapStones =
+    extracted.handicapHint != null && extracted.handicapHint >= 2
+      ? extracted.handicapHint
+      : null;
+  if (handicapStones != null) {
+    const blackSetupStoneCount = extracted.initialStones.filter(
+      stone => stone.color === "B"
+    ).length;
+    if (blackSetupStoneCount !== handicapStones) {
+      throw new SgfKatagoParseError(
+        "SGF_HANDICAP_SETUP_MISMATCH",
+        "HA does not match the effective initial black setup stones"
+      );
+    }
+  }
+
+  if (extracted.initialPlayerHint != null) {
+    return {
+      initialPlayer: extracted.initialPlayerHint,
+      initialPlayerSource: "setup_pl",
+      handicapStones,
+    };
+  }
+  if (firstMovePlayer != null) {
+    return {
+      initialPlayer: firstMovePlayer,
+      initialPlayerSource: "first_move",
+      handicapStones,
+    };
+  }
+  if (handicapStones != null) {
+    return {
+      initialPlayer: "W",
+      initialPlayerSource: "handicap_default_white",
+      handicapStones,
+    };
+  }
+  return {
+    initialPlayer: "B",
+    initialPlayerSource: "standard_default_black",
+    handicapStones: null,
+  };
+}
+
 function readKomiFromSgf(sgf: string): number {
   const rawKomi = findFirstMainlinePropertyValue(sgf, "KM");
   if (rawKomi == null) {
@@ -250,7 +357,7 @@ function assertParseableMainline(warnings: SgfPlaybackWarningV1[]): void {
   if (warnings.some((w) => w.code === "setup_after_move_unsupported")) {
     throw new SgfKatagoParseError(
       "SGF_UNSUPPORTED_SETUP_STONES",
-      "AB/AW/AE after the first move is not supported for KataGo analysis v1"
+      "AB/AW/AE in a move node or after the first move is not supported for KataGo analysis v1"
     );
   }
 }
@@ -299,9 +406,11 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
   if (!sgf?.trim()) {
     throw new SgfKatagoParseError("SGF_PARSE_FAILED", "empty SGF");
   }
-  const { moves, initialStones, warnings, boardSizeHint } = extractMainlineBwMoves(sgf);
+  const extracted = extractMainlineBwMoves(sgf);
+  const { moves, initialStones, warnings, boardSizeHint } = extracted;
   assertParseableMainline(warnings);
   const rules = parseSupportedKatagoRulesFromRootV1(sgf);
+  const initialTurn = resolveSgfInitialTurnContractV1(extracted);
   const boardSize = resolveBoardSize(boardSizeHint);
   validateSetupStoneCoordinates(initialStones, boardSize);
   validateMoveCoordinates(moves, boardSize);
@@ -310,8 +419,14 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
     boardSize,
     komi,
     rules,
-    moves: moves.map((m) => ({ color: m.color, sgfPoint: m.sgfPoint })),
-    initialStones: initialStones.map((s) => ({ color: s.color, sgfPoint: s.sgfPoint })),
+    initialPlayer: initialTurn.initialPlayer,
+    initialPlayerSource: initialTurn.initialPlayerSource,
+    handicapStones: initialTurn.handicapStones,
+    moves: moves.map(m => ({ color: m.color, sgfPoint: m.sgfPoint })),
+    initialStones: initialStones.map(s => ({
+      color: s.color,
+      sgfPoint: s.sgfPoint,
+    })),
     parseWarnings: warnings,
   };
 }

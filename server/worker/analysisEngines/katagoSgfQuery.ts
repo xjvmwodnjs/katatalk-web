@@ -65,6 +65,9 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
       boardSize: parsed.boardSize,
       komi: parsed.komi,
       rules: parsed.rules,
+      initialPlayer: parsed.initialPlayer,
+      initialPlayerSource: parsed.initialPlayerSource,
+      handicapStones: parsed.handicapStones,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
     };
@@ -80,6 +83,7 @@ export type KatagoSmokeAnalysisQuery = {
   id: string;
   moves: [string, string][];
   initialStones?: [string, string][];
+  initialPlayer: "B" | "W";
   rules: SupportedKatagoRulesV1;
   komi: number;
   boardXSize: number;
@@ -93,6 +97,7 @@ export function buildKatagoAnalysisQueryObject(params: {
   boardSize: number;
   komi: number;
   rules: SupportedKatagoRulesV1;
+  initialPlayer: "B" | "W";
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
@@ -110,6 +115,7 @@ export function buildKatagoAnalysisQueryObject(params: {
     id: params.id,
     moves: pairs,
     ...(initialStones.length > 0 ? { initialStones } : {}),
+    initialPlayer: params.initialPlayer,
     rules: params.rules,
     komi: params.komi,
     boardXSize: params.boardSize,
@@ -123,6 +129,7 @@ export function buildKatagoAnalysisQueryLine(params: {
   boardSize: number;
   komi: number;
   rules: SupportedKatagoRulesV1;
+  initialPlayer: "B" | "W";
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones?: { color: "B" | "W"; sgfPoint: string }[];
   maxVisits: number;
