@@ -68,6 +68,10 @@ Contract fixtures verify initial-player admission and propagation: pre-mainline 
 
 Functional commit `4a75b70` adds strict root `SZ`/`KM` cardinality, placement, launch-size, and exact-komi admission; missing-value provenance; common KataGo query propagation; root-only UI playback; and identity-only Clerk upload authentication before validation. Invalid fixtures leave wallet, debit, enqueue, and job state untouched, while an accepted upload provisions its wallet exactly once after admission. GitHub CI [run 30433097938](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30433097938) passed 85 files / 871 tests plus formatting, type, secret, production Web/API/Worker build, Playwright, PostgreSQL migration/ACL/atomicity, and production dependency gates across all four jobs. Real-exporter, real-engine, and staging reruns remain pending; the historical 2026-07-14 table above is unchanged.
 
+## Truth-preserving SGF game metadata CI verified; exporter/staging rerun pending
+
+Functional commit `e2c220f` adds shared root-only `PB/PW/DT/RE` parsing under `sgf-game-info-v1`, safe authored-or-null Worker persistence, exact bounded result normalization, malformed UTF-8 rejection before wallet/debit/enqueue, marked-result revalidation, legacy SGF fallback, placeholder removal, and direct date/result UI coverage. GitHub CI [run 30440871859](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30440871859) passed 86 files / 927 tests, Playwright 9/9, formatting, type, secret, production Web/API/Worker build, PostgreSQL migration/ACL/atomicity, and production dependency gates across all four jobs. Root-only placement remains narrower than general FF4 `game-info`; legacy charset/`CA` transcoding and real-exporter, real-engine, and staging reruns remain pending. The historical 2026-07-14 engine table above is unchanged.
+
 ## 6. 배포 절차
 
 1. Worker analysis config에 `reportAnalysisWinratesAs`를 정확히 하나 설정한다.
