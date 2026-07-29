@@ -13,6 +13,10 @@ import {
   type ParsedSetupStoneV1,
   type SgfPlaybackWarningV1,
 } from "./sgfPlaybackV1";
+import {
+  parseSgfRootGameMetadataV1,
+  type ParsedSgfGameMetadataV1,
+} from "./sgfGameMetadataV1";
 
 export type ParsedMinimalSgfV1 = {
   boardSize: number;
@@ -25,6 +29,7 @@ export type ParsedMinimalSgfV1 = {
   handicapStones: number | null;
   moves: { color: "B" | "W"; sgfPoint: string }[];
   initialStones: { color: "B" | "W"; sgfPoint: string }[];
+  gameMetadata: ParsedSgfGameMetadataV1;
   parseWarnings: SgfPlaybackWarningV1[];
 };
 
@@ -556,6 +561,7 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
   validateMoveCoordinates(moves, boardSize);
   const komiContract = readKomiFromSgfV1(sgf);
   const { komi } = komiContract;
+  const gameMetadata = parseSgfRootGameMetadataV1(sgf);
   return {
     boardSize,
     boardSizeSource: boardContract.boardSizeSource,
@@ -570,6 +576,7 @@ export function parseSgfForKatagoV1(sgf: string): ParsedMinimalSgfV1 {
       color: s.color,
       sgfPoint: s.sgfPoint,
     })),
+    gameMetadata,
     parseWarnings: warnings,
   };
 }

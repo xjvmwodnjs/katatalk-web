@@ -479,6 +479,72 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("POST keeps invalid optional game metadata field-local and enqueues once", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const sgf =
+      "(;FF[4]GM[1]SZ[19]PB[A]PB[B]PW[One][Two]DT[2023-02-29]RE[B+private-marker];B[pd])";
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([sgf], { type: "application/octet-stream" }),
+      "optional-metadata-warnings.sgf"
+    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { jobId: string; success: boolean };
+    expect(body.success).toBe(true);
+    expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
+    expect(vitestAnalysisJobsStore.get(body.jobId)?.sgf_content).toBe(sgf);
+    expect(vitestAnalysisJobsStore.size).toBe(1);
+  });
+
+  it("POST rejects malformed UTF-8 before wallet, debit, or enqueue", async () => {
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
+    const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const bytes = new Uint8Array([
+      ...Buffer.from("(;FF[4]GM[1]SZ[19]PB[", "utf8"),
+      0xc3,
+      0x28,
+      ...Buffer.from("];B[pd])", "utf8"),
+    ]);
+    const fd = new FormData();
+    fd.append("language", "ko");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([bytes], { type: "application/octet-stream" }),
+      "invalid-utf8.sgf"
+    );
+    const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: fd,
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      success: false,
+      code: "SGF_INVALID_ENCODING",
+      message: "Invalid SGF: the uploaded file must be valid UTF-8.",
+    });
+    expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(atomicEnqueueSpy).not.toHaveBeenCalled();
+    expect(vitestAnalysisJobsStore.size).toBe(0);
+  });
+
   it("POST rejects after-move setup stones before credit spend/enqueue", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();

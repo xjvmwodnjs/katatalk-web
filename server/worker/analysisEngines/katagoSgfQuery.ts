@@ -72,6 +72,7 @@ export function parseMinimalSgfForSmoke(sgf: string): ParsedMinimalSgf {
       handicapStones: parsed.handicapStones,
       moves: parsed.moves,
       initialStones: parsed.initialStones,
+      gameMetadata: parsed.gameMetadata,
     };
   } catch (e) {
     if (e instanceof SgfKatagoParseError) {

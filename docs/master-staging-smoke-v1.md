@@ -108,6 +108,10 @@ Run invalid/duplicate/multi-value/unclosed/non-root mainline `SZ` and `KM`, unsu
 
 Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, HA/setup-count mismatch, out-of-board setup coordinates, and setup+move mixing fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return the exact fixed non-reflective HTTP 400 code/message before wallet/debit/enqueue; assert Clerk identity authentication still ran, wallet/job/queue and credit-ledger deltas are zero, and raw SGF/request content is not exposed in responses or logs. For a valid fixture, assert wallet provisioning runs exactly once after admission.
 
+`sgf-game-info-v1` 검증에는 root `PB/PW/DT/RE`가 모두 있는 fixture, 네 필드가 모두 없는 fixture, 일부만 있는 fixture를 각각 사용한다. 화면과 저장 결과에는 안전한 SGF 작성값 또는 `null`만 있어야 하며 `Black`/`White`, 실행 날짜, pipeline 설명문을 합성해서는 안 된다. 유효한 FF4 부분 날짜와 쉼표 단축 `DT`, `B+`/`W+` generic win, resign/time/forfeit/draw/void, 최대 1000이면서 JavaScript decimal exact round-trip이 되는 숫자 `RE`를 확인한다. 잘못된 단축 상태, 중복·다중값·비root 값, 길이·제어문자 위반, 1000 초과 또는 정밀도 손실 숫자는 admission 전체를 거절하지 않고 해당 선택 필드만 warning과 `null`로 축소해야 한다.
+
+marker가 있는 저장 결과의 변조값은 UI 재검증으로 숨겨야 한다. marker가 없는 legacy `katago-worker-v1`는 snake_case `sgf_content`와 camelCase `sgfContent`를 각각 재파싱하고, SGF가 없으면 과거 합성 placeholder를 숨겨야 한다. malformed UTF-8 업로드는 고정 `SGF_INVALID_ENCODING` 400을 반환하고 wallet 준비·debit·enqueue가 모두 0회인지 확인한다. root-only 배치는 FF4 일반 `game-info` 배치보다 좁은 출시 계약이며, 실제 corpus에서는 아래 익명화 규칙을 계속 적용한다.
+
 먼저 선택한 profile env와 로컬 `KATAGO_*` path 를 적용한 터미널에서 제품 경로 스모크를 실행한다. 이 명령은 raw stdout 확인을 넘어 실제 `analyzeSgfKatago` 결과, BSI/ADI 요약, Deep Search 요약, `qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 남긴다.
 
 ```bash

@@ -13,6 +13,19 @@ describe("validateSgfText", () => {
     expect(validateSgfText(MINIMAL_SGF)).toEqual({ ok: true });
   });
 
+  it("keeps invalid optional game metadata field-local and admission-safe", () => {
+    const sgf =
+      "(;FF[4]GM[1]SZ[19]PB[A]PB[B]PW[One][Two]DT[2023-02-29]RE[B+private-marker];B[pd])";
+    expect(validateSgfText(sgf)).toEqual({ ok: true });
+    expect(parseSgfForKatagoV1(sgf).gameMetadata).toMatchObject({
+      blackPlayer: null,
+      whitePlayer: null,
+      date: null,
+      resultRaw: null,
+      result: null,
+    });
+  });
+
   it("accepts supported, missing, and blank root rules", () => {
     expect(validateSgfText("(;GM[1]SZ[19]RU[Japanese];B[pd])")).toEqual({
       ok: true,

@@ -6,6 +6,8 @@
 
 `katago:corpus-validate`는 다음 조건을 KataGo 실행 전에 검사한다.
 
+corpus validator는 malformed UTF-8을 KataGo 실행 전에 자체 오류로 거절한다. HTTP 업로드 경로는 같은 입력을 고정 `SGF_INVALID_ENCODING` 400으로 wallet/debit/enqueue 전에 거절하지만, corpus CLI에는 HTTP 상태나 wallet 단계가 없다. `sgf-game-info-v1` 보존 검증은 `PB/PW/DT`를 포함할 수 있는 합성 fixture 또는 접근이 통제된 비커밋 staging fixture에서 수행한다. 아래 실제 corpus 익명화 규칙은 `PB/PW/DT`를 계속 금지하며 `RE`만 허용한다. root-only 출시는 FF4 일반 `game-info` 배치보다 좁고, legacy charset/`CA` transcoding은 후속 호환 범위다.
+
 - manifest version과 필드 구조
 - 최소 10개의 서로 다른 SGF
 - 상대 경로 confinement와 symlink 탈출 차단

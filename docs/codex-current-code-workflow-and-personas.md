@@ -100,6 +100,8 @@ flowchart TD
 | 18. PV overlay | selected candidate/reference | numbered overlay | `AnalysisResultView.tsx`, `BadukBoardView.tsx` | 없음 | invalid/pass/occupied-only PV does not enter variation mode | `server/analysisReviewUiV2.test.ts`, E2E |
 | 19. try-play | local board click | local virtual stones only | `AnalysisResultView.tsx`, `BadukBoardView.tsx` | 없음 | no server/KataGo/LLM call | E2E |
 
+SGF game metadata는 `sgf-game-info-v1` marker 아래 root `PB/PW/DT/RE`를 안전한 작성값 또는 `null`로 전달한다. SimpleText에는 NFC·공백·길이 제한을 적용하고, FF4 부분/쉼표 `DT`와 최대 1000의 exact decimal round-trip `RE`만 허용한다. 잘못된 선택 필드는 해당 필드만 숨기지만 malformed UTF-8은 wallet/debit/enqueue 전에 거절한다. marker 결과는 UI 직전에 재검증하고, legacy `katago-worker-v1`는 `sgf_content`/`sgfContent`를 재파싱하거나 구 placeholder를 숨긴다. UI는 `DT`를 직접 표시하고 `RE`는 공통 `ProductGameResult` parser로 해석한다. 이 root-only 출시 계약은 FF4 일반 `game-info` 배치보다 좁으며 corpus 개인정보 규칙은 그대로 유지한다.
+
 ## 5. Current Feature Inventory
 
 ### 5.1 SGF Upload / Validation

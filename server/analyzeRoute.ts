@@ -161,6 +161,14 @@ function sendUploadError(res: Response, status: number, message: string, code?: 
   });
 }
 
+function decodeSgfUploadUtf8(buffer: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return null;
+  }
+}
+
 function handleMulterUpload(req: Request, res: Response, next: NextFunction) {
   upload.single(SGF_UPLOAD_FORM_FIELD)(req, res, (err: unknown) => {
     if (!err) {
@@ -377,7 +385,16 @@ analyzeRouter.post(
         return;
       }
 
-      const sgfContent = file.buffer.toString("utf8");
+      const sgfContent = decodeSgfUploadUtf8(file.buffer);
+      if (sgfContent == null) {
+        sendUploadError(
+          res,
+          400,
+          "Invalid SGF: the uploaded file must be valid UTF-8.",
+          "SGF_INVALID_ENCODING"
+        );
+        return;
+      }
 
       const validation = validateSgfText(sgfContent);
       if (!validation.ok) {

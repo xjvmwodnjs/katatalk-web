@@ -1,10 +1,18 @@
 import type { AnalysisResultVariationPreviewV1 } from "./analysisResultViewModel";
-import { gtpCoordToBoardXY } from "./sgfPlaybackV1";
+import {
+  parseSgfRootGameMetadataV1,
+  readSafeStoredSgfGameMetadataV1,
+} from "./sgfGameMetadataV1";
+import {
+  gtpCoordToBoardXY,
+  readSgfContentFromResultPayload,
+} from "./sgfPlaybackV1";
 
 export type AnalysisReviewModeV2 = "mainline" | "variation";
 export type CompactGameInfoV2 = {
   blackPlayer: string | null;
   whitePlayer: string | null;
+  dateText: string | null;
   resultText: string | null;
 };
 
@@ -16,11 +24,45 @@ function readString(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-export function readCompactGameInfoV2(data: unknown, lang = "ko"): CompactGameInfoV2 {
-  if (!isPlainObject(data) || !isPlainObject(data.game_info)) {
-    return { blackPlayer: null, whitePlayer: null, resultText: null };
+export function readCompactGameInfoV2(
+  data: unknown,
+  lang = "ko"
+): CompactGameInfoV2 {
+  const empty: CompactGameInfoV2 = {
+    blackPlayer: null,
+    whitePlayer: null,
+    dateText: null,
+    resultText: null,
+  };
+  if (!isPlainObject(data)) {
+    return empty;
   }
-  const gi = data.game_info;
+  const gi = isPlainObject(data.game_info) ? data.game_info : null;
+  if (data.source === "katago-worker-v1") {
+    const stored = readSafeStoredSgfGameMetadataV1(gi);
+    if (stored != null) {
+      return {
+        blackPlayer: stored.blackPlayer,
+        whitePlayer: stored.whitePlayer,
+        dateText: stored.date,
+        resultText: stored.result,
+      };
+    }
+    const sgfText = readSgfContentFromResultPayload(data);
+    if (sgfText == null) {
+      return empty;
+    }
+    const parsed = parseSgfRootGameMetadataV1(sgfText);
+    return {
+      blackPlayer: parsed.blackPlayer,
+      whitePlayer: parsed.whitePlayer,
+      dateText: parsed.date,
+      resultText: parsed.result,
+    };
+  }
+  if (gi == null) {
+    return empty;
+  }
   const result = gi.result;
   const resultText =
     readString(result) ??
@@ -30,6 +72,7 @@ export function readCompactGameInfoV2(data: unknown, lang = "ko"): CompactGameIn
   return {
     blackPlayer: readString(gi.black_player) ?? readString(gi.blackPlayer),
     whitePlayer: readString(gi.white_player) ?? readString(gi.whitePlayer),
+    dateText: readString(gi.date),
     resultText,
   };
 }

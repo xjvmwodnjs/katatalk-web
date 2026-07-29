@@ -18,15 +18,18 @@ export const productReviewCompletedResult = {
     winratePerspectiveSource: "config",
   },
   game_info: {
+    metadata_version: "sgf-game-info-v1",
     black_player: "Black E2E",
     white_player: "White E2E",
     date: "2026-05-17",
     total_moves: 20,
-    result: { ko: "백 불계승", en: "W+R", zh: "白中盘胜", ja: "白中押し勝ち" },
+    result: "W+R",
+    result_raw: "W+R",
+    metadata_warnings: [],
     komi: 6.5,
   },
   sgf_content:
-    "(;FF[4]GM[1]SZ[19]KM[6.5]PB[Black E2E]PW[White E2E]RE[W+R];B[pd];W[dd];B[qp];W[dp];B[fc];W[cf];B[op];W[oq];B[nc];W[pp];B[qd];W[dc];B[jj];W[ck];B[cn];W[fq];B[ql];W[qn];B[qq];W[dq])",
+    "(;FF[4]GM[1]SZ[19]KM[6.5]PB[Black E2E]PW[White E2E]DT[2026-05-17]RE[W+R];B[pd];W[dd];B[qp];W[dp];B[fc];W[cf];B[op];W[oq];B[nc];W[pp];B[qd];W[dc];B[jj];W[ck];B[cn];W[fq];B[ql];W[qn];B[qq];W[dq])",
   analysisPlan: {
     version: "analysis-plan-v1",
     totalMoves: 20,

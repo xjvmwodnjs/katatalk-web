@@ -1,8 +1,15 @@
-export const ANALYSIS_PRODUCT_EVENTS_V1_VERSION = "analysis-product-events-v1" as const;
+import {
+  normalizeSgfResultV1,
+  parseSgfRootGameMetadataV1,
+} from "./sgfGameMetadataV1";
+
+export const ANALYSIS_PRODUCT_EVENTS_V1_VERSION =
+  "analysis-product-events-v1" as const;
 
 export type ProductColorV1 = "B" | "W";
 
 export type ProductGameResultTypeV1 =
+  | "win"
   | "points"
   | "resign"
   | "time"
@@ -204,6 +211,7 @@ export const PRODUCT_EVENT_CONFIDENCE_LABELS_V1: Record<ProductEventConfidenceV1
 };
 
 const RESULT_TYPES = new Set<ProductGameResultTypeV1>([
+  "win",
   "points",
   "resign",
   "time",
@@ -468,124 +476,86 @@ function isCandidateComparisonV1(v: unknown): v is ProductCandidateComparisonV1 
   );
 }
 
-function readSgfBracketValue(s: string, bracketStart: number): { text: string; end: number } | null {
-  if (s[bracketStart] !== "[") {
-    return null;
-  }
-  let out = "";
-  for (let i = bracketStart + 1; i < s.length; i += 1) {
-    const ch = s[i]!;
-    if (ch === "\\") {
-      if (i + 1 < s.length) {
-        out += s[i + 1]!;
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === "]") {
-      return { text: out, end: i + 1 };
-    }
-    out += ch;
-  }
-  return null;
-}
-
-function findRootSgfPropertyValue(sgf: string, propId: string): string | null {
-  const s = sgf.replace(/\r\n|\r|\n/g, " ");
-  const rootIdx = s.indexOf("(;");
-  if (rootIdx < 0) {
-    return null;
-  }
-  const target = propId.toUpperCase();
-  let i = rootIdx + 2;
-  while (i < s.length) {
-    const ch = s[i]!;
-    if (ch === ";") {
-      return null;
-    }
-    if (ch === "(" || ch === ")") {
-      return null;
-    }
-    if (/\s/.test(ch)) {
-      i += 1;
-      continue;
-    }
-    if (!/[A-Za-z]/.test(ch)) {
-      i += 1;
-      continue;
-    }
-    const idStart = i;
-    while (i < s.length && /[A-Za-z]/.test(s[i]!)) {
-      i += 1;
-    }
-    const id = s.slice(idStart, i).toUpperCase();
-    while (i < s.length && /\s/.test(s[i]!)) {
-      i += 1;
-    }
-    if (s[i] !== "[") {
-      continue;
-    }
-    const firstValue = readSgfBracketValue(s, i);
-    if (firstValue == null) {
-      return null;
-    }
-    if (id === target) {
-      return firstValue.text;
-    }
-    i = firstValue.end;
-    while (s[i] === "[") {
-      const extra = readSgfBracketValue(s, i);
-      if (extra == null) {
-        return null;
-      }
-      i = extra.end;
-    }
-  }
-  return null;
-}
-
-export function parseProductGameResultV1(rawResult: string | null | undefined): ProductGameResultV1 {
+export function parseProductGameResultV1(
+  rawResult: string | null | undefined
+): ProductGameResultV1 {
   const raw = typeof rawResult === "string" ? rawResult.trim() : "";
   if (!raw) {
     return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: null };
   }
 
-  const normalized = raw.replace(/\s+/g, "");
-  const lower = normalized.toLowerCase();
-  if (lower === "0" || lower === "draw" || lower === "jigo") {
-    return { winnerColor: null, loserColor: null, resultType: "draw", margin: null, rawResult: raw };
+  const normalized = normalizeSgfResultV1(raw).result;
+  if (normalized === "0") {
+    return {
+      winnerColor: null,
+      loserColor: null,
+      resultType: "draw",
+      margin: null,
+      rawResult: raw,
+    };
   }
 
-  const match = normalized.match(/^([BW])\+(.+)$/i);
+  const match = normalized?.match(/^([BW])\+(.*)$/);
   if (match == null) {
     return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: raw };
   }
 
-  const winnerColor = match[1]!.toUpperCase() as ProductColorV1;
+  const winnerColor = match[1]! as ProductColorV1;
   const loserColor = oppositeColor(winnerColor);
-  const suffix = match[2]!.toLowerCase();
-  const pointSuffix = suffix.replace(",", ".");
-  if (/^\d+(?:\.\d+)?$/.test(pointSuffix)) {
-    const pointMargin = Number(pointSuffix);
-    if (pointMargin <= 0) {
-      return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: raw };
-    }
-    return { winnerColor, loserColor, resultType: "points", margin: pointMargin, rawResult: raw };
+  const suffix = match[2]!;
+  if (suffix.length === 0) {
+    return {
+      winnerColor,
+      loserColor,
+      resultType: "win",
+      margin: null,
+      rawResult: raw,
+    };
   }
-  if (suffix === "r" || suffix === "resign" || suffix === "resignation") {
-    return { winnerColor, loserColor, resultType: "resign", margin: null, rawResult: raw };
+  if (/^\d+(?:\.\d+)?$/.test(suffix)) {
+    const pointMargin = Number(suffix);
+    return {
+      winnerColor,
+      loserColor,
+      resultType: "points",
+      margin: pointMargin,
+      rawResult: raw,
+    };
   }
-  if (suffix === "t" || suffix === "time") {
-    return { winnerColor, loserColor, resultType: "time", margin: null, rawResult: raw };
+  if (suffix === "R") {
+    return {
+      winnerColor,
+      loserColor,
+      resultType: "resign",
+      margin: null,
+      rawResult: raw,
+    };
   }
-  if (suffix === "f" || suffix === "forfeit") {
-    return { winnerColor, loserColor, resultType: "forfeit", margin: null, rawResult: raw };
+  if (suffix === "T") {
+    return {
+      winnerColor,
+      loserColor,
+      resultType: "time",
+      margin: null,
+      rawResult: raw,
+    };
+  }
+  if (suffix === "F") {
+    return {
+      winnerColor,
+      loserColor,
+      resultType: "forfeit",
+      margin: null,
+      rawResult: raw,
+    };
   }
   return { winnerColor: null, loserColor: null, resultType: "unknown", margin: null, rawResult: raw };
 }
 
-export function parseProductGameResultV1FromSgf(sgf: string): ProductGameResultV1 {
-  return parseProductGameResultV1(findRootSgfPropertyValue(sgf, "RE"));
+export function parseProductGameResultV1FromSgf(
+  sgf: string
+): ProductGameResultV1 {
+  return parseProductGameResultV1(parseSgfRootGameMetadataV1(sgf).resultRaw);
 }
 
 export function isProductGameResultV1(v: unknown): v is ProductGameResultV1 {

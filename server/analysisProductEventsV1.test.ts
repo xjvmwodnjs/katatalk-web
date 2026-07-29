@@ -51,6 +51,30 @@ describe("analysis product events v1", () => {
     });
   });
 
+  it("returns unknown for duplicate, multi-value, and non-root RE", () => {
+    for (const sgf of [
+      "(;RE[B+R]RE[W+R])",
+      "(;RE[B+R][W+R])",
+      "(;FF[4];RE[B+R])",
+    ]) {
+      expect(parseProductGameResultV1FromSgf(sgf)).toEqual({
+        winnerColor: null,
+        loserColor: null,
+        resultType: "unknown",
+        margin: null,
+        rawResult: null,
+      });
+    }
+  });
+
+  it("ignores RE lookalikes in comments and variations", () => {
+    expect(
+      parseProductGameResultV1FromSgf(
+        "(;C[RE[W+R\\]]RE[B+R];B[pd](;RE[W+R];W[dd]))"
+      ).winnerColor
+    ).toBe("B");
+  });
+
   it("computes loserColor from winnerColor", () => {
     expect(parseProductGameResultV1FromSgf("(;RE[B+2.5])").loserColor).toBe("W");
     expect(parseProductGameResultV1FromSgf("(;RE[W+R])").loserColor).toBe("B");
@@ -94,6 +118,28 @@ describe("analysis product events v1", () => {
       margin: null,
     });
     expect(parseProductGameResultV1FromSgf("(;RE[B+])")).toMatchObject({
+      winnerColor: "B",
+      loserColor: "W",
+      resultType: "win",
+      margin: null,
+    });
+    expect(parseProductGameResultV1FromSgf("(;RE[W+1000.5])")).toMatchObject({
+      winnerColor: null,
+      loserColor: null,
+      resultType: "unknown",
+      margin: null,
+    });
+    expect(
+      parseProductGameResultV1FromSgf("(;RE[B+1000.0000000000000000001])")
+    ).toMatchObject({
+      winnerColor: null,
+      loserColor: null,
+      resultType: "unknown",
+      margin: null,
+    });
+    expect(
+      parseProductGameResultV1FromSgf("(;RE[B+999.999999999999999999])")
+    ).toMatchObject({
       winnerColor: null,
       loserColor: null,
       resultType: "unknown",
