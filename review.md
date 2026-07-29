@@ -68,6 +68,8 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 COM-005 일본식 규칙 admission 커밋 `9392d77`의 GitHub 근거는 실행 [`30372767399`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30372767399)이다. 타입·84 files / 843 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
+COM-005 초기 착수 계약 커밋 `e02f3d1`의 GitHub 근거는 실행 [`30426033948`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30426033948)이다. 타입·84 files / 857 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. 이 근거는 `PL`·`HA`/setup `initialPlayer`와 과금 전 admission 회귀를 닫지만 실제 KataGo/실제 exporter/staging 증거를 대신하지 않는다.
+
 ### 문서 신뢰도
 
 - 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 Manus OAuth, MySQL, Stripe, LLM 중심의 과거 구조를 설명해 현재 Clerk, Supabase, Lemon Squeezy, KataGo Worker 구조와 맞지 않는다.
@@ -263,6 +265,7 @@ flowchart LR
 - [shared/sgfKatagoParseV1.ts](shared/sgfKatagoParseV1.ts)는 mainline 첫 착수 전 setup node의 `PL[B|W]`, `HA`, 최종 흑 setup stone을 하나의 초기 착수 계약으로 해석한다. 우선순위는 `PL` → 첫 수 색 → 검증된 `HA>=2`의 `W` → 일반 기본 `B`이고 `HA[0]`은 exporter 호환 no-handicap이다.
 - invalid/duplicate `PL`, move와 같은 node 또는 첫 착수 뒤의 `PL`, `PL`-첫 수 충돌, invalid/duplicate `HA`, `HA`-최종 흑 setup stone count 불일치는 raw 값을 반사하지 않는 고정 HTTP 400으로 wallet 준비·차감·enqueue 전에 거절한다.
 - typed `initialPlayer`는 primary/spawn/persistent, multi-turn, Deep Search, benchmark, timeline query와 synthetic backend probe에 전달된다. [shared/sgfPlaybackV1.ts](shared/sgfPlaybackV1.ts)의 turn 0 및 마지막 실제 착수 색 기반 계산도 같은 시작색을 사용해 try-play/PV UI와 엔진의 착수자를 맞춘다.
+- 범위 밖 setup 좌표와 setup+move 같은-node 혼합도 Worker와 같은 strict parser에서 과금 전에 거절한다. 기능 커밋 `e02f3d1`은 GitHub CI [`30426033948`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30426033948)의 84 files / 857 tests 및 4개 job 전체 성공으로 검증됐다.
 - [server/worker/analysisEngines/katagoEngine.ts](server/worker/analysisEngines/katagoEngine.ts#L540)는 플레이어를 Black/White, 날짜를 현재일, 결과를 분석 파이프라인 문자열로 채우고, [client/src/components/AnalysisResultView.tsx](client/src/components/AnalysisResultView.tsx#L480)는 이를 실제 대국 정보처럼 표시한다.
 
 **위험**

@@ -102,7 +102,7 @@ corepack pnpm katago:product-suite -- --customer-fixtures --repeat 2 --concurren
 
 ### 2.0 SGF initial-player admission fixtures
 
-Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, and HA/setup-count mismatch fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return fixed non-reflective HTTP 400 before wallet/debit/enqueue; assert job/queue and credit-ledger deltas are zero and raw SGF/request content is not exposed in responses or logs.
+Run an ordinary `B` start, a pre-move `PL[W]` start, and `HA[2]` with two matching final `AB` stones followed by a `W` first move. Also run invalid/duplicate `PL`, `PL` mixed with a move in the same node, post-move `PL`, invalid/duplicate `HA`, HA/setup-count mismatch, out-of-board setup coordinates, and setup+move mixing fixtures. For accepted fixtures, confirm root/timeline/UI agree on the side to move. Each invalid fixture must return fixed non-reflective HTTP 400 before wallet/debit/enqueue; assert job/queue and credit-ledger deltas are zero and raw SGF/request content is not exposed in responses or logs.
 
 먼저 선택한 profile env와 로컬 `KATAGO_*` path 를 적용한 터미널에서 제품 경로 스모크를 실행한다. 이 명령은 raw stdout 확인을 넘어 실제 `analyzeSgfKatago` 결과, BSI/ADI 요약, Deep Search 요약, `qualityGate` 를 포함한 JSON 을 `.tmp/katago/product-result-*.json` 로 남긴다.
 
