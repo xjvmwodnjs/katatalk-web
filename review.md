@@ -57,14 +57,14 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 | 검증 | 결과 | 비고 |
 |---|---:|---|
-| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30440871859` |
-| Vitest | **GitHub CI PASS** | 86 files / 927 tests, 실행 `30440871859` |
-| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30440871859` |
-| Playwright Chromium | **GitHub CI PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30440871859` |
-| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 high/critical 취약점 0, 실행 `30440871859` |
+| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30441291617` |
+| Vitest | **GitHub CI PASS** | 86 files / 927 tests, 실행 `30441291617` |
+| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30441291617` |
+| Playwright Chromium | **GitHub CI PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30441291617` |
+| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 high/critical 취약점 0, 실행 `30441291617` |
 | 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30440871859` |
+| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30441291617` |
 
 COM-005 일본식 규칙 admission 커밋 `9392d77`의 GitHub 근거는 실행 [`30372767399`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30372767399)이다. 타입·84 files / 843 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -73,6 +73,8 @@ COM-005 초기 착수 계약 커밋 `e02f3d1`의 GitHub 근거는 실행 [`30426
 COM-005 strict `SZ`/`KM` 계약 커밋 `4a75b70`은 GitHub CI [`30433097938`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30433097938)에서 85 files / 871 tests, format/type/secret scan, 프로덕션 Web/API/Worker 빌드, Playwright, PostgreSQL migration/ACL/atomicity, 프로덕션 의존성 감사 등 4개 job 전체를 통과했다. 이 근거는 root metadata 구조·지원 범위·query/UI 전파와 validation 전 wallet 0회/통과 후 1회 회귀를 닫지만 실제 exporter/real-engine/staging 증거를 대신하지 않는다.
 
 COM-005 실제값 보존 game metadata 커밋 `e2c220f`은 GitHub CI [`30440871859`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30440871859)에서 86 files / 927 tests, Playwright 9/9, format/type/secret scan, 프로덕션 Web/API/Worker 빌드, PostgreSQL migration/ACL/atomicity, 프로덕션 의존성 감사 등 4개 job 전체를 통과했다. 이 근거는 root `PB/PW/DT/RE` 작성값 또는 `null`, malformed UTF-8 과금 전 거절, marker 재검증, legacy SGF 복구와 placeholder 제거를 닫지만 root 외 game-info, legacy charset/`CA` transcoding, 실제 exporter/real-engine/staging 증거를 대신하지 않는다.
+
+최종 증거 문서 커밋 `99e4a7b`도 GitHub CI [`30441291617`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617)의 4개 job을 모두 통과했으며, 현재 브랜치 HEAD의 기준 실행이다.
 
 ### 문서 신뢰도
 

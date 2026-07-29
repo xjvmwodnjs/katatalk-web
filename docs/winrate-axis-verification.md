@@ -72,6 +72,8 @@ Functional commit `4a75b70` adds strict root `SZ`/`KM` cardinality, placement, l
 
 Functional commit `e2c220f` adds shared root-only `PB/PW/DT/RE` parsing under `sgf-game-info-v1`, safe authored-or-null Worker persistence, exact bounded result normalization, malformed UTF-8 rejection before wallet/debit/enqueue, marked-result revalidation, legacy SGF fallback, placeholder removal, and direct date/result UI coverage. GitHub CI [run 30440871859](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30440871859) passed 86 files / 927 tests, Playwright 9/9, formatting, type, secret, production Web/API/Worker build, PostgreSQL migration/ACL/atomicity, and production dependency gates across all four jobs. Root-only placement remains narrower than general FF4 `game-info`; legacy charset/`CA` transcoding and real-exporter, real-engine, and staging reruns remain pending. The historical 2026-07-14 engine table above is unchanged.
 
+Evidence commit `99e4a7b` also passed all four jobs at final-head CI [run 30441291617](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617).
+
 ## 6. 배포 절차
 
 1. Worker analysis config에 `reportAnalysisWinratesAs`를 정확히 하나 설정한다.
