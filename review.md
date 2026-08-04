@@ -31,7 +31,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 6. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
 7. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
 
-`COM-003`의 프로덕션 의존성 high/critical 게이트는 이번 변경에서 닫혔다. GitHub Actions의 깨끗한 고정 lockfile 설치와 프로덕션 감사에서 알려진 취약점이 검출되지 않았다.
+`COM-003`의 프로덕션 의존성 high/critical 게이트는 계속 fail-closed한다. 2026-08-04 새 `ip-address` advisory가 PR CI를 차단했고, 허용된 `express-rate-limit@8.5.1 → ip-address@^10.2.0` 범위 안에서 lockfile만 `10.4.0`으로 갱신했다. 로컬 frozen install과 production audit는 다시 알려진 취약점 0을 확인했으며 GitHub 재실행 근거는 PR CI 완료 후 확정한다.
 
 **첫 구현 작업은 `COM-001: 실패 확정 + 환불 원자화`로 잡는 것이 맞다.** 이 작업이 결제 서비스의 가장 중요한 불변식인 “돈을 냈는데 결과도 환불도 없는 상태”와 “환불받았는데 작업이 다시 성공하는 상태”를 동시에 막는다.
 
@@ -61,7 +61,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | Vitest                                     | **로컬 PASS / master CI PASS** | 현재 87 files / 955 tests, master 실행 `30448737391`은 86 / 927                                                                                           |
 | 프로덕션 빌드                              | **로컬 PASS / master CI PASS** | 현재 Clerk manifest·verifier + API + Worker 번들 통과, master 실행 `30448737391`                                                                          |
 | Playwright Chromium                        | **로컬 PASS / master CI PASS** | 현재와 master 모두 9/9, 테스트/모의 분석 모드, master 실행 `30448737391`                                                                                  |
-| 프로덕션 의존성 감사                       |             **GitHub CI PASS** | 알려진 high/critical 취약점 0, master 실행 `30448737391`                                                                                                  |
+| 프로덕션 의존성 감사                       | **로컬 PASS / master CI PASS** | 현재 `ip-address@10.4.0`, 알려진 취약점 0; master 실행 `30448737391`                                                                                       |
 | 실제 외부 KataGo 종단 테스트               |                     **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트                                                                                                           |
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 |                     **미검증** | 스테이징 공급자 계정과 웹훅 필요                                                                                                                          |
 | 신규 DB/기존 DB 마이그레이션 리허설        |             **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, master 실행 `30448737391` |
@@ -212,11 +212,12 @@ flowchart LR
 
 ### COM-003. 프로덕션 의존성 high/critical 0 만들기
 
-**상태: GitHub CI 검증 완료 (2026-07-24)**
+**상태: GitHub CI 게이트 유지·신규 advisory lock 갱신 검증 중 (2026-08-04)**
 
 **적용 결과**
 
 - `axios 1.18.1`, `drizzle-orm 0.45.2`, `express 4.22.2`, `multer 2.2.0`, `@clerk/clerk-react 5.61.6`으로 안전 버전을 고정 또는 상향했다.
+- 새 `GHSA-mwp4-54f8-5fhr`가 `express-rate-limit@8.5.1 → ip-address@10.2.0`을 차단하자 parent가 이미 허용하는 범위 안에서 lockfile만 `ip-address@10.4.0`으로 갱신했다. direct dependency나 broad override는 추가하지 않았고 `pnpm why`는 production graph의 단일 patched 경로를 확인한다.
 - Express 5 전환에 따른 라우팅 호환성 변경은 섞지 않았다. Express 4 하위의 `path-to-regexp 0.1.13`과 Clerk 하위의 `js-cookie 3.0.7`만 경로가 제한된 override로 고정했다.
 - Multer 업그레이드와 함께 파일 1개, 일반 필드 1개, 총 multipart part 수, 필드 크기·이름·중첩 깊이를 제한했다.
 - Busboy의 경계 이벤트 의미를 반영해 공개 계약인 “정확히 1MiB는 허용, 1MiB+1 byte는 거절”을 보존했고, 정상 part 순서·중첩 필드·경계 크기 회귀 테스트를 추가했다.
