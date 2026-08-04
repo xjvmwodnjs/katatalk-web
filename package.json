@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/run-server.mjs development tsx watch server/_core/index.ts",
     "dev:worker": "node scripts/run-server.mjs development tsx watch server/worker/analysisWorker.ts",
-    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/worker/analysisWorker.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/worker/analysisWorker.js",
+    "build": "vite build && tsx scripts/verify-client-build-artifact.ts && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/worker/analysisWorker.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/worker/analysisWorker.js",
     "start": "node scripts/run-server.mjs production node dist/index.js",
     "worker:analysis": "node scripts/run-server.mjs production node dist/worker/analysisWorker.js",
     "worker:preflight": "tsx scripts/worker-preflight.ts",
@@ -14,6 +14,8 @@
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium",
     "ci:secrets": "tsx scripts/ci-secret-scan.ts",
+    "client:artifact:verify": "tsx scripts/verify-client-build-artifact.ts",
+    "client:clerk-key-fingerprint": "tsx scripts/print-clerk-key-fingerprint.ts",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:ci": "vitest run --maxWorkers=1 --fileParallelism=false",

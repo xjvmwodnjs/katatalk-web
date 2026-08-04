@@ -36,12 +36,17 @@ jobs:
       - name: Scan tracked files for committed secrets
         run: corepack pnpm ci:secrets
       - name: Check formatting
-        run: corepack pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/staging-smoke.yml .github/workflows/staging-db-evidence.yml .github/workflows/analysis-data-retention.yml package.json scripts/ci-secret-scan.ts scripts/db/*.mjs server/ciSecretScan.ts server/ciSecretScan.test.ts server/migrationRunner.test.ts server/stagingEvidence.test.ts docs/analysis-data-retention-runbook.md docs/database-migration-gate.md
+        run: corepack pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/staging-smoke.yml .github/workflows/staging-db-evidence.yml .github/workflows/analysis-data-retention.yml package.json vite.config.ts scripts/ci-secret-scan.ts scripts/clientBuildArtifactCore.ts scripts/clientBuildSourceProvenance.ts scripts/print-clerk-key-fingerprint.ts scripts/verify-client-build-artifact.ts scripts/deploy-smoke.ts scripts/deploySmokeCore.ts scripts/db/*.mjs server/_core/clientBuildStaticHeaders.ts server/_core/vite.ts server/ciSecretScan.ts server/ciSecretScan.test.ts server/clientBuildArtifact.test.ts server/deploySmokeCore.test.ts server/migrationRunner.test.ts server/stagingEvidence.test.ts docs/analysis-data-retention-runbook.md docs/database-migration-gate.md
       - name: Type check
         run: corepack pnpm check
       - name: Unit tests
         run: corepack pnpm test:ci
-      - name: Production build
+      - name: Production Clerk build and artifact verification
+        env:
+          VITE_AUTH_PROVIDER: clerk
+          # Deterministic, non-routable Clerk-shaped public test key for compile-time validation only.
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_Y2kuY2xlcmsuaW52YWxpZCQ
+          KATATALK_BUILD_COMMIT_SHA: ${{ github.sha }}
         run: corepack pnpm build
 
   database-migrations:

@@ -1,3 +1,8 @@
+import {
+  normalizeBuildCommitSha,
+  parseClientBuildManifest,
+} from "./clientBuildArtifactCore";
+
 export type SmokeStatus = "pass" | "fail" | "warn";
 
 export type SmokeCheck = {
@@ -23,6 +28,9 @@ export type SmokeTargetInput = {
 export type RunDeploySmokeOptions = SmokeTargetInput & {
   timeoutMs: number;
   createCheckout: boolean;
+  expectedClientCommitSha?: string | null;
+  expectedClerkKeySha256?: string | null;
+  artifactOnly?: boolean;
   fetchImpl?: SmokeFetch;
 };
 
@@ -294,6 +302,74 @@ export async function checkReadyz(
   return pass(`ready checks=${checks.length}`, latencyMs);
 }
 
+function normalizeExpectedClerkKeySha256(
+  value: string | undefined | null
+): string | null {
+  if (!value || value !== value.trim() || value !== value.toLowerCase()) {
+    return null;
+  }
+  return /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+export async function checkClientBuildManifest(
+  baseUrl: string,
+  timeoutMs: number,
+  expectedCommitSha: string,
+  expectedClerkKeySha256: string,
+  fetchImpl: SmokeFetch = fetch
+): Promise<Omit<SmokeCheck, "name">> {
+  const normalizedCommitSha = normalizeBuildCommitSha(expectedCommitSha);
+  const normalizedKeySha256 = normalizeExpectedClerkKeySha256(
+    expectedClerkKeySha256
+  );
+  if (!normalizedCommitSha || !normalizedKeySha256) {
+    throw new Error("CLIENT_BUILD_EXPECTATION_INVALID");
+  }
+
+  const { response, json, latencyMs } = await requestJson(
+    baseUrl,
+    "/client-build-manifest.json",
+    timeoutMs,
+    {
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    },
+    fetchImpl
+  );
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const cacheControl =
+    response.headers.get("cache-control")?.toLowerCase() ?? "";
+  const nosniff =
+    response.headers.get("x-content-type-options")?.toLowerCase() ?? "";
+  if (
+    response.status !== 200 ||
+    !/^application\/json(?:\s*;|$)/.test(contentType) ||
+    !cacheControl.split(",").some(value => value.trim() === "no-store") ||
+    nosniff !== "nosniff"
+  ) {
+    return fail("client build manifest response contract mismatch", latencyMs);
+  }
+
+  let manifest;
+  try {
+    manifest = parseClientBuildManifest(json);
+  } catch {
+    return fail("client build manifest schema mismatch", latencyMs);
+  }
+  if (manifest.sourceCommitSha !== normalizedCommitSha) {
+    return fail("client build commit mismatch", latencyMs);
+  }
+  if (manifest.clerkPublishableKeySha256 !== normalizedKeySha256) {
+    return fail("client build Clerk key fingerprint mismatch", latencyMs);
+  }
+  return pass(
+    "Clerk client artifact matches the deployment contract",
+    latencyMs
+  );
+}
+
 async function checkAnalysisWorkerHealth(
   baseUrl: string,
   timeoutMs: number,
@@ -454,12 +530,59 @@ export async function runDeploySmoke(
 ): Promise<{ baseUrl: string; checks: SmokeCheck[] }> {
   const authToken = options.authToken?.trim() ?? "";
   const opsToken = options.opsToken?.trim() ?? "";
+  const rawExpectedCommitSha = options.expectedClientCommitSha?.trim() ?? "";
+  const rawExpectedKeySha256 = options.expectedClerkKeySha256?.trim() ?? "";
+  const hasArtifactExpectation = Boolean(
+    rawExpectedCommitSha || rawExpectedKeySha256
+  );
+  if (
+    hasArtifactExpectation &&
+    (!normalizeBuildCommitSha(rawExpectedCommitSha) ||
+      !normalizeExpectedClerkKeySha256(rawExpectedKeySha256))
+  ) {
+    throw new Error("CLIENT_BUILD_EXPECTATION_INVALID");
+  }
+  if (
+    (authToken || opsToken || options.artifactOnly) &&
+    !hasArtifactExpectation
+  ) {
+    throw new Error(
+      "SMOKE_EXPECTED_CLIENT_COMMIT_SHA and SMOKE_EXPECTED_CLERK_KEY_SHA256 are required before client artifact verification."
+    );
+  }
   const baseUrl = resolveSmokeTarget({
     ...options,
     authToken,
     opsToken,
   });
   const fetchImpl = options.fetchImpl ?? fetch;
+  const completedChecks: SmokeCheck[] = [];
+  if (hasArtifactExpectation) {
+    const artifactCheck = await runCheck(
+      "GET /client-build-manifest.json",
+      () =>
+        checkClientBuildManifest(
+          baseUrl,
+          options.timeoutMs,
+          rawExpectedCommitSha,
+          rawExpectedKeySha256,
+          fetchImpl
+        )
+    );
+    completedChecks.push(artifactCheck);
+    if (artifactCheck.status === "fail" || options.artifactOnly) {
+      return { baseUrl, checks: completedChecks };
+    }
+  } else {
+    completedChecks.push({
+      name: "GET /client-build-manifest.json",
+      status: "warn",
+      detail:
+        "skipped; set the expected client commit and Clerk key fingerprint",
+      latencyMs: 0,
+    });
+  }
+
   const checks: Promise<SmokeCheck>[] = [
     runCheck("GET /healthz", () =>
       checkHealthz(baseUrl, options.timeoutMs, fetchImpl)
@@ -547,7 +670,10 @@ export async function runDeploySmoke(
     );
   }
 
-  return { baseUrl, checks: await Promise.all(checks) };
+  return {
+    baseUrl,
+    checks: [...completedChecks, ...(await Promise.all(checks))],
+  };
 }
 
 export function printSmokeResults(baseUrl: string, checks: SmokeCheck[]): void {
