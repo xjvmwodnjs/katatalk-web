@@ -31,7 +31,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 6. Clerk → 결제 → DB → 실제 Worker/KataGo → 결과/원장의 실환경 종단 증거가 없다.
 7. Worker가 죽어 있어도 사용자의 크레딧은 즉시 차감되며, 오래 묵은 작업의 자동 취소·환불 정책이 없다.
 
-`COM-003`의 프로덕션 의존성 high/critical 게이트는 계속 fail-closed한다. 2026-08-04 새 `ip-address` advisory가 PR CI를 차단했고, 허용된 `express-rate-limit@8.5.1 → ip-address@^10.2.0` 범위 안에서 lockfile만 `10.4.0`으로 갱신했다. 로컬 frozen install과 production audit는 다시 알려진 취약점 0을 확인했으며 GitHub 재실행 근거는 PR CI 완료 후 확정한다.
+`COM-003`의 프로덕션 의존성 high/critical 게이트는 계속 fail-closed한다. 2026-08-04 새 `ip-address` advisory가 PR CI를 차단했고, 허용된 `express-rate-limit@8.5.1 → ip-address@^10.2.0` 범위 안에서 lockfile만 `10.4.0`으로 갱신했다. 로컬 frozen install과 production audit는 다시 알려진 취약점 0을 확인했고, PR #2 GitHub Actions [`30923411845`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30923411845)의 4개 job도 모두 통과했다.
 
 **첫 구현 작업은 `COM-001: 실패 확정 + 환불 원자화`로 잡는 것이 맞다.** 이 작업이 결제 서비스의 가장 중요한 불변식인 “돈을 냈는데 결과도 환불도 없는 상태”와 “환불받았는데 작업이 다시 성공하는 상태”를 동시에 막는다.
 
@@ -66,7 +66,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | 실제 Clerk/Lemon/Supabase 결제 종단 테스트 |                     **미검증** | 스테이징 공급자 계정과 웹훅 필요                                                                                                                          |
 | 신규 DB/기존 DB 마이그레이션 리허설        |             **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, master 실행 `30448737391` |
 
-현재 `agent/clerk-client-artifact-gate` 작업 트리는 2026-08-04 로컬에서 secret scan, CI 대상 Prettier, `tsc --noEmit`, Vitest 87 files / 955 tests, dirty source build 차단을 통과했다. clean commit 상태에서는 process env를 비우고 `.env.production.local`의 padded Clerk test key만 사용한 production client/API/Worker build와 artifact verifier가 통과했으며, manifest source SHA도 해당 Git HEAD와 일치했다. Playwright Chromium은 변경 전후 UI 경로 9/9를 통과했다. 새 gate 자체의 GitHub-hosted 근거는 이 브랜치 PR CI가 완료된 뒤 확정한다.
+현재 `agent/clerk-client-artifact-gate` 작업 트리는 2026-08-04 로컬에서 secret scan, CI 대상 Prettier, `tsc --noEmit`, Vitest 87 files / 955 tests, dirty source build 차단을 통과했다. clean commit 상태에서는 process env를 비우고 `.env.production.local`의 padded Clerk test key만 사용한 production client/API/Worker build와 artifact verifier가 통과했으며, manifest source SHA도 해당 Git HEAD와 일치했다. Playwright Chromium은 변경 전후 UI 경로 9/9를 통과했다. 같은 구현과 advisory lock fix는 PR #2 GitHub Actions [`30923411845`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30923411845)에서 type/unit/Clerk build/secret/format, PostgreSQL, production audit, Playwright 4개 job을 모두 통과했다.
 
 COM-005 일본식 규칙 admission 커밋 `9392d77`의 GitHub 근거는 실행 [`30372767399`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30372767399)이다. 타입·84 files / 843 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 

@@ -25,6 +25,8 @@ the secret scan, type check, unit tests, production build, browser E2E, and
 production dependency audit. The private KataGo corpus gate and the protected
 staging smoke gate are still required before CI-01 can be closed.
 
+The candidate Clerk artifact gate and the targeted `ip-address@10.4.0` advisory lock refresh passed all four jobs in PR #2 run [`30923411845`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30923411845): type/unit/Clerk build/secret/format, PostgreSQL migrations and ACLs, production dependency audit, and Playwright.
+
 ## Release decision
 
 Commercialization readiness remains **76% for a controlled public beta** and

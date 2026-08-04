@@ -28,7 +28,7 @@
 - [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
-- [x] Production dependency gate 유지: 2026-07-24 remediation은 GitHub Actions `30019630160`에서 통과했고, 2026-08-04 새 `GHSA-mwp4-54f8-5fhr`는 `express-rate-limit@8.5.1`의 허용 범위 안에서 lockfile의 `ip-address`를 `10.2.0 → 10.4.0`으로 갱신해 로컬 frozen install/production audit에서 다시 알려진 취약점 0을 확인했다. PR CI 재검증은 진행 중이다.
+- [x] Production dependency gate 유지: 2026-07-24 remediation은 GitHub Actions `30019630160`에서 통과했고, 2026-08-04 새 `GHSA-mwp4-54f8-5fhr`는 `express-rate-limit@8.5.1`의 허용 범위 안에서 lockfile의 `ip-address`를 `10.2.0 → 10.4.0`으로 갱신했다. 로컬 frozen install/production audit와 PR #2 GitHub Actions `30923411845`에서 다시 알려진 취약점 0 및 전체 4개 job 통과를 확인했다.
 - [x] Git delivery restored: PR #1을 `master`에 병합했고 merge commit `5ac090e`의 GitHub Actions `30448737391`에서 PostgreSQL, dependency-audit, quality, build, E2E gate가 통과했다.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 
