@@ -2,12 +2,45 @@ import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkClientBuildManifest,
   checkHealthz,
   checkReadyz,
   normalizeSmokeOrigin,
   requestJson,
   resolveSmokeTarget,
+  runDeploySmoke,
 } from "../scripts/deploySmokeCore";
+
+const CLIENT_COMMIT_SHA = "c".repeat(40);
+const CLERK_KEY_SHA256 = "d".repeat(64);
+
+function clientManifestFetch(
+  overrides: Record<string, unknown> = {},
+  responseHeaders: Record<string, string> = {}
+): typeof fetch {
+  return vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          schemaVersion: "katatalk-client-build-v1",
+          authProvider: "clerk",
+          sourceCommitSha: CLIENT_COMMIT_SHA,
+          clerkKeyType: "test",
+          clerkPublishableKeySha256: CLERK_KEY_SHA256,
+          ...overrides,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            ...responseHeaders,
+          },
+        }
+      )
+  ) as unknown as typeof fetch;
+}
 
 const openServers: Server[] = [];
 
@@ -237,6 +270,110 @@ describe("deploy smoke health contracts", () => {
   });
 });
 
+describe("deploy smoke Clerk client artifact preflight", () => {
+  it("accepts an exact non-cacheable Clerk manifest", async () => {
+    await expect(
+      checkClientBuildManifest(
+        "https://staging.example.com",
+        1_000,
+        CLIENT_COMMIT_SHA,
+        CLERK_KEY_SHA256,
+        clientManifestFetch()
+      )
+    ).resolves.toMatchObject({
+      status: "pass",
+      detail: "Clerk client artifact matches the deployment contract",
+    });
+  });
+
+  it("rejects stale commit and key fingerprints without reflecting either value", async () => {
+    const staleCommit = "e".repeat(40);
+    const staleKeyHash = "f".repeat(64);
+    const commitResult = await checkClientBuildManifest(
+      "https://staging.example.com",
+      1_000,
+      CLIENT_COMMIT_SHA,
+      CLERK_KEY_SHA256,
+      clientManifestFetch({ sourceCommitSha: staleCommit })
+    );
+    const keyResult = await checkClientBuildManifest(
+      "https://staging.example.com",
+      1_000,
+      CLIENT_COMMIT_SHA,
+      CLERK_KEY_SHA256,
+      clientManifestFetch({ clerkPublishableKeySha256: staleKeyHash })
+    );
+
+    expect(commitResult).toMatchObject({
+      status: "fail",
+      detail: "client build commit mismatch",
+    });
+    expect(keyResult).toMatchObject({
+      status: "fail",
+      detail: "client build Clerk key fingerprint mismatch",
+    });
+    expect(JSON.stringify([commitResult, keyResult])).not.toContain(
+      staleCommit
+    );
+    expect(JSON.stringify([commitResult, keyResult])).not.toContain(
+      staleKeyHash
+    );
+  });
+
+  it("rejects a JSON-like MIME type that is not application/json", async () => {
+    await expect(
+      checkClientBuildManifest(
+        "https://staging.example.com",
+        1_000,
+        CLIENT_COMMIT_SHA,
+        CLERK_KEY_SHA256,
+        clientManifestFetch({}, { "Content-Type": "application/jsonp" })
+      )
+    ).resolves.toMatchObject({
+      status: "fail",
+      detail: "client build manifest response contract mismatch",
+    });
+  });
+
+  it("sends no auth or ops credential after a manifest mismatch", async () => {
+    const authToken = "auth-token-must-not-leave";
+    const opsToken = "ops-token-must-not-leave";
+    const fetchImpl = clientManifestFetch({ sourceCommitSha: "e".repeat(40) });
+
+    const result = await runDeploySmoke({
+      baseUrl: "https://staging.example.com",
+      expectedOrigin: "https://staging.example.com",
+      authToken,
+      opsToken,
+      expectedClientCommitSha: CLIENT_COMMIT_SHA,
+      expectedClerkKeySha256: CLERK_KEY_SHA256,
+      timeoutMs: 1_000,
+      createCheckout: false,
+      fetchImpl,
+    });
+
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0]).toMatchObject({ status: "fail" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const calls = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.stringify(calls)).not.toContain(authToken);
+    expect(JSON.stringify(calls)).not.toContain(opsToken);
+  });
+
+  it("requires an artifact expectation before any credentialed smoke", async () => {
+    await expect(
+      runDeploySmoke({
+        baseUrl: "https://staging.example.com",
+        expectedOrigin: "https://staging.example.com",
+        authToken: "credential",
+        timeoutMs: 1_000,
+        createCheckout: false,
+        fetchImpl: vi.fn() as unknown as typeof fetch,
+      })
+    ).rejects.toThrow(/SMOKE_EXPECTED_CLIENT_COMMIT_SHA/);
+  });
+});
+
 describe("deploy smoke redirect handling", () => {
   it("uses manual redirects and never forwards a bearer token to the redirect target", async () => {
     const token = "redirect-test-bearer-secret";
@@ -308,6 +445,13 @@ describe("staging smoke workflow contract", () => {
     expect(workflow).toContain(
       "SMOKE_EXPECTED_ORIGIN: ${{ vars.STAGING_BASE_URL }}"
     );
+    expect(workflow).toContain(
+      "SMOKE_EXPECTED_CLIENT_COMMIT_SHA: ${{ github.sha }}"
+    );
+    expect(workflow).toContain(
+      "SMOKE_EXPECTED_CLERK_KEY_SHA256: ${{ vars.STAGING_CLERK_PUBLISHABLE_KEY_SHA256 }}"
+    );
+    expect(workflow).toContain("corepack pnpm deploy:smoke -- --artifact-only");
     expect(workflow).not.toMatch(/^\s+base_url:/m);
   });
 

@@ -13,6 +13,10 @@ function envBool(name: string): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
+function hasFlag(name: string): boolean {
+  return process.argv.slice(2).includes(`--${name}`);
+}
+
 function readTimeoutMs(): number {
   const raw = readArg("timeout-ms") ?? process.env.SMOKE_TIMEOUT_MS ?? "";
   const timeoutMs = Number.parseInt(raw, 10);
@@ -23,15 +27,20 @@ function readTimeoutMs(): number {
 }
 
 async function main(): Promise<void> {
+  const artifactOnly =
+    hasFlag("artifact-only") || envBool("SMOKE_ARTIFACT_ONLY");
   const { baseUrl, checks } = await runDeploySmoke({
     baseUrl: readArg("base-url") ?? process.env.SMOKE_BASE_URL ?? "",
     expectedOrigin:
       readArg("expected-origin") ?? process.env.SMOKE_EXPECTED_ORIGIN,
-    authToken: process.env.SMOKE_AUTH_TOKEN,
-    opsToken: process.env.SMOKE_OPS_TOKEN,
+    authToken: artifactOnly ? undefined : process.env.SMOKE_AUTH_TOKEN,
+    opsToken: artifactOnly ? undefined : process.env.SMOKE_OPS_TOKEN,
+    expectedClientCommitSha: process.env.SMOKE_EXPECTED_CLIENT_COMMIT_SHA,
+    expectedClerkKeySha256: process.env.SMOKE_EXPECTED_CLERK_KEY_SHA256,
     allowInsecureLoopback: envBool("SMOKE_ALLOW_INSECURE_LOOPBACK"),
     timeoutMs: readTimeoutMs(),
-    createCheckout: envBool("SMOKE_CREATE_CHECKOUT"),
+    createCheckout: artifactOnly ? false : envBool("SMOKE_CREATE_CHECKOUT"),
+    artifactOnly,
   });
 
   printSmokeResults(baseUrl, checks);

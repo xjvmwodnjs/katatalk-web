@@ -1,5 +1,9 @@
 # Master / Railway Staging Smoke v1
 
+## Production Clerk 클라이언트 산출물 게이트 (COM-106 진행 중)
+
+staging smoke는 credential 요청 전에 `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`와 `/client-build-manifest.json`의 provider·source SHA·Clerk test/live 구분·publishable-key 지문을 검사한다. 이후 인증 smoke 프로세스가 같은 검사를 동기적으로 다시 통과해야만 Clerk/Ops token을 전송한다. publishable key가 프로세스 환경에 주입된 운영 터미널에서 `pnpm client:clerk-key-fingerprint`를 실행하면 원문을 출력하지 않고 지문만 계산한다. 실제 GitHub `staging` 환경·보호 규칙·실제 Clerk 로그인·publishable/secret key tenant 일치 검증은 외부 게이트로 남으므로 COM-106 전체 완료로 표시하지 않는다.
+
 목적: `master` 기준으로 로컬 KataGo 실분석과 Railway Web/Worker staging 동작을 수동 검증한다. 이 문서는 절차와 기록 항목만 정의하며, 실제 secret/API key/KataGo binary/model/config 경로를 저장하지 않는다.
 
 금지:

@@ -3,8 +3,13 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer, type InlineConfig, type UserConfig } from "vite";
+import {
+  createServer as createViteServer,
+  type InlineConfig,
+  type UserConfig,
+} from "vite";
 import viteConfig from "../../vite.config";
+import { applyClientBuildManifestHeaders } from "./clientBuildStaticHeaders";
 
 type ViteConfigFactory = (env: {
   command: "serve";
@@ -21,7 +26,9 @@ async function resolveServerViteConfig(): Promise<InlineConfig> {
     isPreview: false,
   };
   const config =
-    typeof viteConfig === "function" ? (viteConfig as ViteConfigFactory)(env) : viteConfig;
+    typeof viteConfig === "function"
+      ? (viteConfig as ViteConfigFactory)(env)
+      : viteConfig;
   return (await Promise.resolve(config)) as InlineConfig;
 }
 
@@ -81,7 +88,13 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      setHeaders(response, filePath) {
+        applyClientBuildManifestHeaders(response, filePath);
+      },
+    })
+  );
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {

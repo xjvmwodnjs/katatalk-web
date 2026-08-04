@@ -4,7 +4,7 @@
 
 ## 상용화 readiness 기준
 
-- [ ] 공개 유료 베타 readiness **76% -> 80% 이상**으로 올리기 (`docs/commercialization-review.md`를 단일 기준으로 사용)
+- [ ] 공개 유료 베타 readiness **76% -> 80% 이상**으로 올리기 (현재 판정·우선순위는 `review.md`, 과거 점수 추이는 `docs/commercialization-review.md` 참고)
 - [x] 고객형 synthetic SGF suite 4개 launch gate 통과 (`katago:product-suite -- --customer-fixtures --strict-warnings --max-successful-p95-ms 120000 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0`)
 - [ ] 실제 고객형 SGF corpus 10-20개 manifest + product suite 통과 (`katago:corpus-validate`와 `--corpus-manifest` 구현 완료, 실제 corpus와 검수 결과는 아직 필요)
 - [x] corpus manifest v1 도구 구현 — SHA-256, 익명화 metadata, 최소 10건, 9/13/19·접바둑·pass·setup·장기 대국 coverage, 기대 visits/turn/BSI/ADI/quality 검사
@@ -20,6 +20,7 @@
 - [~] Worker observability foundation implemented: service-role status RPC and `/ops/analysis-worker-health` distinguish idle Worker liveness from job leases. Supabase migration, staging TTL/restart, and long-running job soak remain required.
 - [~] COM-001 quarantine operations visibility implemented: token-protected `/ops/analysis-finalization-quarantine` returns only unresolved count and oldest timestamp, fails closed without backend details, and stays separate from Web readiness. Staging response verification, monitor wiring, alert drill, and a separately reviewed append-only reconciliation command remain required.
 - [~] COM-005 Japanese-only SGF rules, strict root `SZ`/`KM`, initial-player, and root game-metadata contracts implemented. `sgf-game-info-v1` carries safe authored-or-null `PB`/`PW`/`DT`/`RE`; valid FF4 partial/comma `DT` is accepted while invalid shortcut state is rejected; `RE` keeps raw plus canonical generic `B+`/`W+` win and bounded lexical numeric margins (max 1000, exact decimal round-trip required). Invalid optional fields are field-local; malformed UTF-8 is a fixed 400 before wallet/debit/enqueue. Marked results are revalidated; legacy `katago-worker-v1` reparses `sgf_content`/`sgfContent` or hides placeholders. UI displays `DT` directly and uses common `ProductGameResult` parsing for `RE`. Remaining: post-move transition, compressed setup ranges, full legality, additional rulesets, real-exporter compatibility, staging evidence, and non-UTF8 legacy charset/CA transcoding compatibility. Root-only metadata is narrower than FF4 `game-info`; real-corpus privacy rules remain mandatory.
+- [~] **COM-106 production Clerk client artifact gate** — 모든 Vite build에서 Clerk provider·publishable key 문법과 clean Git/platform source commit을 fail-closed 검증하고, raw key 없는 manifest와 Clerk chunk를 동일 env-file 우선순위의 package build에서 재검증한다. staging smoke는 commit/key 지문을 credential 없이 먼저 검사하고 토큰 전송 직전에 재검사한다. 실제 GitHub `staging` 환경 구성, Clerk tenant 실로그인, Web/Worker secret 최소화는 아직 필요하다.
 - [ ] staging Web/Worker/결제 webhook/credit ledger end-to-end 통과
 - [~] SGF/analysis payload deletion and opt-in retention implemented: result UI now exposes an owner-only confirmed delete action; migration 009 provides API deletion; migration 010 plus `data:retention` defaults to dry-run and only purges completed/failed payloads with an explicit expiry. Supabase migration application, staging UI E2E, scheduler, account-level anonymization, and legal review remain.
 - [~] Public-document drafts added: `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` reflect implemented flows and explicitly flag required legal decisions. Operator identity, jurisdiction, refunds, retention, support contact, and final legal approval remain.
@@ -28,7 +29,7 @@
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
 - [x] 2026-07-24 production dependency remediation completed: locked install audit reports no known vulnerabilities, 81 files / 769 Vitest tests pass, the production build passes, and Playwright passes 9/9 in GitHub Actions run `30019630160`.
-- [x] Git delivery restored: scoped commits are pushed to `agent/atomic-failure-refund` and tracked in draft PR #1 with PostgreSQL, dependency-audit, quality, and E2E gates passing.
+- [x] Git delivery restored: PR #1을 `master`에 병합했고 merge commit `5ac090e`의 GitHub Actions `30448737391`에서 PostgreSQL, dependency-audit, quality, build, E2E gate가 통과했다.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 
 ## 결제·법무

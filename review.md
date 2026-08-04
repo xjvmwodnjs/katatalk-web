@@ -1,8 +1,8 @@
 # KataTalk 상용화 코드베이스 리뷰
 
-> 기준일: 2026-07-29
+> 기준일: 2026-08-04
 > 대상 저장소: `xjvmwodnjs/katatalk-web`
-> 기준 브랜치/구현 상태: `agent/atomic-failure-refund` / 이번 리뷰 작업 트리
+> 기준 브랜치/구현 상태: `agent/clerk-client-artifact-gate` / 이번 리뷰 작업 트리
 > 문서 목적: 현재 구현을 사실에 근거해 진단하고, 공개 유료 서비스로 전환하기 위한 작업 순서와 합격 기준을 단일 기준점으로 만든다.
 
 ---
@@ -13,13 +13,13 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 그러나 **지금 바로 불특정 다수에게 공개 유료 판매를 시작하는 것은 NO-GO**다. 이유는 기능 부족보다 돈·권한·분석 정확성·운영 복구의 핵심 불변식이 아직 실제 환경에서 증명되지 않았기 때문이다.
 
-| 출시 단계 | 판정 | 근거 |
-|---|---:|---|
-| 로컬 개발 및 내부 데모 | **GO** | 핵심 흐름과 자동화 테스트가 동작한다. |
-| 모의 엔진을 이용한 내부/지인 테스트 | **GO** | 운영 데이터와 실제 결제를 분리한다는 조건이다. |
-| 실제 KataGo를 이용한 폐쇄형 테스트 | **조건부 GO** | 고정된 엔진/모델, 별도 스테이징 DB, 관찰 가능성, 데이터 동의가 먼저 필요하다. |
-| 초대형 유료 베타 | **조건부 NO-GO** | 아래 P0 중 과금·환불, 권한, 결제 수명주기, 규칙 정확성, 실제 E2E를 모두 닫은 뒤 재판정한다. |
-| 공개 유료 베타/GA | **NO-GO** | 보안·법무·운영 복구·장기 SLO·실사용 품질 증거가 부족하다. |
+| 출시 단계                           |             판정 | 근거                                                                                        |
+| ----------------------------------- | ---------------: | ------------------------------------------------------------------------------------------- |
+| 로컬 개발 및 내부 데모              |           **GO** | 핵심 흐름과 자동화 테스트가 동작한다.                                                       |
+| 모의 엔진을 이용한 내부/지인 테스트 |           **GO** | 운영 데이터와 실제 결제를 분리한다는 조건이다.                                              |
+| 실제 KataGo를 이용한 폐쇄형 테스트  |    **조건부 GO** | 고정된 엔진/모델, 별도 스테이징 DB, 관찰 가능성, 데이터 동의가 먼저 필요하다.               |
+| 초대형 유료 베타                    | **조건부 NO-GO** | 아래 P0 중 과금·환불, 권한, 결제 수명주기, 규칙 정확성, 실제 E2E를 모두 닫은 뒤 재판정한다. |
+| 공개 유료 베타/GA                   |        **NO-GO** | 보안·법무·운영 복구·장기 SLO·실사용 품질 증거가 부족하다.                                   |
 
 ### 공개 유료 출시 판단에 남은 P0 요약
 
@@ -43,28 +43,30 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 ### 저장소 규모
 
-| 항목 | 현재 값 |
-|---|---:|
-| Git 추적 파일 | 393개 (이번 변경 포함) |
-| TypeScript/TSX | 283개 파일 / 약 59,980줄 |
-| Vitest 테스트 파일 | 86개 |
-| Vitest 테스트 수 | 927개 |
-| Playwright 시나리오 | 9개 |
-| Supabase SQL 마이그레이션 | 13개 (`001`~`013`) |
-| GitHub Actions 워크플로 | 4개 |
+| 항목                      |                  현재 값 |
+| ------------------------- | -----------------------: |
+| Git 추적 파일             |   399개 (이번 변경 포함) |
+| TypeScript/TSX            | 289개 파일 / 약 61,134줄 |
+| Vitest 테스트 파일        |                     87개 |
+| Vitest 테스트 수          |                    955개 |
+| Playwright 시나리오       |                      9개 |
+| Supabase SQL 마이그레이션 |       13개 (`001`~`013`) |
+| GitHub Actions 워크플로   |                      4개 |
 
 ### 실행 검증
 
-| 검증 | 결과 | 비고 |
-|---|---:|---|
-| TypeScript `tsc --noEmit` | **GitHub CI PASS** | 컴파일 타입 오류 없음, 실행 `30441291617` |
-| Vitest | **GitHub CI PASS** | 86 files / 927 tests, 실행 `30441291617` |
-| 프로덕션 빌드 | **GitHub CI PASS** | Vite 클라이언트 + API + Worker 번들, 실행 `30441291617` |
-| Playwright Chromium | **GitHub CI PASS** | 9/9, 테스트/모의 분석 모드, 실행 `30441291617` |
-| 프로덕션 의존성 감사 | **GitHub CI PASS** | 알려진 high/critical 취약점 0, 실행 `30441291617` |
-| 실제 외부 KataGo 종단 테스트 | **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트 |
-| 실제 Clerk/Lemon/Supabase 결제 종단 테스트 | **미검증** | 스테이징 공급자 계정과 웹훅 필요 |
-| 신규 DB/기존 DB 마이그레이션 리허설 | **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, 실행 `30441291617` |
+| 검증                                       |                           결과 | 비고                                                                                                                                                      |
+| ------------------------------------------ | -----------------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript `tsc --noEmit`                  | **로컬 PASS / master CI PASS** | 현재 브랜치 타입 오류 없음, master 실행 `30448737391`                                                                                                     |
+| Vitest                                     | **로컬 PASS / master CI PASS** | 현재 87 files / 955 tests, master 실행 `30448737391`은 86 / 927                                                                                           |
+| 프로덕션 빌드                              | **로컬 PASS / master CI PASS** | 현재 Clerk manifest·verifier + API + Worker 번들 통과, master 실행 `30448737391`                                                                          |
+| Playwright Chromium                        | **로컬 PASS / master CI PASS** | 현재와 master 모두 9/9, 테스트/모의 분석 모드, master 실행 `30448737391`                                                                                  |
+| 프로덕션 의존성 감사                       |             **GitHub CI PASS** | 알려진 high/critical 취약점 0, master 실행 `30448737391`                                                                                                  |
+| 실제 외부 KataGo 종단 테스트               |                     **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트                                                                                                           |
+| 실제 Clerk/Lemon/Supabase 결제 종단 테스트 |                     **미검증** | 스테이징 공급자 계정과 웹훅 필요                                                                                                                          |
+| 신규 DB/기존 DB 마이그레이션 리허설        |             **GitHub CI PASS** | PostgreSQL 16 fresh/upgrade·ACL·rollback·동시성·history-absent와 함수 본문·table persistence·독립 composite drift fixture 통과, master 실행 `30448737391` |
+
+현재 `agent/clerk-client-artifact-gate` 작업 트리는 2026-08-04 로컬에서 secret scan, CI 대상 Prettier, `tsc --noEmit`, Vitest 87 files / 955 tests, dirty source build 차단을 통과했다. clean commit 상태에서는 process env를 비우고 `.env.production.local`의 padded Clerk test key만 사용한 production client/API/Worker build와 artifact verifier가 통과했으며, manifest source SHA도 해당 Git HEAD와 일치했다. Playwright Chromium은 변경 전후 UI 경로 9/9를 통과했다. 새 gate 자체의 GitHub-hosted 근거는 이 브랜치 PR CI가 완료된 뒤 확정한다.
 
 COM-005 일본식 규칙 admission 커밋 `9392d77`의 GitHub 근거는 실행 [`30372767399`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30372767399)이다. 타입·84 files / 843 tests·프로덕션 Web/API/Worker 빌드·format/secret scan, Playwright, PostgreSQL gate, 프로덕션 의존성 감사가 모두 통과했다. `PASS`는 회귀 방어가 상당히 잘 되어 있다는 뜻이지, 실제 결제와 실제 GPU 분석까지 안전하다는 뜻은 아니다. 특히 Playwright 테스트는 테스트 인증과 모의/외부 대체 경로를 사용하므로 상용 종단 증거와 구분해야 한다.
 
@@ -74,7 +76,7 @@ COM-005 strict `SZ`/`KM` 계약 커밋 `4a75b70`은 GitHub CI [`30433097938`](ht
 
 COM-005 실제값 보존 game metadata 커밋 `e2c220f`은 GitHub CI [`30440871859`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30440871859)에서 86 files / 927 tests, Playwright 9/9, format/type/secret scan, 프로덕션 Web/API/Worker 빌드, PostgreSQL migration/ACL/atomicity, 프로덕션 의존성 감사 등 4개 job 전체를 통과했다. 이 근거는 root `PB/PW/DT/RE` 작성값 또는 `null`, malformed UTF-8 과금 전 거절, marker 재검증, legacy SGF 복구와 placeholder 제거를 닫지만 root 외 game-info, legacy charset/`CA` transcoding, 실제 exporter/real-engine/staging 증거를 대신하지 않는다.
 
-최종 증거 문서 커밋 `99e4a7b`도 GitHub CI [`30441291617`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617)의 4개 job을 모두 통과했으며, 현재 브랜치 HEAD의 기준 실행이다.
+최신 `master` merge commit `5ac090e`는 GitHub CI [`30448737391`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30448737391)의 4개 job을 모두 통과했으며, 현재 브랜치의 기준 커밋이다.
 
 ### 문서 신뢰도
 
@@ -386,7 +388,7 @@ flowchart LR
 
 ### COM-101. 인증 요청마다 발생하는 DB 쓰기 제거
 
-[server/_core/clerkAuth.ts](server/_core/clerkAuth.ts#L80)는 인증 요청마다 지갑 보장 RPC를 호출하고, 초기 함수는 프로필 timestamp 갱신과 가입 크레딧 insert를 반복 시도한다. 1초 polling과 결합하면 읽기 요청이 지속적인 쓰기 부하로 바뀐다.
+[server/\_core/clerkAuth.ts](server/_core/clerkAuth.ts#L80)는 인증 요청마다 지갑 보장 RPC를 호출하고, 초기 함수는 프로필 timestamp 갱신과 가입 크레딧 insert를 반복 시도한다. 1초 polling과 결합하면 읽기 요청이 지속적인 쓰기 부하로 바뀐다.
 
 - 프로비저닝은 가입 웹훅 또는 최초 1회 온보딩으로 분리한다.
 - 정상 인증 검증은 read-only로 만든다.
@@ -404,7 +406,7 @@ flowchart LR
 
 ### COM-103. HTTP 경계 강화
 
-[server/_core/index.ts](server/_core/index.ts#L48)의 전역 JSON/urlencoded 제한이 50MB다. 인메모리 rate limiter는 수평 확장 시 우회되고, `trust proxy = 1`은 실제 네트워크 토폴로지와 일치해야 한다.
+[server/\_core/index.ts](server/_core/index.ts#L48)의 전역 JSON/urlencoded 제한이 50MB다. 인메모리 rate limiter는 수평 확장 시 우회되고, `trust proxy = 1`은 실제 네트워크 토폴로지와 일치해야 한다.
 
 - 일반 JSON은 256KB~1MB, 웹훅은 provider 요구량, SGF는 현재 1MB처럼 route별 제한을 둔다.
 - Helmet 기반 CSP, HSTS, frame-ancestors, nosniff, referrer, Permissions-Policy를 설정한다.
@@ -429,7 +431,15 @@ flowchart LR
 
 ### COM-106. Web과 Worker 환경변수/비밀 분리
 
+**상태: 진행 중 — production Clerk client artifact 계약과 credential 선행 smoke 구현, 실제 staging·Web/Worker 최소 권한 분리 대기 (2026-08-04)**
+
 현재 Worker도 범용 프로덕션 환경 검증을 거쳐 Clerk, Lemon, APP URL 같은 웹 전용 비밀을 요구할 수 있다. GPU 호스트 침해 시 피해 범위가 불필요하게 커진다.
+
+- 모든 Vite build는 `clerk` provider와 canonical padded/unpadded Clerk publishable key를 요구한다. source SHA는 GitHub/Railway/Render build metadata 또는 clean Git HEAD에서만 가져오며, dirty/unverified source와 선택 claim 불일치는 고정 오류 코드로 fail-closed한다.
+- Vite가 생성한 `client-build-manifest.json`은 provider, source SHA, test/live 구분, publishable-key SHA-256만 포함한다. raw key·server secret·runner 경로·시각은 포함하지 않는다.
+- package build는 Vite와 같은 process-over-`.env.production` 우선순위로 manifest, index의 실제 local asset, Clerk chunk를 비교하고 불일치하면 server/Worker bundle 전에 중단한다.
+- staging smoke는 protected key fingerprint와 commit을 credential 없는 단계에서 먼저 확인하고, 인증 smoke가 같은 검사를 동기적으로 재통과한 뒤에만 Clerk/Ops token을 전송한다. manifest는 `no-store`, JSON, `nosniff` 계약을 가진다.
+- 2026-08-04 GitHub 저장소에는 이름이 정확히 `staging`인 environment가 아직 없으므로 실제 tenant·배포 commit·publishable/secret key 조합은 증명되지 않았다.
 
 - `validateWebEnv`와 `validateWorkerEnv`를 분리한다.
 - Worker에는 claim/complete에 필요한 최소 DB 권한과 스토리지 권한만 준다.
@@ -471,7 +481,7 @@ flowchart LR
 
 ### COM-112. 레거시 storage proxy 제거 또는 소유권 강제
 
-[server/_core/storageProxy.ts](server/_core/storageProxy.ts#L8)는 기능 플래그가 켜질 경우 service credential로 임의 key presign 경로가 열릴 수 있다.
+[server/\_core/storageProxy.ts](server/_core/storageProxy.ts#L8)는 기능 플래그가 켜질 경우 service credential로 임의 key presign 경로가 열릴 수 있다.
 
 - 쓰지 않으면 코드를 제거하고 프로덕션 플래그를 금지한다.
 - 필요하면 인증, 사용자 prefix 소유권, content type/size, 짧은 TTL, audit log를 적용한다.
@@ -484,7 +494,7 @@ flowchart LR
 
 ### COM-114. 브라우저 개인정보 최소화
 
-- [client/src/_core/auth/KataTalkClerkAuthProvider.tsx](client/src/_core/auth/KataTalkClerkAuthProvider.tsx#L91)는 병합된 사용자 객체를 localStorage에 장기 저장한다. 필요 없다면 제거하고 꼭 필요한 최소 식별자만 메모리에 둔다.
+- [client/src/\_core/auth/KataTalkClerkAuthProvider.tsx](client/src/_core/auth/KataTalkClerkAuthProvider.tsx#L91)는 병합된 사용자 객체를 localStorage에 장기 저장한다. 필요 없다면 제거하고 꼭 필요한 최소 식별자만 메모리에 둔다.
 - [client/index.html](client/index.html#L10)은 Google Fonts로 IP/UA를 제3자에게 보낼 수 있다. 폰트를 self-host하거나 개인정보 문서와 동의 정책에 반영한다.
 
 ### COM-115. 접근성·국제화 마감
@@ -601,11 +611,11 @@ API를 여러 대 띄우기 시작할 때만 Redis 기반 분산 rate limit/idem
 
 ### 데이터 배치 원칙
 
-| 저장소 | 저장할 것 | 저장하지 않을 것 |
-|---|---|---|
-| PostgreSQL | 프로필, immutable credit ledger, payment events, 작은 job 상태/메타데이터, job events, refund outbox, worker heartbeat | 큰 SGF 원문과 큰 결과 JSON의 반복 조회 |
-| Object Storage | 암호화된 원본 SGF, 버전이 있는 결과 artifact, 선택적 렌더 이미지 | 잔액과 결제 상태의 source of truth |
-| 로그/메트릭 | correlation ID, job ID, 상태·시간·오류 코드, 성능 지표 | SGF 원문, 인증 토큰, 결제 비밀, 불필요한 이메일 |
+| 저장소         | 저장할 것                                                                                                              | 저장하지 않을 것                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| PostgreSQL     | 프로필, immutable credit ledger, payment events, 작은 job 상태/메타데이터, job events, refund outbox, worker heartbeat | 큰 SGF 원문과 큰 결과 JSON의 반복 조회          |
+| Object Storage | 암호화된 원본 SGF, 버전이 있는 결과 artifact, 선택적 렌더 이미지                                                       | 잔액과 결제 상태의 source of truth              |
+| 로그/메트릭    | correlation ID, job ID, 상태·시간·오류 코드, 성능 지표                                                                 | SGF 원문, 인증 토큰, 결제 비밀, 불필요한 이메일 |
 
 ### 반드시 DB 명령으로 고정할 상태 변경
 
@@ -756,39 +766,39 @@ ops/
 
 ## 9. 실행 백로그
 
-| 순서 | ID | 우선순위 | 작업 | 주 영역 | 선행 조건 | Definition of Done |
-|---:|---|---:|---|---|---|---|
-| 1 | COM-001 | P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중 | DB·Worker | 없음 | fault test와 ledger audit 불일치 0 |
-| 2 | COM-002 | P0 | RPC 권한 manifest/검사 — GitHub CI 통과·staging 대기 | DB·Security | 없음 | 실제 staging catalog/HTTP snapshot |
-| 3 | COM-006 | P0 | migration runner/CI — GitHub CI 통과·baseline 대기 | DB·DevEx | COM-002 병행 | 기존 운영 DB baseline 승인 |
-| 4 | COM-005 | P0 | RU + strict SZ/KM + PL/HA/setup + game metadata 완료·transition/legality 후속 | Analysis | 없음 | 실제 exporter golden SGF와 엔진·UI 설정 일치 테스트 |
-| 5 | COM-101 | P1/P0 | 인증 write amplification 제거 | API·DB | 없음 | polling 1,000회 write 0 |
-| 6 | COM-102 | P1/P0 | status/result/artifact 분리 | API·DB | COM-101 | status ≤ 2KB, large read 0 |
-| 7 | COM-003 | P0 | dependency remediation — GitHub CI 완료 | Platform | 없음 | 실행 30019630160에서 알려진 취약점 0 |
-| 8 | COM-106 | P1/P0 | Web/Worker env와 secret 분리 | Platform | 없음 | Worker 최소 비밀로 부팅 |
-| 9 | COM-004 | P0 | payment entitlement/reversal | Billing·DB | COM-001 패턴 | replay/refund/chargeback 통과 |
-| 10 | COM-008 | P0 | Worker liveness/queue TTL/refund | Worker·API | COM-001 | offline 시 과금 손실 0 |
-| 11 | COM-117 | P1 | versioned result/provenance | Contracts | COM-005 | 구/신 schema 호환 테스트 |
-| 12 | COM-103 | P1 | HTTP 경계/headers/rate limit | Security | 없음 | header test와 body/abuse test |
-| 13 | COM-111 | P1 | 민감 API `no-store` 정책 | API·Security | COM-102 | cache 재사용 테스트 통과 |
-| 14 | COM-105 | P1 | metrics/alerts/runbooks | Operations | 상태 모델 확정 | 장애 시나리오 drill 통과 |
-| 15 | COM-007 | P0 | 실제 스테이징 E2E | QA·Operations | 1~14 핵심 | 실제 전체 경로 증거 저장 |
-| 16 | COM-104 | P1 | retention/delete/export | Privacy | artifact 구조 | 자동 lifecycle test |
-| 17 | COM-110 | P1 | 법무 문서/동의 증거 | Legal·Billing | 정책 결정 | 법률 승인과 버전 기록 |
-| 18 | COM-107 | P1 | free-credit abuse control | Risk | 계정 정책 | 오탐/우회 지표와 수동 해제 |
-| 19 | COM-109 | P1 | 장시간 작업/이력 UX | Product | 상태 모델 | 다중 기기 복원과 지원 경로 |
-| 20 | COM-108 | P1 | production 오류 화면 정리 | Web·Operations | correlation ID | 사용자 stack 노출 0 |
-| 21 | COM-115 | P1 | 접근성/i18n | Web | UI 상태 확정 | keyboard/SR/zoom/locale gate |
-| 22 | COM-116 | P1 | 실제 경계 E2E와 브라우저 확대 | QA | staging 구성 | auth/payment/worker suite 통과 |
-| 23 | COM-118 | P1 | SKU·원가·마진 모델 | Product·Finance | real benchmark | SKU별 목표 마진 증명 |
-| 24 | COM-112 | P1 | storage proxy 제거/보호 | Security | 사용 여부 결정 | 임의 key 접근 불가 |
-| 25 | COM-113 | P1 | Clerk auth 경계 테스트 | Auth | staging Clerk | JWT/party/outage cases 통과 |
-| 26 | COM-114 | P1 | localStorage/font privacy | Web·Privacy | 정책 결정 | 불필요 PII와 제3자 호출 제거 |
-| 27 | COM-201 | P2 | legacy stack 정리 | Architecture | P0 안정화 | 단일 source of truth 문서화 |
-| 28 | COM-202 | P2 | 큰 모듈 분리 | Architecture | 계약 테스트 | 기능 변경 없이 boundary 정리 |
-| 29 | COM-203 | P2 | 번들·압축·캐시 정책 | Web·Platform | 측정 환경 | 초기 로드와 캐시 기준 충족 |
-| 30 | COM-204 | P2 | LICENSE/제3자 고지 | Legal | 배포 전략 | 배포물 고지 완비 |
-| 31 | COM-205 | P2 | 운영·아키텍처 문서 최신화 | Docs | 구조 확정 | 문서 smoke와 owner 지정 |
+| 순서 | ID      | 우선순위 | 작업                                                                          | 주 영역         | 선행 조건      | Definition of Done                                   |
+| ---: | ------- | -------: | ----------------------------------------------------------------------------- | --------------- | -------------- | ---------------------------------------------------- |
+|    1 | COM-001 |       P0 | 실패+환불 원자 RPC/quarantine — 코드 완료·DB 검증 중                          | DB·Worker       | 없음           | fault test와 ledger audit 불일치 0                   |
+|    2 | COM-002 |       P0 | RPC 권한 manifest/검사 — GitHub CI 통과·staging 대기                          | DB·Security     | 없음           | 실제 staging catalog/HTTP snapshot                   |
+|    3 | COM-006 |       P0 | migration runner/CI — GitHub CI 통과·baseline 대기                            | DB·DevEx        | COM-002 병행   | 기존 운영 DB baseline 승인                           |
+|    4 | COM-005 |       P0 | RU + strict SZ/KM + PL/HA/setup + game metadata 완료·transition/legality 후속 | Analysis        | 없음           | 실제 exporter golden SGF와 엔진·UI 설정 일치 테스트  |
+|    5 | COM-101 |    P1/P0 | 인증 write amplification 제거                                                 | API·DB          | 없음           | polling 1,000회 write 0                              |
+|    6 | COM-102 |    P1/P0 | status/result/artifact 분리                                                   | API·DB          | COM-101        | status ≤ 2KB, large read 0                           |
+|    7 | COM-003 |       P0 | dependency remediation — GitHub CI 완료                                       | Platform        | 없음           | 실행 30019630160에서 알려진 취약점 0                 |
+|    8 | COM-106 |    P1/P0 | production Clerk artifact gate 구현·Web/Worker env와 secret 분리 대기         | Platform        | 없음           | 실제 staging artifact 일치 + Worker 최소 비밀로 부팅 |
+|    9 | COM-004 |       P0 | payment entitlement/reversal                                                  | Billing·DB      | COM-001 패턴   | replay/refund/chargeback 통과                        |
+|   10 | COM-008 |       P0 | Worker liveness/queue TTL/refund                                              | Worker·API      | COM-001        | offline 시 과금 손실 0                               |
+|   11 | COM-117 |       P1 | versioned result/provenance                                                   | Contracts       | COM-005        | 구/신 schema 호환 테스트                             |
+|   12 | COM-103 |       P1 | HTTP 경계/headers/rate limit                                                  | Security        | 없음           | header test와 body/abuse test                        |
+|   13 | COM-111 |       P1 | 민감 API `no-store` 정책                                                      | API·Security    | COM-102        | cache 재사용 테스트 통과                             |
+|   14 | COM-105 |       P1 | metrics/alerts/runbooks                                                       | Operations      | 상태 모델 확정 | 장애 시나리오 drill 통과                             |
+|   15 | COM-007 |       P0 | 실제 스테이징 E2E                                                             | QA·Operations   | 1~14 핵심      | 실제 전체 경로 증거 저장                             |
+|   16 | COM-104 |       P1 | retention/delete/export                                                       | Privacy         | artifact 구조  | 자동 lifecycle test                                  |
+|   17 | COM-110 |       P1 | 법무 문서/동의 증거                                                           | Legal·Billing   | 정책 결정      | 법률 승인과 버전 기록                                |
+|   18 | COM-107 |       P1 | free-credit abuse control                                                     | Risk            | 계정 정책      | 오탐/우회 지표와 수동 해제                           |
+|   19 | COM-109 |       P1 | 장시간 작업/이력 UX                                                           | Product         | 상태 모델      | 다중 기기 복원과 지원 경로                           |
+|   20 | COM-108 |       P1 | production 오류 화면 정리                                                     | Web·Operations  | correlation ID | 사용자 stack 노출 0                                  |
+|   21 | COM-115 |       P1 | 접근성/i18n                                                                   | Web             | UI 상태 확정   | keyboard/SR/zoom/locale gate                         |
+|   22 | COM-116 |       P1 | 실제 경계 E2E와 브라우저 확대                                                 | QA              | staging 구성   | auth/payment/worker suite 통과                       |
+|   23 | COM-118 |       P1 | SKU·원가·마진 모델                                                            | Product·Finance | real benchmark | SKU별 목표 마진 증명                                 |
+|   24 | COM-112 |       P1 | storage proxy 제거/보호                                                       | Security        | 사용 여부 결정 | 임의 key 접근 불가                                   |
+|   25 | COM-113 |       P1 | Clerk auth 경계 테스트                                                        | Auth            | staging Clerk  | JWT/party/outage cases 통과                          |
+|   26 | COM-114 |       P1 | localStorage/font privacy                                                     | Web·Privacy     | 정책 결정      | 불필요 PII와 제3자 호출 제거                         |
+|   27 | COM-201 |       P2 | legacy stack 정리                                                             | Architecture    | P0 안정화      | 단일 source of truth 문서화                          |
+|   28 | COM-202 |       P2 | 큰 모듈 분리                                                                  | Architecture    | 계약 테스트    | 기능 변경 없이 boundary 정리                         |
+|   29 | COM-203 |       P2 | 번들·압축·캐시 정책                                                           | Web·Platform    | 측정 환경      | 초기 로드와 캐시 기준 충족                           |
+|   30 | COM-204 |       P2 | LICENSE/제3자 고지                                                            | Legal           | 배포 전략      | 배포물 고지 완비                                     |
+|   31 | COM-205 |       P2 | 운영·아키텍처 문서 최신화                                                     | Docs            | 구조 확정      | 문서 smoke와 owner 지정                              |
 
 ---
 
@@ -816,16 +826,16 @@ ops/
 
 실제 데이터를 모은 뒤 고객 약속으로 승격한다.
 
-| 지표 | 내부 목표 | 경보 예시 |
-|---|---:|---:|
-| API availability | 월 99.9% | 5분 99% 미만 |
-| healthy Worker 상태의 queue wait p95 | 30초 이하 | 10분간 60초 초과 |
-| Standard 분석 end-to-end p95 | 90초 이하 | 15분간 목표의 2배 |
-| job terminal success rate | 99% 이상 | 15분 97% 미만 |
-| 자동 환불 완료 | 실패 확정 후 5분 이내 | `refund_pending` 5분 초과 |
-| webhook 처리 | 수신 후 60초 이내 | oldest unprocessed 2분 초과 |
-| ledger reconciliation | 불일치 0 | 1건 이상 즉시 경보 |
-| queue oldest age | SKU SLA 이내 | SLA의 50%에서 warning |
+| 지표                                 |             내부 목표 |                   경보 예시 |
+| ------------------------------------ | --------------------: | --------------------------: |
+| API availability                     |              월 99.9% |                5분 99% 미만 |
+| healthy Worker 상태의 queue wait p95 |             30초 이하 |            10분간 60초 초과 |
+| Standard 분석 end-to-end p95         |             90초 이하 |           15분간 목표의 2배 |
+| job terminal success rate            |              99% 이상 |               15분 97% 미만 |
+| 자동 환불 완료                       | 실패 확정 후 5분 이내 |   `refund_pending` 5분 초과 |
+| webhook 처리                         |     수신 후 60초 이내 | oldest unprocessed 2분 초과 |
+| ledger reconciliation                |              불일치 0 |          1건 이상 즉시 경보 |
+| queue oldest age                     |          SKU SLA 이내 |       SLA의 50%에서 warning |
 
 ### 반드시 대시보드에서 볼 값
 
@@ -903,4 +913,4 @@ ops/
 - 아키텍처가 바뀌면 이 문서와 최신 `ARCHITECTURE.md`를 같은 PR에서 갱신한다.
 - 새 P0가 발견되면 일정에 맞춰 등급을 낮추지 않고 출시 범위를 조정한다.
 
-현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 후속 → COM-101/102 → COM-106 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.
+현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 후속 → COM-101/102 → COM-106의 실제 Web/Worker 비밀 분리 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔고, COM-106의 production Clerk artifact gate는 구현됐지만 외부 staging 증거와 Worker 최소 권한은 남아 있다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.

@@ -1,8 +1,12 @@
 # KataTalk
 
+## Production Clerk 클라이언트 산출물 게이트 (2026-08)
+
+모든 `vite build`/`pnpm build`는 `VITE_AUTH_PROVIDER=clerk`와 Clerk 형식의 유효한 `VITE_CLERK_PUBLISHABLE_KEY`를 요구한다. source commit은 GitHub `GITHUB_SHA`, Railway `RAILWAY_GIT_COMMIT_SHA`, Render `RENDER_GIT_COMMIT` 또는 clean Git HEAD에서만 가져오며, 둘 이상 있으면 서로 같아야 한다. 선택 assertion `KATATALK_BUILD_COMMIT_SHA`를 설정하면 이 검증된 SHA와 정확히 일치해야 하고, Git metadata가 있는 dirty checkout은 실패한다. Vite와 후속 verifier는 process env와 `.env.production`을 같은 우선순위로 읽는다. Vite는 `dist/public/client-build-manifest.json`에 provider, source SHA, Clerk test/live 구분, publishable-key SHA-256만 기록하고 원문 key는 기록하지 않는다. `pnpm build`는 manifest·index·참조 asset·Clerk chunk를 다시 검증한다. manifest 응답은 `no-store`/`nosniff`이며 staging smoke는 commit과 `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`가 일치하는지 **credential 요청 전에 검사하고 직전에 한 번 더 검사**한다. padding 유무와 관계없이 정상 Clerk publishable key를 지원하며, 이미 주입된 key의 지문은 `pnpm client:clerk-key-fingerprint`로 원문 출력 없이 계산한다. `pnpm dev`에는 이 build provenance gate를 적용하지 않는다.
+
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
 
-2026-07-29 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 현재 출시 판정, 구현 현황, 검증 근거와 다음 작업의 단일 기준은 [`review.md`](review.md)입니다. 최신 검증 기준은 `99e4a7b`와 GitHub Actions [`30441291617`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30441291617)이며, Vitest **86 files / 927 tests**, Playwright **9/9**, type/format/secret scan, Web/API/Worker build, PostgreSQL gate와 production dependency audit가 모두 통과했습니다. 실제 Supabase·Clerk·Lemon·KataGo 스테이징 종단 증거, exporter 호환성과 전체 SGF 합법성은 아직 출시 게이트로 남아 있습니다.
+2026-07-29 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 현재 출시 판정, 구현 현황, 검증 근거와 다음 작업의 단일 기준은 [`review.md`](review.md)입니다. 최신 `master` 검증 기준은 `5ac090e`와 GitHub Actions [`30448737391`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30448737391)이며, Vitest **86 files / 927 tests**, Playwright **9/9**, type/format/secret scan, Web/API/Worker build, PostgreSQL gate와 production dependency audit가 모두 통과했습니다. 실제 Supabase·Clerk·Lemon·KataGo 스테이징 종단 증거, exporter 호환성과 전체 SGF 합법성은 아직 출시 게이트로 남아 있습니다.
 
 ## 알고리즘 기준 문서
 
@@ -91,6 +95,8 @@ pnpm dev
 pnpm build
 pnpm start
 ```
+
+로컬 build는 현재 checkout이 commit된 clean 상태여야 한다. Git metadata가 없는 build archive는 위의 자동 source-SHA 변수 중 하나가 없으면 fail-closed한다. Railway와 Render는 Git 배포 build에 각각 `RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`을 자동 제공하므로 `KATATALK_BUILD_COMMIT_SHA`는 별도 필수 변수가 아니라 추가 일치 assertion이다.
 
 `pnpm start` 는 [`scripts/run-server.mjs`](scripts/run-server.mjs) 가 **`NODE_ENV=production`** 으로 **`node dist/index.js`** 를 실행합니다. `pnpm build` 는 **Vite 정적 자산**과 **esbuild 로 묶은 서버 엔트리(`dist/index.js`)** 를 함께 생성합니다.
 

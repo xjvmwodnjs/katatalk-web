@@ -5,6 +5,16 @@
 **작성일:** 2026-05-11  
 **작성자:** Manus AI
 
+> **최신성 경고 (2026-08-04):** 아래 1~10절의 Manus OAuth·MySQL 중심 설명은 초기 MVP의 역사적 구조이며 현재 production source of truth가 아니다. 현재 출시 판정과 작업 순서는 [`review.md`](review.md), 환경 분리는 [`docs/env-guide.md`](docs/env-guide.md)를 따른다. 이 경고 아래의 기존 본문은 아직 사용하는 legacy 경로를 추적하기 위해 보존한다.
+
+## 0. 현재 production 인증·빌드 경계
+
+- 공개 Web 인증은 `AUTH_PROVIDER=clerk`/`VITE_AUTH_PROVIDER=clerk` 조합과 Clerk Bearer JWT 경로가 기준이다. Supabase는 Clerk subject를 `profiles.id`로 사용하는 크레딧·분석 작업 DB이며, Drizzle/MySQL 사용자는 legacy 동기화 경로다.
+- Web은 Express API·결제 webhook·정적 React bundle을 제공하고, 외부 Worker는 service-role DB 권한과 KataGo 실행 권한만 가져야 한다. Web/Worker secret 최소화 자체는 COM-106의 남은 작업이다.
+- 모든 Vite build는 Clerk publishable key와 실제 source provenance를 검증한다. source SHA는 GitHub/Railway/Render의 build metadata 또는 clean Git HEAD에서만 가져오고, 선택 `KATATALK_BUILD_COMMIT_SHA`는 그 값과 일치해야 한다. Vite가 같은 build 안에서 `client-build-manifest.json`을 만들고 package verifier가 동일한 env-file 우선순위로 provider·commit·key SHA-256·index asset·Clerk chunk를 검증한 뒤에만 서버/Worker bundle을 만든다.
+- 배포 smoke는 manifest의 commit과 protected Clerk key fingerprint를 credential 없이 먼저 확인하고, credential 요청 직전에 동기적으로 재검사한다. 불일치·redirect·oversize·잘못된 MIME/cache header에서는 Clerk/Ops token을 보내지 않는다.
+- 이 manifest는 구성 provenance gate이며 서명된 공급망 증명은 아니다. 실제 Clerk tenant, publishable/secret key 짝, allowed origin, 로그인·세션 동작은 보호된 staging E2E로 별도 증명해야 한다.
+
 ---
 
 ## 1. 시스템 개요
@@ -15,13 +25,13 @@ KataTalk은 AI 기반 바둑 기보(SGF) 다국어 요약 서비스로, 사용�
 
 ## 2. 기술 스택
 
-| 계층 | 기술 | 역할 |
-|------|------|------|
-| **프론트엔드** | React 19 + Tailwind CSS 4 + Vite 7 | SPA 클라이언트 |
-| **API 계층** | tRPC 11 + Express 4 | 타입 안전 RPC 통신 |
-| **인증** | Manus OAuth 2.0 + JWT (jose) | 세션 관리 및 사용자 인증 |
-| **데이터베이스** | MySQL (TiDB) + Drizzle ORM | 사용자/구독/분석 이력 저장 |
-| **직렬화** | Superjson | Date 등 복합 타입 자동 변환 |
+| 계층             | 기술                               | 역할                        |
+| ---------------- | ---------------------------------- | --------------------------- |
+| **프론트엔드**   | React 19 + Tailwind CSS 4 + Vite 7 | SPA 클라이언트              |
+| **API 계층**     | tRPC 11 + Express 4                | 타입 안전 RPC 통신          |
+| **인증**         | Manus OAuth 2.0 + JWT (jose)       | 세션 관리 및 사용자 인증    |
+| **데이터베이스** | MySQL (TiDB) + Drizzle ORM         | 사용자/구독/분석 이력 저장  |
+| **직렬화**       | Superjson                          | Date 등 복합 타입 자동 변환 |
 
 ---
 
@@ -69,13 +79,13 @@ KataTalk은 Manus OAuth를 통해 인증을 처리합니다. Manus OAuth 포털�
 
 세션은 JWT(JSON Web Token) 기반으로 관리되며, 서명 키는 환경 변수 `JWT_SECRET`으로 주입됩니다.
 
-| 속성 | 값 | 보안 목적 |
-|------|------|-----------|
-| **HttpOnly** | `true` | JavaScript에서 쿠키 접근 차단 (XSS 방어) |
-| **Secure** | `true` (HTTPS 환경) | 암호화된 연결에서만 쿠키 전송 |
-| **SameSite** | `none` | 크로스 오리진 요청 허용 (OAuth 콜백 호환) |
-| **Path** | `/` | 전체 경로에서 세션 유효 |
-| **만료** | 1년 | 장기 세션 유지 |
+| 속성         | 값                  | 보안 목적                                 |
+| ------------ | ------------------- | ----------------------------------------- |
+| **HttpOnly** | `true`              | JavaScript에서 쿠키 접근 차단 (XSS 방어)  |
+| **Secure**   | `true` (HTTPS 환경) | 암호화된 연결에서만 쿠키 전송             |
+| **SameSite** | `none`              | 크로스 오리진 요청 허용 (OAuth 콜백 호환) |
+| **Path**     | `/`                 | 전체 경로에서 세션 유효                   |
+| **만료**     | 1년                 | 장기 세션 유지                            |
 
 ### 3.3 쿠키 이름
 
@@ -92,17 +102,17 @@ app_session_id
 tRPC 미들웨어를 통해 3단계 인가 수준을 제공합니다.
 
 ```typescript
-publicProcedure      // 인증 불필요 (auth.me, 공개 데이터 조회)
-protectedProcedure   // 로그인 필수 (profile, analysis)
-adminProcedure       // 관리자 전용 (role === 'admin')
+publicProcedure; // 인증 불필요 (auth.me, 공개 데이터 조회)
+protectedProcedure; // 로그인 필수 (profile, analysis)
+adminProcedure; // 관리자 전용 (role === 'admin')
 ```
 
 ### 4.2 에러 코드
 
-| 상황 | HTTP 코드 | 메시지 |
-|------|-----------|--------|
-| 미인증 사용자가 보호된 리소스 접근 | 401 | `Please login (10001)` |
-| 일반 사용자가 관리자 리소스 접근 | 403 | `You do not have required permission (10002)` |
+| 상황                               | HTTP 코드 | 메시지                                        |
+| ---------------------------------- | --------- | --------------------------------------------- |
+| 미인증 사용자가 보호된 리소스 접근 | 401       | `Please login (10001)`                        |
+| 일반 사용자가 관리자 리소스 접근   | 403       | `You do not have required permission (10002)` |
 
 프론트엔드는 `UNAUTHED_ERR_MSG`를 감지하면 자동으로 로그인 페이지로 리다이렉트합니다.
 
@@ -170,11 +180,11 @@ CREATE TABLE analysis_history (
 
 ### 6.3 구독 티어별 제한
 
-| 티어 | 월 분석 횟수 | 지원 언어 | 참고도(PV) | 가격 |
-|------|-------------|-----------|-----------|------|
-| **Free** | 3회 | 한국어만 | 1개 | 무료 |
-| **Basic** | 30회 | 4개 언어 | 5개 | $4.99/월 |
-| **Premium** | 100회 | 4개 언어 | 전체 | $11.99/월 |
+| 티어        | 월 분석 횟수 | 지원 언어 | 참고도(PV) | 가격      |
+| ----------- | ------------ | --------- | ---------- | --------- |
+| **Free**    | 3회          | 한국어만  | 1개        | 무료      |
+| **Basic**   | 30회         | 4개 언어  | 5개        | $4.99/월  |
+| **Premium** | 100회        | 4개 언어  | 전체       | $11.99/월 |
 
 신규 가입 시 `subscriptionTier = 'free'`, `remainingAnalysisCount = 2`로 초기화됩니다. 이는 KataGo 서버 비용을 방어하기 위한 필수 장치입니다.
 
@@ -184,26 +194,26 @@ CREATE TABLE analysis_history (
 
 ### 7.1 인증 관련
 
-| 엔드포인트 | 메서드 | 인가 수준 | 설명 |
-|-----------|--------|-----------|------|
-| `/api/oauth/callback` | GET | Public | OAuth 콜백 처리 |
-| `trpc.auth.me` | Query | Public | 현재 사용자 정보 조회 |
-| `trpc.auth.logout` | Mutation | Public | 세션 쿠키 삭제 |
+| 엔드포인트            | 메서드   | 인가 수준 | 설명                  |
+| --------------------- | -------- | --------- | --------------------- |
+| `/api/oauth/callback` | GET      | Public    | OAuth 콜백 처리       |
+| `trpc.auth.me`        | Query    | Public    | 현재 사용자 정보 조회 |
+| `trpc.auth.logout`    | Mutation | Public    | 세션 쿠키 삭제        |
 
 ### 7.2 프로필/구독 관련
 
-| 엔드포인트 | 메서드 | 인가 수준 | 설명 |
-|-----------|--------|-----------|------|
-| `trpc.profile.getSubscription` | Query | Protected | 구독 정보 조회 |
-| `trpc.profile.updateLanguage` | Mutation | Protected | 선호 언어 변경 |
+| 엔드포인트                     | 메서드   | 인가 수준 | 설명           |
+| ------------------------------ | -------- | --------- | -------------- |
+| `trpc.profile.getSubscription` | Query    | Protected | 구독 정보 조회 |
+| `trpc.profile.updateLanguage`  | Mutation | Protected | 선호 언어 변경 |
 
 ### 7.3 분석 관련
 
-| 엔드포인트 | 메서드 | 인가 수준 | 설명 |
-|-----------|--------|-----------|------|
-| `trpc.analysis.canAnalyze` | Query | Protected | 잔여 크레딧 확인 |
-| `trpc.analysis.start` | Mutation | Protected | 분석 시작 (크레딧 차감) |
-| `trpc.analysis.history` | Query | Protected | 분석 이력 조회 |
+| 엔드포인트                 | 메서드   | 인가 수준 | 설명                    |
+| -------------------------- | -------- | --------- | ----------------------- |
+| `trpc.analysis.canAnalyze` | Query    | Protected | 잔여 크레딧 확인        |
+| `trpc.analysis.start`      | Mutation | Protected | 분석 시작 (크레딧 차감) |
+| `trpc.analysis.history`    | Query    | Protected | 분석 이력 조회          |
 
 ---
 
@@ -277,4 +287,4 @@ baduk-ai-report/
 
 ---
 
-*본 문서는 KataTalk MVP의 인증 아키텍처를 기술한 것으로, 프로덕션 배포 전 보안 감사(Security Audit)를 권장합니다.*
+_본 문서는 KataTalk MVP의 인증 아키텍처를 기술한 것으로, 프로덕션 배포 전 보안 감사(Security Audit)를 권장합니다._

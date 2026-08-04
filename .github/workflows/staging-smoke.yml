@@ -46,11 +46,30 @@ jobs:
         run: corepack enable
       - name: Install locked dependencies
         run: corepack pnpm install --frozen-lockfile
+      - name: Verify deployed Clerk client artifact without credentials
+        shell: bash
+        env:
+          SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+          SMOKE_EXPECTED_ORIGIN: ${{ vars.STAGING_BASE_URL }}
+          SMOKE_EXPECTED_CLIENT_COMMIT_SHA: ${{ github.sha }}
+          SMOKE_EXPECTED_CLERK_KEY_SHA256: ${{ vars.STAGING_CLERK_PUBLISHABLE_KEY_SHA256 }}
+        run: |
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "Configure STAGING_BASE_URL as a protected staging environment variable."
+            exit 1
+          fi
+          if [ -z "${SMOKE_EXPECTED_CLERK_KEY_SHA256:-}" ]; then
+            echo "Configure STAGING_CLERK_PUBLISHABLE_KEY_SHA256 as a protected staging environment variable."
+            exit 1
+          fi
+          corepack pnpm deploy:smoke -- --artifact-only
       - name: Run deploy smoke
         shell: bash
         env:
           SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
           SMOKE_EXPECTED_ORIGIN: ${{ vars.STAGING_BASE_URL }}
+          SMOKE_EXPECTED_CLIENT_COMMIT_SHA: ${{ github.sha }}
+          SMOKE_EXPECTED_CLERK_KEY_SHA256: ${{ vars.STAGING_CLERK_PUBLISHABLE_KEY_SHA256 }}
           SMOKE_AUTH_TOKEN: ${{ secrets.SMOKE_AUTH_TOKEN }}
           SMOKE_OPS_TOKEN: ${{ secrets.SMOKE_OPS_TOKEN }}
           SMOKE_CREATE_CHECKOUT: ${{ inputs.create_checkout }}
