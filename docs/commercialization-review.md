@@ -528,6 +528,12 @@ corepack pnpm credits:audit
 - Verified the change with credit RPC, DB-backed analysis route, and billing webhook tests: `3` files and `47` tests passed, followed by a successful TypeScript check.
 - Migration `011` is now a hard prerequisite for deploying this Web code. Apply `008 -> 009 -> 010 -> 011`, verify the function exists with service-role-only execute access, then deploy Web and Worker.
 
+### 2026-08-05: COM-101 auth read-only hot path (current status)
+
+- Clerk JWT 검증과 기존 MySQL identity 조회를 read-only hot path로 분리했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 기존 idempotent RPC로 생성한다.
+- 1,000회 polling auth write 0을 검증했다. invalid token은 401, dependency outage는 고정 비반영 503이며 tRPC outage semantics를 유지한다.
+- 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9는 통과했지만 GitHub CI는 pending이다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남는다.
+
 ### 2026-07-24: protected staging smoke trust boundary
 
 - Removed the dispatcher-controlled staging URL. The manual workflow now obtains both its target and expected origin from the protected `staging` environment variable `STAGING_BASE_URL`.

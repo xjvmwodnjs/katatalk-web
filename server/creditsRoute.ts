@@ -4,7 +4,11 @@
 
 import { Router, type Request, type Response } from "express";
 import { SupabaseAdminUnavailableError } from "./_core/supabaseAdmin";
-import { ensureProfileForClerkUser, getCreditLogs, walletSubjectFromAuthUser } from "./creditService";
+import {
+  getCreditLogs,
+  getOrProvisionProfileForClerkUser,
+  walletSubjectFromAuthUser,
+} from "./creditService";
 import { ANALYZE_AUTH_REQUIRED_MESSAGE, requireAnalyzeAuth } from "./middleware/requireAnalyzeAuth";
 import { creditsLogsUserLimit, creditsMeUserLimit } from "./middleware/apiRateLimit";
 
@@ -49,7 +53,7 @@ creditsRouter.get("/api/credits/me", requireAnalyzeAuth, creditsMeUserLimit, (re
       return;
     }
     try {
-      const r = await ensureProfileForClerkUser(user);
+      const r = await getOrProvisionProfileForClerkUser(user);
       res.json({
         credits: r.credits,
         userId: walletSubjectFromAuthUser(user),
@@ -68,7 +72,7 @@ creditsRouter.get("/api/credits/logs", requireAnalyzeAuth, creditsLogsUserLimit,
       return;
     }
     try {
-      await ensureProfileForClerkUser(user);
+      await getOrProvisionProfileForClerkUser(user);
       const logs = await getCreditLogs(walletSubjectFromAuthUser(user), 20);
       res.json({ logs: logs.map(toPublicCreditLogRow) });
     } catch (e) {

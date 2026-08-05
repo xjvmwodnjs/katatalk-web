@@ -765,6 +765,10 @@ ops/
 
 ---
 
+### COM-101 current update (2026-08-05)
+
+상태: 로컬 구현 완료, 외부 검증 대기. Clerk JWT와 기존 MySQL identity 조회를 read-only hot path로 분리했고, 1,000회 polling auth write 0을 검증했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고 Supabase profile은 기존 행 read-only·누락 시 idempotent 생성이다. invalid token은 401, dependency outage는 고정 비반영 503이며 tRPC outage semantics를 보존한다. 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9는 통과했지만 GitHub CI는 pending이다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남는다.
+
 ## 9. 실행 백로그
 
 | 순서 | ID      | 우선순위 | 작업                                                                          | 주 영역         | 선행 조건      | Definition of Done                                   |

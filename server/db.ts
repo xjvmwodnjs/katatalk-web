@@ -19,8 +19,8 @@ export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+    } catch {
+      console.warn("[Database] DATABASE_CONNECTION_UNAVAILABLE");
       _db = null;
     }
   }
@@ -81,9 +81,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
     });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
+  } catch {
+    console.error("[Database] DATABASE_USER_UPSERT_FAILED");
+    throw new Error("DATABASE_USER_UPSERT_FAILED");
   }
 }
 
@@ -95,6 +95,22 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/** 인증 경계용 strict lookup. DB 장애와 실제 row 부재를 구분한다. */
+export async function getUserByOpenIdRequired(openId: string) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("AUTH_IDENTITY_STORE_UNAVAILABLE");
+  }
+
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
 }
