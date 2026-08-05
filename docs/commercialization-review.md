@@ -532,7 +532,7 @@ corepack pnpm credits:audit
 
 - Clerk JWT 검증과 기존 MySQL identity 조회를 read-only hot path로 분리했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 기존 idempotent RPC로 생성한다.
 - 1,000회 polling auth write 0을 검증했다. invalid token은 401, dependency outage는 고정 비반영 503이며 tRPC outage semantics를 유지한다.
-- 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9는 통과했지만 GitHub CI는 pending이다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남는다.
+- 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job이 통과했다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남는다.
 
 ### 2026-07-24: protected staging smoke trust boundary
 

@@ -1,6 +1,6 @@
 # KataTalk
 
-2026-08-05 COM-101 진행: Clerk JWT와 MySQL identity read-only hot path 및 1,000 polling write 0을 검증했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 idempotent RPC로 생성한다. typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9는 통과했지만 GitHub CI는 pending이며 실제 Clerk/JWKS staging E2E는 COM-113으로 남아 있다.
+2026-08-05 COM-101 진행: Clerk JWT와 MySQL identity read-only hot path 및 1,000 polling write 0을 검증했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 idempotent RPC로 생성한다. typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job이 통과했다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남아 있다.
 
 ## Production Clerk 클라이언트 산출물 게이트 (2026-08)
 
