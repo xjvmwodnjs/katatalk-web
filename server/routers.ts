@@ -1,7 +1,13 @@
 import { COOKIE_NAME } from "@shared/const";
+import { provisionClerkUserForFirstUse } from "./_core/clerkAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import {
+  authOptionalProcedure,
+  publicProcedure,
+  protectedProcedure,
+  router,
+} from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
@@ -11,7 +17,7 @@ export const appRouter = router({
   system: systemRouter,
 
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: authOptionalProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -39,7 +45,8 @@ export const appRouter = router({
     updateLanguage: protectedProcedure
       .input(z.object({ language: z.enum(["ko", "en", "zh", "ja"]) }))
       .mutation(async ({ ctx, input }) => {
-        await db.updatePreferredLanguage(ctx.user.id, input.language);
+        const user = await provisionClerkUserForFirstUse(ctx.user);
+        await db.updatePreferredLanguage(user.id, input.language);
         return { success: true };
       }),
   }),

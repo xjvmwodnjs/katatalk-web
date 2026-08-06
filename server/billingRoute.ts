@@ -10,10 +10,11 @@ import express, { Router } from "express";
 import { z } from "zod";
 import {
   addCreditsFromPaymentWebhook,
-  ensureProfileForClerkUser,
   fetchCreditLogIdByIdempotencyKey,
+  getOrProvisionProfileForClerkUser,
   walletSubjectFromAuthUser,
 } from "./creditService";
+import { provisionClerkUserForFirstUse } from "./_core/clerkAuth";
 import {
   ANALYZE_AUTH_REQUIRED_MESSAGE,
   requireAnalyzeAuth,
@@ -414,9 +415,10 @@ function createCheckoutHandler(req: Request, res: Response): void {
       const impl = getPaymentProvider(providerId);
 
       try {
-        await ensureProfileForClerkUser(user);
+        const provisionedUser = await provisionClerkUserForFirstUse(user);
+        await getOrProvisionProfileForClerkUser(provisionedUser);
         const out = await impl.createCreditCheckout({
-          user,
+          user: provisionedUser,
           packageId,
           provider: providerId,
           locale: uiLocale,

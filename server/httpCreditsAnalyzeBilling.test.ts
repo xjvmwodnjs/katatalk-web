@@ -291,12 +291,14 @@ describe("HTTP credits / analyze ownership / billing", () => {
     expect(body.creditAmount).toBe(20);
   });
 
-  it("POST /api/billing/create-checkout calls ensureProfileForClerkUser before Lemon checkout API", async () => {
+  it("POST /api/billing/create-checkout provisions a missing profile before Lemon checkout API", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const ensureSpy = vi.spyOn(creditService, "ensureProfileForClerkUser").mockResolvedValue({
-      credits: 2,
-      signupBonusRows: 0,
-    });
+    const ensureSpy = vi
+      .spyOn(creditService, "getOrProvisionProfileForClerkUser")
+      .mockResolvedValue({
+        credits: 2,
+        signupBonusRows: 0,
+      });
     const originalFetch = global.fetch.bind(global);
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import http from "http";
+import * as clerkAuth from "./_core/clerkAuth";
 import * as resolve from "./_core/resolveRequestUser";
 import * as creditService from "./creditService";
 import { analyzeRouter } from "./analyzeRoute";
@@ -447,6 +448,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   it("POST /api/analyze inserts analysis_jobs row (queued)", async () => {
+    const provisionUserSpy = vi.spyOn(
+      clerkAuth,
+      "provisionClerkUserForFirstUse"
+    );
     const ensureWalletSpy = vi.spyOn(
       creditService,
       "ensureWalletWithSignupBonus"
@@ -473,9 +478,9 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(row.sgf_sha256).toBe(sha256HexUtf8(minimalSgf));
     expect(row.sgf_size_bytes).toBe(utf8ByteLength(minimalSgf));
     expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledWith(
-      expect.anything(),
-      { ensureWallet: false }
+      expect.anything()
     );
+    expect(provisionUserSpy).toHaveBeenCalledTimes(1);
     expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -509,6 +514,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   it("POST rejects malformed UTF-8 before wallet, debit, or enqueue", async () => {
+    const provisionUserSpy = vi.spyOn(
+      clerkAuth,
+      "provisionClerkUserForFirstUse"
+    );
     const ensureWalletSpy = vi.spyOn(
       creditService,
       "ensureWalletWithSignupBonus"
@@ -541,6 +550,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       message: "Invalid SGF: the uploaded file must be valid UTF-8.",
     });
     expect(ensureWalletSpy).not.toHaveBeenCalled();
+    expect(provisionUserSpy).not.toHaveBeenCalled();
     expect(atomicEnqueueSpy).not.toHaveBeenCalled();
     expect(vitestAnalysisJobsStore.size).toBe(0);
   });
@@ -688,9 +698,8 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(legacyInsertSpy).not.toHaveBeenCalled();
     expect(vitestAnalysisJobsStore.size).toBe(0);
     expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledTimes(cases.length);
-    for (const [, options] of vi.mocked(resolve.tryResolveUserFromRequest).mock
-      .calls) {
-      expect(options).toEqual({ ensureWallet: false });
+    for (const call of vi.mocked(resolve.tryResolveUserFromRequest).mock.calls) {
+      expect(call).toHaveLength(1);
     }
   });
 

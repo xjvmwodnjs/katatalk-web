@@ -1,9 +1,13 @@
 import { verifyToken } from "@clerk/backend";
+import {
+  TokenVerificationErrorReason,
+  type TokenVerificationError,
+} from "@clerk/backend/errors";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import { AuthDependencyUnavailableError } from "./authErrors";
 import { ENV } from "./env";
 import type { AuthenticatedUser } from "./sdk";
-import { ensureWalletWithSignupBonus } from "../creditService";
 
 function mapRow(row: User): AuthenticatedUser {
   return { ...row } as AuthenticatedUser;
@@ -34,29 +38,75 @@ function buildClerkUserWithoutDb(
   } as AuthenticatedUser;
 }
 
-/**
- * Clerk 세션 JWT 검증 후 users 동기화. CLERK_SECRET_KEY 는 서버 전용.
- * DATABASE_URL 이 없으면 DB upsert 없이 JWT 클레임만으로 사용자를 반환한다.
- */
-export async function verifyClerkBearerAndSyncUser(
-  accessToken: string,
-  options: { ensureWallet?: boolean } = {}
-): Promise<AuthenticatedUser | null> {
-  if (!ENV.clerkSecretKey) {
-    console.error("[clerkAuth] CLERK_SECRET_KEY 가 비어 있습니다.");
-    return null;
+const INVALID_TOKEN_REASONS = new Set<string>([
+  TokenVerificationErrorReason.TokenExpired,
+  TokenVerificationErrorReason.TokenInvalid,
+  TokenVerificationErrorReason.TokenInvalidAlgorithm,
+  TokenVerificationErrorReason.TokenInvalidAuthorizedParties,
+  TokenVerificationErrorReason.TokenInvalidSignature,
+  TokenVerificationErrorReason.TokenNotActiveYet,
+  TokenVerificationErrorReason.TokenIatInTheFuture,
+  TokenVerificationErrorReason.TokenVerificationFailed,
+  TokenVerificationErrorReason.JWKKidMismatch,
+]);
+
+function isInvalidClerkTokenError(error: unknown): boolean {
+  const reason =
+    error != null && typeof error === "object"
+      ? (error as Partial<TokenVerificationError>).reason
+      : undefined;
+  return typeof reason === "string" && INVALID_TOKEN_REASONS.has(reason);
+}
+
+function isParsableJwtSyntax(token: string): boolean {
+  const segments = token.split(".");
+  if (segments.length !== 3) {
+    return false;
   }
 
-  let payload: Awaited<ReturnType<typeof verifyToken>>;
   try {
-    payload = await verifyToken(accessToken, {
-      secretKey: ENV.clerkSecretKey,
-    });
-  } catch {
-    return null;
-  }
+    const [headerSegment, payloadSegment, signatureSegment] = segments;
+    if (!headerSegment || !payloadSegment || !signatureSegment) {
+      return false;
+    }
+    for (const segment of segments) {
+      if (!/^[A-Za-z0-9_-]+$/.test(segment)) {
+        return false;
+      }
+      const bytes = Buffer.from(segment, "base64url");
+      if (bytes.length === 0 || bytes.toString("base64url") !== segment) {
+        return false;
+      }
+    }
 
-  if (!payload || typeof payload.sub !== "string") {
+    const header = JSON.parse(
+      Buffer.from(headerSegment, "base64url").toString("utf8")
+    ) as unknown;
+    const payload = JSON.parse(
+      Buffer.from(payloadSegment, "base64url").toString("utf8")
+    ) as unknown;
+    return (
+      header != null &&
+      typeof header === "object" &&
+      !Array.isArray(header) &&
+      payload != null &&
+      typeof payload === "object" &&
+      !Array.isArray(payload)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function clerkClaimsFromPayload(
+  payload: Awaited<ReturnType<typeof verifyToken>>
+): {
+  openId: string;
+  email: string | null;
+  name: string | null;
+} | null {
+  const subject = typeof payload?.sub === "string" ? payload.sub.trim() : "";
+  if (!subject) {
     return null;
   }
 
@@ -76,35 +126,97 @@ export async function verifyClerkBearerAndSyncUser(
           ? (email.split("@")[0] ?? null)
           : null;
 
-  const openId = `clerk:${payload.sub}`;
-  const shouldEnsureWallet = options.ensureWallet !== false;
+  return { openId: `clerk:${subject}`, email, name };
+}
 
-  const hasDatabaseUrl = Boolean(ENV.databaseUrl?.trim());
-  if (!hasDatabaseUrl) {
-    const u = buildClerkUserWithoutDb(openId, email, name);
-    if (shouldEnsureWallet) {
-      await ensureWalletWithSignupBonus(u);
-    }
-    return u;
+/**
+ * Clerk 세션 JWT를 검증하고 기존 identity를 읽기만 한다.
+ *
+ * 이 함수는 polling/auth.me 경로에서 호출되므로 MySQL upsert나 Supabase
+ * profile provisioning을 절대 수행하지 않는다. DB row가 아직 없으면 검증된
+ * JWT claim 기반 identity를 반환하고, 명시적 first-use 경계가 별도로 생성한다.
+ */
+export async function verifyClerkBearerReadOnly(
+  accessToken: string
+): Promise<AuthenticatedUser | null> {
+  if (!ENV.clerkSecretKey) {
+    throw new AuthDependencyUnavailableError();
   }
 
-  await db.upsertUser({
-    openId,
-    email,
-    name,
-    loginMethod: "clerk",
-    lastSignedIn: new Date(),
-  });
+  let payload: Awaited<ReturnType<typeof verifyToken>>;
+  try {
+    payload = await verifyToken(accessToken, {
+      secretKey: ENV.clerkSecretKey,
+    });
+  } catch (error) {
+    if (isInvalidClerkTokenError(error) || !isParsableJwtSyntax(accessToken)) {
+      return null;
+    }
+    throw new AuthDependencyUnavailableError();
+  }
 
-  const row = await db.getUserByOpenId(openId);
-  if (!row) {
-    console.warn("[clerkAuth] DB 사용자 행 없음 — 연결 또는 마이그레이션 확인");
+  const identity = clerkClaimsFromPayload(payload);
+  if (!identity) {
     return null;
   }
 
-  const authed = mapRow(row);
-  if (shouldEnsureWallet) {
-    await ensureWalletWithSignupBonus(authed);
+  if (!ENV.databaseUrl?.trim()) {
+    return buildClerkUserWithoutDb(
+      identity.openId,
+      identity.email,
+      identity.name
+    );
   }
-  return authed;
+
+  try {
+    const row = await db.getUserByOpenIdRequired(identity.openId);
+    return row
+      ? mapRow(row)
+      : buildClerkUserWithoutDb(identity.openId, identity.email, identity.name);
+  } catch {
+    throw new AuthDependencyUnavailableError();
+  }
+}
+
+/**
+ * Explicit first-use identity provisioning for validated mutation boundaries.
+ * Existing identities return without a write; new rows use the existing
+ * idempotent upsert contract and are read back before continuing.
+ */
+export async function provisionClerkUserForFirstUse(
+  user: AuthenticatedUser
+): Promise<AuthenticatedUser> {
+  if (
+    !user.openId.startsWith("clerk:") ||
+    !ENV.databaseUrl?.trim() ||
+    user.id !== 0
+  ) {
+    return user;
+  }
+
+  try {
+    const existing = await db.getUserByOpenIdRequired(user.openId);
+    if (existing) {
+      return mapRow(existing);
+    }
+
+    await db.upsertUser({
+      openId: user.openId,
+      email: user.email ?? null,
+      name: user.name ?? null,
+      loginMethod: "clerk",
+      lastSignedIn: new Date(),
+    });
+
+    const created = await db.getUserByOpenIdRequired(user.openId);
+    if (!created) {
+      throw new AuthDependencyUnavailableError();
+    }
+    return mapRow(created);
+  } catch (error) {
+    if (error instanceof AuthDependencyUnavailableError) {
+      throw error;
+    }
+    throw new AuthDependencyUnavailableError();
+  }
 }

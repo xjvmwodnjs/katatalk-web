@@ -17,6 +17,10 @@ export type EnsureProfileResult = {
   signupBonusRows: number;
 };
 
+type ExistingCreditProfile = {
+  credits?: unknown;
+};
+
 export type CreditLogRow = {
   id: string;
   user_id: string;
@@ -94,18 +98,30 @@ export async function ensureProfileForClerkUser(user: AuthenticatedUser): Promis
   return { credits, signupBonusRows: signupBonusRows ?? 0 };
 }
 
-export async function getCreditBalance(clerkProfileId: string): Promise<number> {
+/** Existing profiles stay read-only; only a genuinely missing profile is provisioned. */
+export async function getOrProvisionProfileForClerkUser(
+  user: AuthenticatedUser
+): Promise<EnsureProfileResult> {
   const sb = getSupabaseAdmin();
+  const userId = walletSubjectFromAuthUser(user);
   const { data, error } = await sb
     .from("profiles")
     .select("credits")
-    .eq("id", clerkProfileId)
+    .eq("id", userId)
     .maybeSingle();
   if (error) {
     throw new Error(error.message);
   }
-  const row = data as { credits?: number } | null;
-  return typeof row?.credits === "number" ? row.credits : 0;
+
+  if (data != null) {
+    const credits = (data as ExistingCreditProfile).credits;
+    if (!Number.isSafeInteger(credits) || (credits as number) < 0) {
+      throw new Error("profiles: invalid credit response");
+    }
+    return { credits: credits as number, signupBonusRows: 0 };
+  }
+
+  return ensureProfileForClerkUser(user);
 }
 
 export async function getCreditLogs(clerkProfileId: string, limit = 20): Promise<CreditLogRow[]> {
@@ -727,10 +743,10 @@ export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<strin
 
 /** @deprecated 이름 호환 — ensureProfileForClerkUser 사용 권장 */
 export async function ensureWalletWithSignupBonus(user: AuthenticatedUser): Promise<void> {
-  await ensureProfileForClerkUser(user);
+  await getOrProvisionProfileForClerkUser(user);
 }
 
 export async function getWalletBalance(user: AuthenticatedUser): Promise<number> {
-  await ensureProfileForClerkUser(user);
-  return getCreditBalance(walletSubjectFromAuthUser(user));
+  const profile = await getOrProvisionProfileForClerkUser(user);
+  return profile.credits;
 }

@@ -38,6 +38,7 @@ import {
   requireAnalyzeAuthBeforeAdmission,
 } from "./middleware/requireAnalyzeAuth";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
+import { provisionClerkUserForFirstUse } from "./_core/clerkAuth";
 import { isMockAnalysisAllowed } from "./_core/env";
 import { analysisJobStore } from "./inMemoryAnalysisJobStore";
 import type { AnalysisJobLanguage } from "./analysisJobStore.types";
@@ -369,7 +370,7 @@ analyzeRouter.post(
   handleMulterUpload,
   (req: Request, res: Response) => {
     void (async () => {
-      const user = req.katatalkUser;
+      let user = req.katatalkUser;
       if (!user) {
         sendUploadError(res, 401, "로그인이 필요합니다. 로그인 후 다시 시도해 주세요.");
         return;
@@ -403,6 +404,7 @@ analyzeRouter.post(
       }
 
       try {
+        user = await provisionClerkUserForFirstUse(user);
         await ensureWalletWithSignupBonus(user);
       } catch (e) {
         if (e instanceof SupabaseAdminUnavailableError) {

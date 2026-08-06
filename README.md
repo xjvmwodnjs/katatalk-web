@@ -1,5 +1,7 @@
 # KataTalk
 
+2026-08-05 COM-101 진행: Clerk JWT와 MySQL identity read-only hot path 및 1,000 polling write 0을 검증했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 idempotent RPC로 생성한다. typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job이 통과했다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남아 있다.
+
 ## Production Clerk 클라이언트 산출물 게이트 (2026-08)
 
 모든 `vite build`/`pnpm build`는 `VITE_AUTH_PROVIDER=clerk`와 Clerk 형식의 유효한 `VITE_CLERK_PUBLISHABLE_KEY`를 요구한다. source commit은 GitHub `GITHUB_SHA`, Railway `RAILWAY_GIT_COMMIT_SHA`, Render `RENDER_GIT_COMMIT` 또는 clean Git HEAD에서만 가져오며, 둘 이상 있으면 서로 같아야 한다. 선택 assertion `KATATALK_BUILD_COMMIT_SHA`를 설정하면 이 검증된 SHA와 정확히 일치해야 하고, Git metadata가 있는 dirty checkout은 실패한다. Vite와 후속 verifier는 process env와 `.env.production`을 같은 우선순위로 읽는다. Vite는 `dist/public/client-build-manifest.json`에 provider, source SHA, Clerk test/live 구분, publishable-key SHA-256만 기록하고 원문 key는 기록하지 않는다. `pnpm build`는 manifest·index·참조 asset·Clerk chunk를 다시 검증한다. manifest 응답은 `no-store`/`nosniff`이며 staging smoke는 commit과 `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`가 일치하는지 **credential 요청 전에 검사하고 직전에 한 번 더 검사**한다. padding 유무와 관계없이 정상 Clerk publishable key를 지원하며, 이미 주입된 key의 지문은 `pnpm client:clerk-key-fingerprint`로 원문 출력 없이 계산한다. `pnpm dev`에는 이 build provenance gate를 적용하지 않는다.
