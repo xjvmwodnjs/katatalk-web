@@ -99,7 +99,10 @@ function verifyDeniedRpc(database, role) {
       database,
       label: `${role} ${denied.label} denial`,
       sql: `SET ROLE ${role};\n${denied.call}`,
-      match: new RegExp(`42501:[^\\n]*permission denied for function ${denied.name}`, "i"),
+      match: new RegExp(
+        `42501:[^\\n]*permission denied for function ${denied.name}`,
+        "i"
+      ),
     });
   }
 }
