@@ -83,16 +83,25 @@ function migrate(database, through) {
 
 function verifyDeniedRpc(database, role) {
   section(`${role} SQL execution denial`);
-  runSqlExpectingFailure({
-    database,
-    label: `${role} atomic failure RPC denial`,
-    sql: `SET ROLE ${role};
-SELECT public.fail_analysis_job_and_refund_with_lease(
-  'missing-job', 'untrusted-worker', 1, 'KATAGO_TIMEOUT', 'untrusted call'
-);`,
-    match:
-      /42501:[^\n]*permission denied for function fail_analysis_job_and_refund_with_lease/i,
-  });
+  for (const denied of [
+    {
+      label: "atomic failure RPC",
+      name: "fail_analysis_job_and_refund_with_lease",
+      call: "SELECT public.fail_analysis_job_and_refund_with_lease('missing-job', 'untrusted-worker', 1, 'KATAGO_TIMEOUT', 'untrusted call');",
+    },
+    {
+      label: "finalization reconciliation RPC",
+      name: "reconcile_analysis_job_finalization",
+      call: "SELECT public.reconcile_analysis_job_finalization('missing-job', false);",
+    },
+  ]) {
+    runSqlExpectingFailure({
+      database,
+      label: `${role} ${denied.label} denial`,
+      sql: `SET ROLE ${role};\n${denied.call}`,
+      match: new RegExp(`42501:[^\\n]*permission denied for function ${denied.name}`, "i"),
+    });
+  }
 }
 
 async function waitForLockWait(database, queryMarker, timeoutMs = 2500) {

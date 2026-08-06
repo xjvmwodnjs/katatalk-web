@@ -27,6 +27,7 @@
     "katago:concurrency-benchmark": "tsx scripts/katago-concurrency-benchmark.ts",
     "deploy:smoke": "tsx scripts/deploy-smoke.ts",
     "credits:audit": "tsx scripts/credit-ledger-audit.ts",
+    "credits:reconcile-finalization": "tsx scripts/analysis-finalization-reconcile.ts",
     "data:retention": "tsx scripts/analysis-data-retention.ts",
     "db:migrate:supabase": "node scripts/db/migrate.mjs",
     "db:evidence:staging": "node scripts/db/collect-staging-evidence.mjs",

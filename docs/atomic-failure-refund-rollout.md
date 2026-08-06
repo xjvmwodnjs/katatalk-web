@@ -1,11 +1,11 @@
 # Atomic analysis failure/refund rollout
 
-This runbook deploys `012_atomic_failure_refund.sql` and `013_harden_security_definer_functions.sql` without allowing an old
+This runbook deploys `012_atomic_failure_refund.sql`, `013_harden_security_definer_functions.sql`, and `014_reconcile_analysis_job_finalization.sql` without allowing an old
 Worker to create a terminal failed job and a separate, missing refund.
 
 ## Safety rules
 
-- Treat numbered migrations as immutable and apply them strictly in numeric order: `001` → `002` → … → `013`. If `012` is already applied, ship corrections as `013`; never edit or reorder history.
+- Treat numbered migrations as immutable and apply them strictly in numeric order: `001` → `002` → … → `014`. If `012` or `013` is already applied, ship corrections as a later migration; never edit or reorder history.
 - Stop and drain every old analysis Worker before applying the migration.
 - Never repair a wallet with a direct `profiles.credits` update. Reconciliation
   must preserve an append-only ledger entry and its idempotency key.
@@ -73,8 +73,8 @@ reviewed forward-only reconciliation migration.
 2. Stop old Workers and wait until no Worker heartbeat is active. Do not start a
    new claim while the schema changes.
 3. Run the preflight audit and reconcile only verified legacy rows.
-4. Apply migrations `001` → `013` in one transaction and retain the output.
-5. Verify the 11 SECURITY DEFINER functions fixed by `013`: owner, `search_path=pg_catalog`, function ACL, and table ACL. Confirm
+4. Apply migrations `001` → `014` in one transaction and retain the output.
+5. Verify the 12 SECURITY DEFINER functions: the original 11 hardened by `013`, plus `014` reconciliation with the same owner, `search_path=pg_catalog`, and function ACL. Confirm
    `PUBLIC`, `anon`, and `authenticated` cannot execute either Worker RPC.
 6. Deploy the API with `ANALYSIS_WORKER_MODE=external` and atomic enqueue
    enabled. Production startup rejects unsafe values.
@@ -94,7 +94,7 @@ reviewed forward-only reconciliation migration.
 - Forced errors after profile update, ledger insert, and job update roll back the
   entire transaction.
 - `anon` and `authenticated` HTTP RPC calls are rejected.
-- Fresh `001 -> 013` and upgrade `011 -> 012 -> 013` both pass, including schema/ACL equivalence.
+- Release evidence must show fresh `001 -> 014` and upgrade `011 -> 012 -> 013 -> 014` both pass, including schema/ACL equivalence.
 
 ## 4. Quarantine monitoring
 
@@ -135,12 +135,21 @@ WHERE f.resolved_at IS NULL
 ORDER BY f.first_failed_at;
 ```
 
-For each row, inspect the job's usage/refund ledger and repair the invariant with
-an approved append-only reconciliation command. Then call
-`fail_analysis_job_and_refund_with_lease` with the stored `analysis_job_id`,
-`lease_worker_id`, and `lease_attempt_count`. Success must atomically finalize
-the job and set `resolved_at`. A null worker ID or an invalid ledger requires a
-new reviewed admin migration; do not invent a lease or edit the balance.
+For the sole supported defect—an unresolved `LEDGER_INVARIANT` quarantine with a
+missing canonical usage link—use the reviewed single-job command. It previews by
+default and refuses wallet drift, duplicate/noncanonical ledger rows, lease
+mismatch, or any different pre-existing link:
+
+```text
+pnpm credits:reconcile-finalization -- --job-id=<job-id>
+pnpm credits:reconcile-finalization -- --job-id=<job-id> --apply --confirm=RECONCILE_FINALIZATION:<job-id>
+```
+
+The apply path relinks only the exact canonical usage row, calls the stored
+lease-fenced finalizer in the same transaction, creates at most one refund, and
+marks the quarantine resolved. Do not call the finalizer manually or directly
+update `analysis_jobs.credit_log_id`. Any other corruption needs a separately
+reviewed forward-only repair.
 
 After recovery, verify one canonical usage, at most one canonical refund, the
 expected wallet balance, `status='failed'`, and a non-null `resolved_at`.

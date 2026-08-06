@@ -7,6 +7,14 @@ VALUES
   ('upgrade-failed', 5),
   ('upgrade-poison', 5);
 
+INSERT INTO public.credit_logs (
+  user_id, amount, type, description, idempotency_key
+) VALUES
+  ('upgrade-valid', 5, 'admin_adjustment', 'CI opening balance', 'ci-opening:upgrade-valid'),
+  ('upgrade-refunded', 5, 'admin_adjustment', 'CI opening balance', 'ci-opening:upgrade-refunded'),
+  ('upgrade-failed', 5, 'admin_adjustment', 'CI opening balance', 'ci-opening:upgrade-failed'),
+  ('upgrade-poison', 5, 'admin_adjustment', 'CI opening balance', 'ci-opening:upgrade-poison');
+
 SELECT public.enqueue_paid_analysis_job(
   'upgrade-valid', 'upgrade-valid-job', 2, NULL, 'ko', '(;GM[1])', 'upgrade-valid', 8, true, NULL
 );

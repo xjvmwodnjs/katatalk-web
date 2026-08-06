@@ -18,7 +18,7 @@
 - [~] Worker 동시성 1/2/4 용량 검증: 격리 process C2/4는 메모리 NO-GO. bounded 단일 공유 KataGo C4 round-robin 8건 mini-soak는 8/8, E2E p95 `81686ms`, `5.88 jobs/min`, peak delta `2059.9MiB`, minimum free `8423MiB`, 품질 0/0으로 로컬 GO. query 실패 격리와 child crash pending 복구 단위 검증 완료. 실제 corpus·Worker RSS/GPU VRAM·Supabase staging queue·30~60분 soak·환불/reclaim fault injection 필요
 - [x] Worker runtime preflight 구현 — `pnpm worker:preflight`이 큐 claim 없이 KataGo 파일·승률 config·backend/GPU·동시성 정책을 fail-closed 검사. 실제 staging Worker 실행은 아직 필요.
 - [~] Worker observability foundation implemented: service-role status RPC and `/ops/analysis-worker-health` distinguish idle Worker liveness from job leases. Supabase migration, staging TTL/restart, and long-running job soak remain required.
-- [~] COM-001 quarantine operations visibility implemented: token-protected `/ops/analysis-finalization-quarantine` returns only unresolved count and oldest timestamp, fails closed without backend details, and stays separate from Web readiness. Staging response verification, monitor wiring, alert drill, and a separately reviewed append-only reconciliation command remain required.
+- [~] COM-001 quarantine operations visibility and narrow reconciliation command implemented: token-protected `/ops/analysis-finalization-quarantine` returns only unresolved count and oldest timestamp; `pnpm credits:reconcile-finalization -- --job-id=<id>` previews a single quarantined job, while apply additionally requires `--apply --confirm=RECONCILE_FINALIZATION:<id>`. The RPC checks the canonical usage/refund ledger, wallet sum, stored lease, and exact state before it writes. Staging response verification, monitor wiring, alert drill, and real Supabase evidence remain required.
 - [~] COM-005 Japanese-only SGF rules, strict root `SZ`/`KM`, initial-player, and root game-metadata contracts implemented. `sgf-game-info-v1` carries safe authored-or-null `PB`/`PW`/`DT`/`RE`; valid FF4 partial/comma `DT` is accepted while invalid shortcut state is rejected; `RE` keeps raw plus canonical generic `B+`/`W+` win and bounded lexical numeric margins (max 1000, exact decimal round-trip required). Invalid optional fields are field-local; malformed UTF-8 is a fixed 400 before wallet/debit/enqueue. Marked results are revalidated; legacy `katago-worker-v1` reparses `sgf_content`/`sgfContent` or hides placeholders. UI displays `DT` directly and uses common `ProductGameResult` parsing for `RE`. Remaining: post-move transition, compressed setup ranges, full legality, additional rulesets, real-exporter compatibility, staging evidence, and non-UTF8 legacy charset/CA transcoding compatibility. Root-only metadata is narrower than FF4 `game-info`; real-corpus privacy rules remain mandatory.
 - [~] **COM-106 production Clerk client artifact gate** — 모든 Vite build에서 Clerk provider·publishable key 문법과 clean Git/platform source commit을 fail-closed 검증하고, raw key 없는 manifest와 Clerk chunk를 동일 env-file 우선순위의 package build에서 재검증한다. staging smoke는 commit/key 지문을 credential 없이 먼저 검사하고 토큰 전송 직전에 재검사한다. 실제 GitHub `staging` 환경 구성, Clerk tenant 실로그인, Web/Worker secret 최소화는 아직 필요하다.
 - [~] **COM-101 authentication read-only hot path** — Clerk JWT와 기존 MySQL identity 조회는 polling/GET에서 write 0이다. MySQL identity는 valid SGF, checkout, 명시적 mutation에서만 first-use 생성하고 Supabase profile은 기존 행 read-only·누락 시 idempotent 생성이다. invalid token은 401, Clerk/JWKS/DB 장애는 고정 503으로 구분한다. 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job 통과. 실제 Clerk/JWKS staging E2E(COM-113)는 대기 중이다.
@@ -56,7 +56,7 @@
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
-- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. 운영에는 **`001 → 013` 전체 migration** 적용 필요.
+- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. 운영에는 **`001 → 014` 전체 migration** 적용 필요.
 - [x] **analysis_jobs worker heartbeat** — `heartbeatAnalysisJobLease` + running `progress` 갱신 시 `locked_at` 연장 + KataGo 구간 `ANALYSIS_WORKER_HEARTBEAT_SECONDS` 주기 갱신. **heartbeat RPC 예외·`LEASE_LOST`** 는 `completed`/환불 없이 **running** 유지(stale 재시도).
 - [ ] **SGF 원문 보존 정책 확정** — MVP 는 `analysis_jobs.sgf_content` DB 컬럼; 운영 확대 시 **Supabase Storage/S3 이전**, **TTL 삭제**, 사용자 삭제 요청, raw artifact 권한 분리(README «SGF 원문 저장» 절 참고).
 - [ ] **GET 완료 응답 + `data.sgf_content` 용량** — DB 원문을 JSON 응답에 병합하므로 대형 SGF·동시 폴링 시 **payload·대역폭** 부담이 커질 수 있음(업로드 상한은 기존 검증). 운영 전 **p95 응답 크기** 확인; 장기적으로 **`sgfUrl` presigned** 또는 **별도 다운로드 API**로 분리 검토.
@@ -92,12 +92,12 @@
 
 ## 최신 master 배포 전 smoke (체크리스트)
 
-> 저장소에 migration SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 `001 → 013`이 적용됐는지** history·catalog·SQL로 확인하세요.
+> 저장소에 migration SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 `001 → 014`이 적용됐는지** history·catalog·SQL로 확인하세요.
 > 아래는 **문서화된 수동 절차**이며, 코드·스키마 변경은 포함하지 않습니다.
 
-### Supabase `001 → 013` 적용 확인 절차
+### Supabase `001 → 014` 적용 확인 절차
 
-1. **적용 순서**: **001 → 002 → … → 013** 숫자순으로 고정한다. 이미 적용된 migration은 수정하지 않으며, 기존 DB는 reviewed baseline 없이는 fail-closed 한다.
+1. **적용 순서**: **001 → 002 → … → 014** 숫자순으로 고정한다. 이미 적용된 migration은 수정하지 않으며, 기존 DB는 reviewed baseline 없이는 fail-closed 한다.
 2. **`007` 반영 여부** — SQL Editor 예시:
    - `claim_next_analysis_job` 시그니처: **`public.claim_next_analysis_job(text, integer)`** 존재(인자명은 DB마다 다를 수 있으나 **text + integer** 두 인자).
    - `analysis_jobs` 컬럼 존재: **`locked_at`**, **`locked_by`**, **`attempt_count`**, **`max_attempts`**, **`next_retry_at`**, **`last_error_code`** (`007_analysis_job_lease_retry.sql` 주석과 일치).
@@ -144,7 +144,7 @@
 ## 운영 배포 체크리스트
 
 - [ ] **최신 master 배포 전 smoke** — 위 **「최신 master 배포 전 smoke (체크리스트)」** 절(migration/ACL·env·Deep Search OFF/ON) 전부 수행
-- [ ] Supabase migration **`001 → 013` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: 11개 SECURITY DEFINER owner/search path/ACL 고정 — README와 database migration gate 참고)
+- [ ] Supabase migration **`001 → 014` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: 최초 11개 SECURITY DEFINER owner/search path/ACL 고정, `014`: 12번째 reconciliation RPC — README와 database migration gate 참고)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종
@@ -158,4 +158,4 @@
 
 ## Database migration gate
 
-- [~] `001 → 013` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현 및 GitHub PostgreSQL 16 CI 통과. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.
+- [~] `001 → 014` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.

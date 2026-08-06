@@ -2,7 +2,7 @@
 
 ## 목적
 
-Supabase PostgreSQL 스키마는 번호가 매겨진 migration을 **`001` → `002` → … → `013` 숫자순**으로만 적용한다. 이미 이력이 있는 DB를 추측으로 baseline 처리하지 않는다. reviewed baseline이 없으면 gate는 fail-closed 한다.
+Supabase PostgreSQL 스키마는 번호가 매겨진 migration을 **`001` → `002` → … → `014` 숫자순**으로만 적용한다. 이미 이력이 있는 DB를 추측으로 baseline 처리하지 않는다. reviewed baseline이 없으면 gate는 fail-closed 한다.
 
 ## 실행 명령
 
@@ -12,7 +12,7 @@ Supabase PostgreSQL 스키마는 번호가 매겨진 migration을 **`001` → `0
 
 ## 실제 staging 읽기 전용 증거
 
-보호된 수동 workflow인 `.github/workflows/staging-db-evidence.yml`은 `master`의 동일 커밋에서 폐기 가능한 PostgreSQL 16 DB로 expected contract를 만들고, 그 파일의 SHA-256을 다음 job에 직접 전달한다. expected contract는 fresh와 `011 → 013` upgrade DB의 canonical security catalog hash 및 application structure hash가 모두 같은 경우에만 생성된다. staging에서 관찰한 값을 expected로 승격하거나 `--accept-current`로 drift를 승인하는 경로는 없다.
+보호된 수동 workflow인 `.github/workflows/staging-db-evidence.yml`은 `master`의 동일 커밋에서 폐기 가능한 PostgreSQL 16 DB로 expected contract를 만들고, 그 파일의 SHA-256을 다음 job에 직접 전달한다. expected contract는 fresh와 `011 → 014` upgrade DB의 canonical security catalog hash 및 application structure hash가 모두 같은 경우에만 생성된다. staging에서 관찰한 값을 expected로 승격하거나 `--accept-current`로 drift를 승인하는 경로는 없다.
 
 GitHub Actions 실행 [`30058581181`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30058581181)에서 실제 PostgreSQL 16 catalog SQL, fresh/upgrade 동일성, migration history 누락, 함수 본문, table persistence, 독립 composite type drift fixture와 정제된 artifact 업로드가 모두 통과했다. 이 증거는 폐기 가능한 DB 계약을 검증한 것이며 실제 Supabase staging 결과를 대신하지 않는다.
 
@@ -51,19 +51,19 @@ credential은 `staging-evidence` job의 collector step에만 주입한다. workf
 
 `katatalk_schema_migrations` 이력 없이 `profiles`, `credit_logs`, `analysis_jobs` 중 하나라도 있는 DB는 runner가 즉시 거절한다. 기존 Supabase 프로젝트를 자동으로 baseline하지 않는다. 실제 schema/ACL fingerprint와 적용 이력을 검토한 승인 artifact 및 잠긴 baseline 절차는 아직 별도 출시 게이트이며, 준비되기 전에는 기존 운영 DB에 이 runner를 사용하지 않는다.
 
-## 013 보안 고정
+## 013/014 보안 고정
 
-`013_harden_security_definer_functions.sql`은 11개 `SECURITY DEFINER` 함수의 owner, `search_path=pg_catalog`, 함수 ACL과 관련 table ACL을 고정한다. `PUBLIC`, `anon`, `authenticated`의 실행은 거부되어야 하며 실제 `anon`·`authenticated` 호출은 PostgreSQL `42501`을 반환해야 한다.
+`013_harden_security_definer_functions.sql`은 최초 11개 `SECURITY DEFINER` 함수의 owner, `search_path=pg_catalog`, 함수 ACL과 관련 table ACL을 고정한다. `014_reconcile_analysis_job_finalization.sql`은 12번째 privileged RPC를 같은 owner/search path/ACL 경계로 추가하고, quarantine table의 service-role 직접 쓰기 권한을 제거한다. `PUBLIC`, `anon`, `authenticated`의 실행은 거부되어야 하며 실제 `anon`·`authenticated` 호출은 PostgreSQL `42501`을 반환해야 한다.
 
 ## CI 시나리오
 
-1. **Fresh**: 빈 DB에 `001 → 013` 적용.
-2. **Upgrade**: `011`까지 적용된 DB에 `012 → 013` 적용.
+1. **Fresh**: 빈 DB에 `001 → 014` 적용.
+2. **Upgrade**: `011`까지 적용된 DB에 `012 → 013 → 014` 적용.
 3. migration filename/checksum drift는 실패.
 4. 실제 권한으로 `anon`·`authenticated`의 `42501` 거부를 확인.
 5. rollback/fault-injection, quarantine recovery, concurrent replay 및 terminal race를 확인.
 6. fresh와 upgrade의 schema equivalence를 job 내부에서 비교하고 schema checksum, migration manifest, 정제된 RPC security snapshot만 artifact로 보존한다. 함수 본문이 포함될 수 있는 raw dump는 업로드하지 않는다.
-7. fresh와 upgrade에서 동일한 읽기 전용 collector를 실행해 migration history, 11개 RPC, 6개 table, `public` schema의 direct/effective ACL과 RLS를 검증하고 canonical security hash 및 application structure hash가 같은지 확인한다.
+7. fresh와 upgrade에서 동일한 읽기 전용 collector를 실행해 migration history, 12개 RPC, 6개 table, `public` schema의 direct/effective ACL과 RLS를 검증하고 canonical security hash 및 application structure hash가 같은지 확인한다.
 8. SECURITY DEFINER 함수 본문 또는 table persistence만 변조한 별도 DB에서 좁은 권한 hash는 유지되지만 structure hash가 반드시 바뀌는지 확인한다.
 9. application object가 있지만 migration history가 없는 별도 DB에서 collector의 history-absent 분기를 실제 실행하고 `BASELINE_REQUIRED`로 실패하는지 확인한다.
 10. 같은 커밋에 묶인 `expected-staging-db-contract.json`과 정제된 fresh/upgrade evidence를 artifact로 보존한다.

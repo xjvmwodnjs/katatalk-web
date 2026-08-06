@@ -47,10 +47,10 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | ------------------------- | -----------------------: |
 | Git 추적 파일             |   399개 (이번 변경 포함) |
 | TypeScript/TSX            | 289개 파일 / 약 61,134줄 |
-| Vitest 테스트 파일        |                     87개 |
-| Vitest 테스트 수          |                    955개 |
+| Vitest 테스트 파일        |                     90개 |
+| Vitest 테스트 수          |                    981개 |
 | Playwright 시나리오       |                      9개 |
-| Supabase SQL 마이그레이션 |       13개 (`001`~`013`) |
+| Supabase SQL 마이그레이션 |       14개 (`001`~`014`) |
 | GitHub Actions 워크플로   |                      4개 |
 
 ### 실행 검증
@@ -82,7 +82,7 @@ COM-005 실제값 보존 game metadata 커밋 `e2c220f`은 GitHub CI [`304408718
 
 - 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 Manus OAuth, MySQL, Stripe, LLM 중심의 과거 구조를 설명해 현재 Clerk, Supabase, Lemon Squeezy, KataGo Worker 구조와 맞지 않는다.
 - [docs/commercialization-review.md](docs/commercialization-review.md)의 상단 수치와 본문은 현재 저장소와 다르며, 같은 문서의 후반 변경 이력과도 모순된다.
-- [docs/TODO.md](docs/TODO.md)와 [README.md](README.md)의 과거 `007 → 006` 순서는 `001 → 013` 숫자 순서와 단일 runner 안내로 교정했다.
+- [docs/TODO.md](docs/TODO.md)와 [README.md](README.md)의 과거 `007 → 006` 순서는 `001 → 014` 숫자 순서와 단일 runner 안내로 교정했다.
 
 앞으로는 이 `review.md`의 출시 게이트와 백로그를 기준점으로 삼고, 구조 설명은 별도의 최신 `ARCHITECTURE.md`로 다시 작성하는 편이 안전하다.
 
@@ -136,12 +136,12 @@ flowchart LR
 
 ### COM-001. 실패 상태와 환불을 한 트랜잭션으로 묶기
 
-**상태: 검증 중 — 원자 실패/환불·격리 운영 상태 코드와 GitHub PostgreSQL gate 통과, 실제 Supabase 스테이징 출시 증거 대기 (2026-07-28)**
+**상태: 검증 중 — 원자 실패/환불, 격리 상태 endpoint, 단일 작업 reconciliation RPC/CLI를 구현했다. 로컬과 GitHub PostgreSQL gate, 실제 Supabase 스테이징 출시 증거 및 monitor drill이 남아 있다 (2026-08-06).**
 
 - migration `012`가 job row, 원래 usage, profile, refund ledger를 잠그고 실패 전환과 환불을 한 트랜잭션으로 처리한다.
 - 정확한 `(locked_by, attempt_count)`만 finalization할 수 있고, 응답 유실 후 같은 lease 재호출은 중복 지급 없이 수렴한다.
 - KataGo, mock, engine mismatch, max-attempt 실패 경로가 새 atomic finalizer를 사용한다. 프로덕션은 external Worker와 atomic enqueue만 허용한다.
-- 손상된 max-attempt 원장은 `analysis_job_finalization_failures`에 격리되어 매 claim마다 반복 처리되지 않는다. 원장을 고친 뒤 같은 lease의 atomic 성공만 격리를 해제한다.
+- 손상된 max-attempt 원장은 `analysis_job_finalization_failures`에 격리되어 매 claim마다 반복 처리되지 않는다. `014`의 server-only RPC는 canonical usage/refund, wallet 합계, stored lease를 모두 검증한 한 건만 preview/apply로 수렴시키며, 다른 원장 손상은 거절한다.
 - `GET /ops/analysis-finalization-quarantine`은 기존 운영 토큰 뒤에서 미해결 건수와 가장 오래된 발생 시각만 반환한다. 정상은 `200 clear`, 미해결은 경보 가능한 `503 attention_required`, 조회 이상은 상세 없는 `503 unknown`이며 Web readiness와 분리된다.
 - 사용자 API는 내부 engine 진단 대신 allowlist 기반 오류 문구만 반환한다. 상세 진단은 Worker 로그에 남긴다.
 - Worker는 claim 전에 새 RPC contract를 preflight하여 migration 누락 시 기동 실패한다.
@@ -183,7 +183,7 @@ flowchart LR
 - 초기 마이그레이션의 일부 `SECURITY DEFINER` RPC는 PostgreSQL 기본 execute 권한을 그대로 가질 수 있다.
 - [supabase/migrations/006_lock_down_security_definer_rpc.sql](supabase/migrations/006_lock_down_security_definer_rpc.sql)은 이를 뒤늦게 revoke/grant 한다.
 - [supabase/migrations/007_analysis_job_lease_retry.sql](supabase/migrations/007_analysis_job_lease_retry.sql)은 오래된 claim 시그니처를 제거한다.
-- [supabase/migrations/013_harden_security_definer_functions.sql](supabase/migrations/013_harden_security_definer_functions.sql)은 11개 민감 RPC의 owner, `SECURITY DEFINER`, `search_path=pg_catalog`, execute ACL과 직접 table ACL을 전진 수정으로 고정한다.
+- [supabase/migrations/013_harden_security_definer_functions.sql](supabase/migrations/013_harden_security_definer_functions.sql)은 최초 11개 민감 RPC의 owner, `SECURITY DEFINER`, `search_path=pg_catalog`, execute ACL과 직접 table ACL을 전진 수정으로 고정한다. [014](supabase/migrations/014_reconcile_analysis_job_finalization.sql)는 동일 경계의 12번째 reconciliation RPC를 추가하고 quarantine table의 direct service-role 쓰기를 제거한다.
 
 **위험**
 
@@ -196,8 +196,8 @@ flowchart LR
 - service role만 가능한 호출을 anon 토큰으로 시도해 반드시 거절되는 통합 테스트를 만든다.
 - 새 DB에 `001 → 최신` 적용, 운영과 같은 구버전 DB에 `다음 migration` 적용을 CI에서 모두 수행한다.
 - vanilla PostgreSQL에서 `SET ROLE anon/authenticated` 실제 호출이 SQLSTATE `42501`로 거절되는지 검사하고 catalog/ACL snapshot을 artifact로 남긴다.
-- 실제 staging collector는 단일 `REPEATABLE READ READ ONLY` transaction에서 migration history, 11개 RPC, 6개 table, `public` schema의 direct/effective ACL과 RLS만 읽는다. 대상에서 baseline을 만들거나 migration·테스트 SQL·write RPC를 실행하지 않는다.
-- fresh와 `011 → 013` upgrade DB의 canonical catalog hash가 일치할 때만 같은 커밋에 묶인 expected contract를 CI artifact로 만든다. staging 관찰값을 expected로 자동 승인하는 경로는 두지 않는다.
+- 실제 staging collector는 단일 `REPEATABLE READ READ ONLY` transaction에서 migration history, 12개 RPC, 6개 table, `public` schema의 direct/effective ACL과 RLS만 읽는다. 대상에서 baseline을 만들거나 migration·테스트 SQL·write RPC를 실행하지 않는다.
+- fresh와 `011 → 014` upgrade DB의 canonical catalog hash가 일치할 때만 같은 커밋에 묶인 expected contract를 CI artifact로 만든다. staging 관찰값을 expected로 자동 승인하는 경로는 두지 않는다.
 - 함수 본문, relation persistence/replica identity/options, column default/collation, constraint, index, RLS policy 식, trigger 정의는 DB 내부 hash·정규화 catalog로 비교하고 독립 composite를 포함한 예상 밖 public custom type도 거부한다. deparser 설정과 non-pretty 출력을 고정하고 PostgreSQL major도 expected contract와 일치시킨다. SECURITY DEFINER 본문 또는 table persistence만 바꾼 fixture는 좁은 권한 hash가 같아도 application structure hash에서 실패해야 한다. 독립 composite type fixture는 application object count와 structure hash가 모두 바뀌고 `UNEXPECTED_APPLICATION_OBJECT`로 실패해야 한다.
 - collector는 실제 clean checkout과 주장 커밋, expected-contract 파일 digest를 대조하고, direct/pooler DB identity와 HTTP origin이 같은 Supabase project인지 보호된 승인 hash까지 포함해 확인한다.
 - anon `401/42501`, Supabase authenticated user `403/42501`만 성공으로 인정하는 읽기 전용 PostgREST probe를 둔다. redirect, 2xx, 404/PGRST202, 5xx와 잘못된 JWT는 모두 실패한다.
@@ -886,9 +886,10 @@ ops/
 6. **quarantine 운영 가시성**: 운영 토큰으로 보호한 별도 endpoint가 식별자·실패 코드·DB 오류를 노출하지 않고 미해결 건수와 가장 오래된 발생 시각만 보고한다. `503` 경보는 Web readiness와 분리한다.
 7. **오류 경계**: DB와 API에는 allowlist 사용자 문구만 저장·반환하고, 내부 진단은 구조화 Worker 로그로 분리한다.
 8. **감사 강화**: usage 금액, job별 usage/refund 중복, refund owner/amount, non-failed refund를 fail 등급으로 검출한다.
-9. **권한 전진 수정**: `013`이 11개 민감 RPC의 owner와 `search_path=pg_catalog`, runtime execute/table ACL을 하나의 manifest로 고정한다.
-10. **단일 migration runner**: 숫자 순서, SHA-256 이력, advisory lock, 단일 트랜잭션을 강제하고 이력 없는 기존 schema의 자동 baseline을 거절한다.
-11. **실제 DB CI fixture**: PostgreSQL 16에서 fresh `001 → 013`, `011 → 012 → 013` upgrade, checksum drift, ACL/42501, rollback, quarantine, 두 세션 경쟁, 최종 schema/ACL 동등성을 검사한다.
+9. **안전한 reconciliation**: `014`가 missing link인 `LEDGER_INVARIANT` quarantine 하나만 미리보기/명시적 확인으로 처리하고, 하위 finalizer가 거절하면 link update도 rollback한다.
+10. **권한 전진 수정**: `013`의 11개 RPC와 `014`의 12번째 RPC가 owner와 `search_path=pg_catalog`, runtime execute/table ACL manifest를 따른다.
+11. **단일 migration runner**: 숫자 순서, SHA-256 이력, advisory lock, 단일 트랜잭션을 강제하고 이력 없는 기존 schema의 자동 baseline을 거절한다.
+12. **실제 DB CI fixture**: PostgreSQL 16에서 fresh `001 → 014`, `011 → 012 → 013 → 014` upgrade, checksum drift, ACL/42501, rollback, quarantine, 두 세션 경쟁, 최종 schema/ACL 동등성을 검사한다.
 
 내부 크레딧은 PostgreSQL 안에서 이동하므로 이번 범위에는 외부 outbox를 추가하지 않았다. 향후 현금 환불이나 외부 지급처럼 트랜잭션 밖의 side effect가 생길 때 durable outbox를 도입한다.
 
@@ -897,13 +898,13 @@ ops/
 1. GitHub Actions에서 통과한 PostgreSQL gate의 migration manifest, RPC 권한 snapshot, schema checksum artifact를 릴리스 증거로 계속 보존한다.
 2. 실제 스테이징 Supabase에서 catalog snapshot과 anon PostgREST RPC 비-2xx 거절을 확인한다. authenticated HTTP 거절은 전용 staging JWT로 별도 검증한다.
 3. 기존 운영 DB의 schema/ACL fingerprint를 검토해 migration history baseline을 승인한다. runner가 이를 자동 추정하게 두지 않는다.
-4. 구 Worker stop/drain → 사전감사/legacy reconciliation → `012`·`013` migration → API → 새 Worker 순서를 스테이징에서 리허설한다.
+4. 구 Worker stop/drain → 사전감사 → `012`·`013`·`014` migration → API → 새 Worker 순서를 스테이징에서 리허설한다. 격리 복구는 문서화된 preview/confirm command만 사용한다.
 5. KataGo crash/timeout, SGF 누락, engine mismatch, leased mock 실패 E2E 후 ledger audit 불일치가 0인지 확인한다.
 
 ### 다음 변경 단위
 
 1. **COM-002/006 후속**: 통과한 GitHub DB gate를 기준으로 실제 Supabase staging catalog/HTTP snapshot 및 기존 DB baseline 승인을 만든다.
-2. **COM-001 후속**: 구현된 quarantine 상태 endpoint를 실제 monitoring에 연결하고 staging에서 비식별 응답을 확인한다. 쓰기 reconciliation은 별도 보안 검토를 거친 승인된 append-only command로만 만든다.
+2. **COM-001 후속**: 구현된 quarantine 상태 endpoint를 실제 monitoring에 연결하고 staging에서 비식별 응답을 확인한다. `014` reconciliation command는 실제 Supabase 증거와 alert drill을 통과하기 전에는 운영 완료로 간주하지 않는다.
 3. **COM-005 후속**: post-move `PL`/setup transition, compressed setup ranges, 전체 move legality와 extra rulesets를 계약화한다. 실제 exporter/real-engine/staging 증거와 SZ/KM provenance UI 연결을 추가하고, non-UTF8 legacy charset/CA transcoding 호환성을 별도 검토한다.
 4. **COM-008**: queued TTL, Worker offline, cancel/refund 상태 머신을 원자 명령 패턴으로 확장한다.
 5. **CI 유지보수**: GitHub가 보고한 `actions/*@v4` Node.js 20 강제 전환 경고를 없애고 전체 게이트를 다시 실행한다.
