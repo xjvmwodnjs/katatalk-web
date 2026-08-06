@@ -136,7 +136,7 @@ flowchart LR
 
 ### COM-001. 실패 상태와 환불을 한 트랜잭션으로 묶기
 
-**상태: 검증 중 — 원자 실패/환불, 격리 상태 endpoint, 단일 작업 reconciliation RPC/CLI를 구현했다. 로컬과 GitHub PostgreSQL gate, 실제 Supabase 스테이징 출시 증거 및 monitor drill이 남아 있다 (2026-08-06).**
+**상태: 검증 중 — 원자 실패/환불, 격리 상태 endpoint, 단일 작업 reconciliation RPC/CLI를 구현했다. GitHub Actions [31093729191](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31093729191)의 type/unit/build/secret, PostgreSQL migration/ACL/atomicity, Playwright, dependency audit가 모두 통과했다. 실제 Supabase 스테이징 출시 증거 및 monitor drill이 남아 있다 (2026-08-06).**
 
 - migration `012`가 job row, 원래 usage, profile, refund ledger를 잠그고 실패 전환과 환불을 한 트랜잭션으로 처리한다.
 - 정확한 `(locked_by, attempt_count)`만 finalization할 수 있고, 응답 유실 후 같은 lease 재호출은 중복 지급 없이 수렴한다.
