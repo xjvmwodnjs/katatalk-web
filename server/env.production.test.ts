@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { isMockAnalysisAllowed, validateProductionDeploymentEnv } from "./_core/env";
+import {
+  isMockAnalysisAllowed,
+  validateProductionAnalysisWorkerEnv,
+  validateProductionDeploymentEnv,
+} from "./_core/env";
 
 describe("validateProductionDeploymentEnv", () => {
   let backup: NodeJS.ProcessEnv;
@@ -40,7 +44,9 @@ describe("validateProductionDeploymentEnv", () => {
   it("throws when AUTH_PROVIDER is local-dev in production", () => {
     minimalProdBase();
     process.env.AUTH_PROVIDER = "local-dev";
-    expect(() => validateProductionDeploymentEnv()).toThrow(/AUTH_PROVIDER=clerk/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /AUTH_PROVIDER=clerk/
+    );
   });
 
   it("throws when APP_BASE_URL is http://localhost", () => {
@@ -52,28 +58,38 @@ describe("validateProductionDeploymentEnv", () => {
   it("throws when LEMONSQUEEZY_API_KEY is missing", () => {
     minimalProdBase();
     delete process.env.LEMONSQUEEZY_API_KEY;
-    expect(() => validateProductionDeploymentEnv()).toThrow(/LEMONSQUEEZY_API_KEY/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /LEMONSQUEEZY_API_KEY/
+    );
   });
 
   it("throws when VITE_CLERK_PUBLISHABLE_KEY is missing", () => {
     minimalProdBase();
     delete process.env.VITE_CLERK_PUBLISHABLE_KEY;
-    expect(() => validateProductionDeploymentEnv()).toThrow(/VITE_CLERK_PUBLISHABLE_KEY/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /VITE_CLERK_PUBLISHABLE_KEY/
+    );
   });
 
   it("requires the external analysis worker in production", () => {
     minimalProdBase();
     process.env.ANALYSIS_WORKER_MODE = "inline";
-    expect(() => validateProductionDeploymentEnv()).toThrow(/ANALYSIS_WORKER_MODE=external/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /ANALYSIS_WORKER_MODE=external/
+    );
 
     delete process.env.ANALYSIS_WORKER_MODE;
-    expect(() => validateProductionDeploymentEnv()).toThrow(/ANALYSIS_WORKER_MODE/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /ANALYSIS_WORKER_MODE/
+    );
   });
 
   it("rejects disabling atomic enqueue in production", () => {
     minimalProdBase();
     process.env.KATATALK_ATOMIC_ENQUEUE = "false";
-    expect(() => validateProductionDeploymentEnv()).toThrow(/KATATALK_ATOMIC_ENQUEUE=false/);
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /KATATALK_ATOMIC_ENQUEUE=false/
+    );
   });
 
   it("allows atomic enqueue when enabled or left at its safe default", () => {
@@ -114,5 +130,60 @@ describe("isMockAnalysisAllowed", () => {
     expect(isMockAnalysisAllowed()).toBe(false);
     process.env.KATATALK_ALLOW_MOCK_ANALYSIS = "true";
     expect(isMockAnalysisAllowed()).toBe(true);
+  });
+});
+
+describe("validateProductionAnalysisWorkerEnv", () => {
+  let backup: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    backup = { ...process.env };
+  });
+
+  afterEach(() => {
+    process.env = backup;
+  });
+
+  function minimalWorkerEnv(): void {
+    process.env.NODE_ENV = "production";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service_role_placeholder";
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    delete process.env.KATATALK_ATOMIC_ENQUEUE;
+  }
+
+  it("allows a production worker without Web-only secrets", () => {
+    minimalWorkerEnv();
+    delete process.env.AUTH_PROVIDER;
+    delete process.env.CLERK_SECRET_KEY;
+    delete process.env.JWT_SECRET;
+    delete process.env.LEMONSQUEEZY_API_KEY;
+    delete process.env.LEMONSQUEEZY_STORE_ID;
+    delete process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    delete process.env.APP_BASE_URL;
+
+    expect(() => validateProductionAnalysisWorkerEnv()).not.toThrow();
+  });
+
+  it("requires Supabase credentials and external mode", () => {
+    minimalWorkerEnv();
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    expect(() => validateProductionAnalysisWorkerEnv()).toThrow(
+      /SUPABASE_SERVICE_ROLE_KEY/
+    );
+
+    minimalWorkerEnv();
+    process.env.ANALYSIS_WORKER_MODE = "inline";
+    expect(() => validateProductionAnalysisWorkerEnv()).toThrow(
+      /ANALYSIS_WORKER_MODE=external/
+    );
+  });
+
+  it("keeps atomic enqueue fail-closed for workers", () => {
+    minimalWorkerEnv();
+    process.env.KATATALK_ATOMIC_ENQUEUE = "false";
+    expect(() => validateProductionAnalysisWorkerEnv()).toThrow(
+      /KATATALK_ATOMIC_ENQUEUE=false/
+    );
   });
 });
