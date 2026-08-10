@@ -16,6 +16,11 @@ import { setServerListenPort } from "./serverListenPort";
 import { warnIfAppBaseUrlListenPortMismatch } from "./appBaseUrlPortGuard";
 import { resolveListenPortForServer } from "./listenPort";
 import { registerHealthRoutes } from "./healthRoutes";
+import { createBaselineSecurityHeaders } from "./securityHeaders";
+import {
+  createJsonBodyParser,
+  createUrlEncodedBodyParser,
+} from "./requestBodyLimits";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,16 +45,19 @@ async function startServer() {
   validateServerEnv();
 
   const app = express();
+  app.disable("x-powered-by");
   if (ENV.isProduction) {
     app.set("trust proxy", 1);
   }
+  app.use(createBaselineSecurityHeaders({ isProduction: ENV.isProduction }));
   registerHealthRoutes(app);
   const server = createServer(app);
   // 결제 웹훅: 반드시 express.json() 앞에서 raw body 로 수신
   attachPaymentWebhooks(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // SGF upload has its own Multer cap. Keep generic public JSON/form bodies
+  // deliberately small; payment webhooks above retain their raw-body parser.
+  app.use("/api", createJsonBodyParser());
+  app.use("/api", createUrlEncodedBodyParser());
 
   if (ENV.enableLegacyManusStorage) {
     registerStorageProxy(app);
@@ -90,7 +98,10 @@ async function startServer() {
   warnIfAppBaseUrlListenPortMismatch();
 
   server.on("error", (err: NodeJS.ErrnoException) => {
-    console.error(`[server] listen error on port ${port}:`, err?.message ?? err);
+    console.error(
+      `[server] listen error on port ${port}:`,
+      err?.message ?? err
+    );
     process.exit(1);
   });
 
