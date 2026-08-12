@@ -1,8 +1,8 @@
 # KataTalk current architecture
 
-> Current implementation record: 2026-08-10. This document describes the code
+> Current implementation record: 2026-08-12. This document describes the code
 > now in the repository, not a production deployment claim. The detailed
-> commercialization review is in [docs/codebase-commercialization-review-2026-08-10.md](docs/codebase-commercialization-review-2026-08-10.md).
+> production review is in [docs/codebase-production-review-2026-08-12.md](docs/codebase-production-review-2026-08-12.md); the target contract is [docs/production-global-commentary-spec-v1.md](docs/production-global-commentary-spec-v1.md).
 
 ## System boundary
 
@@ -30,6 +30,7 @@ when `ANALYSIS_WORKER_MODE=external`.
 | Legacy identity  | Optional MySQL/Drizzle identity sync                                                               | Compatibility path only; reads stay read-only and first-use mutations are explicit.                                                 |
 | Billing          | Lemon Squeezy one-time credit packs                                                                | Raw-body webhook verification and idempotency grant credits. Toss is scaffolded, not an enabled checkout path.                      |
 | Analysis         | External Worker plus KataGo                                                                        | The Web service enqueues; the Worker owns KataGo execution, lease heartbeat, result/finalization, and worker health.                |
+| Commentary       | Deterministic planner/guard experiments only                                                       | No production Worker, database state, API, UI artifact, or provider call path exists.                                               |
 | Release gates    | Vitest, Playwright, build/provenance, secret scan, dependency audit, PostgreSQL migration/ACL gate | CI proves repository contracts, not third-party staging integration.                                                                |
 
 ## Main flows
@@ -47,6 +48,11 @@ when `ANALYSIS_WORKER_MODE=external`.
 5. The owner polls the owner-scoped result endpoint; the client renders a
    normalized view model, board playback, timeline, and deterministic learning
    signals.
+
+The current status endpoint reads the full job row, and realtime timeline
+progress uses node-local JSONL. Those are not valid scale-out boundaries and
+must be replaced by owner-qualified metadata queries and a shared durable
+progress transport.
 
 ### Payment lifecycle
 
@@ -68,6 +74,42 @@ when `ANALYSIS_WORKER_MODE=external`.
 fail closed when atomic enqueue is explicitly disabled. Local combined
 development continues to use the broader validation path.
 
+The secret profiles are separated, but the Analysis Worker still uses the same
+Supabase service-role credential as Web. That credential can reach privileged
+payment/profile RPCs, so this is not yet a least-privilege database boundary.
+
+## Target global commentary boundary
+
+This is a target, not a description of the current runtime.
+
+```mermaid
+flowchart LR
+  U["Global user"] --> EDGE["CDN / WAF"]
+  EDGE --> API["Stateless Web API"]
+  API --> DB[("Ledger / control DB")]
+  DB --> AQ["Durable fair analysis queue"]
+  AQ --> KW["Least-privilege GPU KataGo Worker"]
+  KW --> EV["EvidenceBundleV2"]
+  KW --> OBJ["Encrypted object storage"]
+  EV --> CQ["Commentary queue"]
+  CQ --> CW["Least-privilege Commentary Worker"]
+  CW --> LLM["Locale-aware provider"]
+  LLM --> G["Strict schema + claim + policy guard"]
+  G --> OBJ
+  DB --> API
+```
+
+The required analysis order is low-cost full-game timeline, adaptive moment
+selection, targeted analysis, bounded Deep Search, then a versioned evidence
+bundle. Every candidate stores black, white, and player-to-move perspectives.
+Natural language is a separate asynchronous expression layer and never repairs
+or invents missing Go evidence. Provider or verifier failure stores a
+deterministic fallback without rerunning KataGo or charging another credit.
+
+Initial global deployment uses one authoritative write region for the ledger,
+with CDN/edge distribution around stateless Web processes. Active-active credit
+ledger writes are out of scope until conflict semantics are explicitly designed.
+
 See [docs/env-guide.md](docs/env-guide.md) for exact deployment variables and
 [docs/database-migration-gate.md](docs/database-migration-gate.md) for the
 migration/ACL evidence procedure.
@@ -78,7 +120,13 @@ migration/ACL evidence procedure.
   staging proof.
 - Rate limiting is in-process and must become a shared store before horizontal
   Web scaling.
+- Analyze submission has no client request idempotency key, queue capacity
+  admission, or per-user fairness before debit.
 - SGF playback is deliberately partial; it is not a complete Go-rules engine.
 - Raw SGF/result storage and retention need a reviewed object-storage, TTL,
   deletion, and legal policy before general availability.
 - No LLM explanatory path is released as verified game advice.
+- Per-turn candidate winrate/score normalization is still provisional; BSI/ADI
+  and decisive-event loss claims must not feed commentary until cross-axis tests pass.
+- Payment handles credit grant but not a complete refund/chargeback event state
+  machine or durable webhook inbox/DLQ.

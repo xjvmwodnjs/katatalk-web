@@ -1,5 +1,7 @@
 # CI Release Gate
 
+> **Current review alignment (2026-08-12):** Review-start PR #4 run [`31367782357`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31367782357) passed every gate except the production dependency audit, blocked by the nanoid advisory. The direct dependency/lockfile now use `>=5.1.16`, and the local production audit reports no known vulnerabilities; a new remote pass remains the final evidence. See [production global commentary spec](production-global-commentary-spec-v1.md) and [2026-08-12 production review](codebase-production-review-2026-08-12.md).
+
 ## Implemented local gate
 
 `.github/workflows/ci.yml` runs these checks for pull requests and pushes to
@@ -29,16 +31,21 @@ The candidate Clerk artifact gate and the targeted `ip-address@10.4.0` advisory 
 
 ## Release decision
 
-Commercialization readiness remains **76% for a controlled public beta** and
-**57% for a formal production launch**. The immediate blockers are real-corpus human review, staging end-to-end verification,
-production observability, payment-provider operations, and legal/privacy
-readiness.
+The current evidence-based decision is **NO-GO for a global public paid
+service**. Percentage readiness scores are intentionally retired because they
+hide hard safety and correctness gates. A local or access-controlled staging
+evaluation is conditional on hiding the provisional BSI/ADI loss-derived UI;
+it is not production evidence. Production approval requires the release gates
+in the [production global commentary spec](production-global-commentary-spec-v1.md),
+including cross-axis KataGo correctness, request/payment idempotency,
+capacity-before-debit, guarded multilingual commentary, protected staging,
+observability, privacy/legal approval, and restore/rollback evidence.
 
 ## Staging workflow
 
 `.github/workflows/staging-smoke.yml` is manually dispatched into the protected GitHub `staging` environment. It does not accept a target URL from the dispatcher. The target and pin both come from the protected `STAGING_BASE_URL` environment variable, while `SMOKE_AUTH_TOKEN` and `SMOKE_OPS_TOKEN` come from environment secrets. Those secrets are exposed only to the post-install smoke step. Credential-bearing requests require an exact HTTPS-origin match, reject redirects, and cap response bodies at 64 KiB. The workflow can create one staging checkout URL only when `create_checkout` is explicitly selected.
 
-The workflow first checks `/client-build-manifest.json` without secrets against `${{ github.sha }}` and protected `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`. The authenticated smoke process repeats the same check synchronously and stops before sending either token on any provider, commit, fingerprint, schema, redirect, content-type, cache-header, or body-size mismatch. As of 2026-08-04 the repository has no GitHub environment named exactly `staging`, so this remains an external release gate rather than completed staging evidence.
+The workflow first checks `/client-build-manifest.json` without secrets against `${{ github.sha }}` and protected `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`. The authenticated smoke process repeats the same check synchronously and stops before sending either token on any provider, commit, fingerprint, schema, redirect, content-type, cache-header, or body-size mismatch. The last documented check on 2026-08-04 found no GitHub environment named exactly `staging`; no newer protected-environment evidence is recorded in this repository, so this remains an external release gate rather than completed staging evidence.
 
 The GitHub `staging` environment must allow deployments only from `master`, require an independent reviewer, prevent self-review, and disable administrator bypass. That external deployment-branch policy is the security boundary that prevents a selected feature-branch workflow from receiving staging secrets; the workflow's own `master` guard is defense in depth.
 

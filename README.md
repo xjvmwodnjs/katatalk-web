@@ -1,14 +1,18 @@
 # KataTalk
 
-> **Repository status — 2026-08-10:** the current commercialization decision is
-> **public paid launch NO-GO**. The active branch contains a draft PR for safe
-> analysis-finalization reconciliation and a separate least-privilege Worker
-> environment contract. GitHub Actions run
-> [31093929840](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31093929840)
-> passed the repository gates, but Clerk, Supabase, Lemon Squeezy, and GPU
-> Worker staging evidence is still required. Read the current
-> [codebase commercialization review](docs/codebase-commercialization-review-2026-08-10.md)
-> and [architecture](ARCHITECTURE.md) before using this as a deployment guide.
+> **Repository status — 2026-08-12:** the current decision is **global public
+> paid launch NO-GO**. KataTalk has a strong KataGo numeric/PV beta foundation,
+> but natural-language commentary is not connected to the Worker, database,
+> API, or UI. Current deterministic memos can also consume provisional per-turn
+> loss signals, so those BSI/ADI-derived UI artifacts must be hidden until
+> player-perspective normalization passes. Request idempotency,
+> payment reversals, capacity admission, minimum-privilege storage/retention and
+> provider legal approval, multilingual quality evidence, and real staging
+> operations remain release blockers. Provider and shadow calls stay OFF until
+> that authority/data gate is closed. Use the current
+> [full production review](docs/codebase-production-review-2026-08-12.md),
+> [global commentary specification](docs/production-global-commentary-spec-v1.md),
+> and [architecture](ARCHITECTURE.md) as the source of truth.
 
 2026-08-05 COM-101 진행: Clerk JWT와 MySQL identity read-only hot path 및 1,000 polling write 0을 검증했다. MySQL identity는 valid SGF/checkout/명시적 mutation에서만 first-use 생성하고, Supabase profile은 기존 행을 read-only로 조회하며 누락 시 idempotent RPC로 생성한다. typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job이 통과했다. 실제 Clerk/JWKS staging E2E는 COM-113으로 남아 있다.
 
@@ -18,7 +22,7 @@
 
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
 
-2026-07-29 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 현재 출시 판정, 구현 현황, 검증 근거와 다음 작업의 단일 기준은 [`review.md`](review.md)입니다. 최신 `master` 검증 기준은 `5ac090e`와 GitHub Actions [`30448737391`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30448737391)이며, Vitest **86 files / 927 tests**, Playwright **9/9**, type/format/secret scan, Web/API/Worker build, PostgreSQL gate와 production dependency audit가 모두 통과했습니다. 실제 Supabase·Clerk·Lemon·KataGo 스테이징 종단 증거, exporter 호환성과 전체 SGF 합법성은 아직 출시 게이트로 남아 있습니다.
+2026-08-12 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 검토 시작 시 PR #4 GitHub Actions [`31367782357`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31367782357)은 TypeScript/unit, build/secret, PostgreSQL, Playwright를 통과했고 production dependency audit만 `nanoid 5.1.6` 권고로 실패했습니다. 이번 변경은 direct dependency와 lockfile을 `>=5.1.16`으로 올렸고 로컬 production audit은 알려진 취약점 0, TypeScript, Vitest **91 files / 988 tests**, Playwright **9/9**를 통과했으며 새 원격 CI가 최종 증거입니다. 현재 migration은 14개이고 Playwright는 1개 mock 기반 spec입니다. 실제 Supabase·Clerk·Lemon·GPU KataGo·LLM 종단 증거는 아직 없습니다.
 
 ## 알고리즘 기준 문서
 
@@ -44,7 +48,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 `server/bsiV1.ts`·`shared/bsiV1.ts`. **디버그·내부 signal** — `top_mistakes`·자연어 해설·UI 패착 라벨에 쓰지 말 것. `turnAnalyses[].moveSummary`·`comparisonReady`만 사용(추가 KataGo 없음).
 
-- **KataGo `scoreLead` / `scoreMean` 관점**은 아직 provisional이므로 실제 corpus에서 별도 검증해야 한다. **winrate 관점**은 analysis config의 `reportAnalysisWinratesAs`를 Worker가 검증해 결과에 기록하며, 확인되지 않은 legacy 결과는 `katago_output` 또는 `unknown`으로 유지한다.
+- **P0 정확성 경고:** root/timeline 표시 축 검증과 별개로, per-turn 후보의 raw `winrate`/`scoreLead`를 해당 착수자 관점으로 정규화하기 전에 BSI가 `best - played`를 계산한다. `BLACK` 설정의 백 착수에서 손실이 0 또는 반대로 해석될 수 있다. 현재 deterministic AI memo도 이 signal의 BSI와 `score_loss`/`winrate_loss` bullet을 표시할 수 있으므로, 교차축 테스트가 끝날 때까지 BSI/ADI 기반 decisive/review UI와 손실 memo를 숨기고 root/timeline 수치·PV만 제공해야 한다. `scoreLead`/`scoreMean`도 provisional이다.
 - **`scoreBestMinusPlayed`**: best·played 가 **같은 score 축**(둘 다 `scoreLead` 또는 둘 다 `scoreMean`)일 때만 계산; **lead/mean 혼합 시 생략**(`scoreMetricUsed: "none"`, `components.scoreMetricMixed`). **`winrateBestMinusPlayed`** 는 양쪽 winrate 가 있으면 혼합 score 여부와 무관하게 계산 가능. 하위 호환 `scoreDelta`/`winrateDelta`는 동일 정책( mixed 시 score 쪽 생략).
 - **`bsiScore`**: visits 가중과 지수 포화로 **0~100** 사용 가능; `bsiRaw`·`components.zComposite` 등 원시·블렌드 입력은 ADI·LES 전 단계용.
 - **`severity` / `bsiBand`**: 내부 numerical band 별칭일 뿐 사용자 패착 판정이 아님.
@@ -78,7 +82,7 @@ BSI/ADI 전 단계로, SGF 메인라인 전체 수를 파싱한 뒤 **어떤 수
 
 프론트가 `GET /api/analyze/:jobId` 의 `data` 를 안전히 소비하기 위한 **순수 변환 레이어**다. 구현은 **`shared/analysisResultViewModel.ts`** 의 `buildAnalysisResultViewModel`·`client/src/lib/analysisResultViewModel.ts`(재export). **`source === "katago-worker-v1"`** 를 요약·`winrateSeries`·`keyMoveCandidates`(최대 5, 중립 `labelKey`)·`variationPreview`(raw stdout 미사용)·`warnings`로 바꾸고, mock 레거시 JSON은 **`kind: "mock-legacy"`** 로 분리한다. `shared/winratePerspectiveV1.ts`는 결과에 기록된 `BLACK`/`WHITE`/`SIDETOMOVE` 관점과 명시적 current player 근거로 흑·백 승률을 생성한다. metadata가 없으면 추측하지 않고 `katago_output_only` 또는 `unverified`로 유지한다. raw는 유한한 number만 허용한다. 세부 계약과 실엔진 검증은 [`docs/winrate-axis-verification.md`](docs/winrate-axis-verification.md)에 있다. **LLM·top_mistakes 생성은 ViewModel에 포함하지 않는다.**
 
-**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). 클라이언트는 완료 **`GET /api/analyze/:jobId` 의 `data.sgf_content`**(DB에서 병합) 또는 **`result` JSON 안의 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI:** `BadukBoardView` v1 — `sgfPlayback` 스냅샷·후보 ghost(참고 후보수/PV) 표시, **보기 전용**(착수·변화도 탐색 없음). **수순 탐색:** `BoardTurnNavigation` v1 — 처음/이전/다음/끝·슬라이더로 `selectedTurnIndex`(0…`totalMoves`)만 변경; `sgf_content` 활성 시에만 표시. **키보드:** ←/→·Home/End(보기 전용, 입력·버튼·슬라이더 focus 시 미동작).
+**`sgfPlayback` (v1)** — `shared/sgfPlaybackV1.ts`: 루트 **메인라인**만 사용한다. **토큰 파서**로 property value 안의 `;`·`(`·`)`·이스케이프 `]` 를 처리해 `;B[]`/`;W[]` 만 추출하고, 변화도 `(` … `)` 는 건너뛰며 `variation_branch_skipped` 경고를 남긴다. `selectedTurnIndex` 까지 **단순 liberty 기반 capture**(상대 연결군 제거)로 돌 스냅샷을 만든다. **ko/자살 완전 판정 없음**(`suicide_not_fully_handled_v1` 경고). 클라이언트는 완료 **`GET /api/analyze/:jobId` 의 `data.sgf_content`**(DB에서 병합) 또는 **`result` JSON 안의 `sgfContent`** 가 있을 때만 `placeholder: false`. **격자 UI:** `BadukBoardView` v1 — mainline 스냅샷·후보/PV overlay와 화면 내부 **local try-play**를 제공한다. try-play는 빈 교차점 표시·무르기·초기화만 하며 포획/ko/자살 합법성이나 KataGo 재분석을 수행하지 않는다. **수순 탐색:** `BoardTurnNavigation` v1 — 처음/이전/다음/끝·슬라이더로 `selectedTurnIndex`(0…`totalMoves`)만 변경; `sgf_content` 활성 시에만 표시. **키보드:** mainline 이동은 ←/→·Home/End를 지원하지만 try-play 교차점은 아직 pointer-only다.
 
 **결과 페이지 UI v1** 은 `client/src/components/AnalysisResultView.tsx` 및 `AnalysisWinratePanel` / `AnalysisCandidateList` / `BadukBoardView` 가 ViewModel을 바인딩한다(승률 SVG·참고도 PV·**SVG 바둑판**·수순 탐색). 검증된 결과는 흑 승률 기본의 흑/백 segmented control을 제공하고 legacy 결과는 비활성 안전 안내를 표시한다. `sgf_content` 없으면 바둑판·탐색 UI는 placeholder 안내만이며, 착수·변화도 탐색은 미포함이다. **문구 i18n**은 `shared/analysisResultI18n.ts`에서 `ko`/`en`/`ja`/`zh`를 제공한다.
 
@@ -239,20 +243,22 @@ Worker 가 없으면 job 은 **queued** 에 남습니다. Supabase **`claim_next
 
 이때 `POST /api/analyze` 는 **503** `MOCK_ANALYSIS_DISABLED` 로 막힙니다.
 
-#### 3) Future — GPU KataGo worker mode (binary는 Railway Web 에 올리지 않음)
+#### 3) Production target — GPU KataGo Worker 배포 (binary는 Railway Web에 올리지 않음)
 
 GPU 서버(또는 전용 워커 호스트) 구독 후, **KataGo binary/model/config 를 Worker 측에만** 배치합니다. **Web Service Variables 에 `KATAGO_*` 를 넣을 필요 없습니다.**
 
 | 서비스         | 변수                                                                                                                                                                                                                                                                                                                                         |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Web**        | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, `KATATALK_ALLOW_MOCK_ANALYSIS=false` **또는 미설정**                                                                                                                                                                                                                              |
-| **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, production 공통 |
+| **GPU Worker** | `ANALYSIS_ENGINE=katago`, `KATAGO_BINARY_PATH=…`, `KATAGO_CONFIG_PATH=`**`analysis_example.cfg` 계열**(GTP용 `gtp_example.cfg` 금지), `KATAGO_MODEL_PATH=…`, `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED=BLACK`, `KATAGO_MAX_VISITS=200`, `KATAGO_ANALYSIS_TIMEOUT_MS=120000`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Analysis Worker 공통 |
 
 Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 `analysis_jobs` 를 가져와 `result.source=katago-worker-v1` 형태로 저장합니다. **stale running** 은 `ANALYSIS_CLAIM_STALE_SECONDS`(기본 900) 경과 후 재claim 됩니다. 기본은 작업 1개씩 처리하며, `ANALYSIS_WORKER_CONCURRENCY=2..4`에서는 한 KataGo process/model을 공유하는 bounded 실행을 사용한다. 이 모드는 persistent root/multi-turn enabled+strict, job별 multi-turn concurrency `1`, Deep Search/timeline OFF 조합이 아니면 시작 단계에서 실패한다.
 
 ### Railway / Render — Production 환경 변수 체크리스트
 
 아래 값은 **이름만** 나열합니다. **실제 secret·API 키 값은 README에 적지 말고**, 각 플랫폼 Environment 탭과 `.env`(로컬)에만 넣으세요.
+
+아래 필수 표는 **Web Service 전용 profile**입니다. Analysis Worker에는 이 표를 복제하지 말고 아래 Worker 절과 [환경 변수 가이드](docs/env-guide.md)의 process별 matrix를 따르세요.
 
 **필수 (production)**
 
@@ -319,9 +325,9 @@ Worker 는 Supabase **`claim_next_analysis_job(worker_id, stale_seconds)`** 로 
 - **`KATAGO_CONFIG_PATH`**는 **`katago analysis` 전용 `analysis_example.cfg` 계열**을 쓰세요. **`gtp_example.cfg`**(GTP용)를 넣으면 `numAnalysisThreads` 누락 등으로 실패하기 쉽습니다. cfg의 `reportAnalysisWinratesAs`는 정확히 하나여야 하며 운영에서는 같은 값을 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`에 설정합니다.
 - **DB `analysis_jobs.result` v1**에는 **raw stdout 전체를 저장하지 않습니다**(요약·normalized 필드만). **raw 장기 보존**은 추후 **Storage / 디버그 아티팩트 정책**을 정한 뒤 구현합니다.
 
-두 서비스 모두 **동일한 Variables** 를 쓰는 것을 전제로 합니다(최소: `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk·Lemon·`APP_BASE_URL` 등 Web 과 동일). **Supabase migration `001 → 014` 전체와 `013`/`014`의 SECURITY DEFINER 권한 잠금이 적용되어 있어야** worker 가 안전하게 job 을 가져갑니다(README「SECURITY DEFINER RPC 권한 검증」·[database migration gate](docs/database-migration-gate.md) 참고).
+두 서비스는 secret profile을 분리합니다. **Analysis Worker**에는 `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, analysis/lease/KataGo 설정만 배포하고 Clerk·Lemon·JWT·`APP_BASE_URL`은 배포하지 않습니다. 단, 현재 Supabase service-role 자체는 결제·profile RPC까지 실행 가능한 과권한이므로 production 목표는 claim/heartbeat/finalize 전용 DB role입니다. **Supabase migration `001 → 014` 전체와 `013`/`014`의 SECURITY DEFINER 권한 잠금이 적용되어 있어야** Worker가 job을 가져갑니다([database migration gate](docs/database-migration-gate.md) 참고).
 
-mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 **API는 막히고**, worker 도 **queued job 을 claim 하지 않으며** 기존 queued 행을 failed 로 바꾸지 않습니다. **공개 유료 production** 에서는 mock 대신 추후 **KataGo 전용 worker** 로 교체하는 것이 목표입니다.
+mock 분석을 돌리려면 Web·Worker 모두에서 **`KATATALK_ALLOW_MOCK_ANALYSIS=true`** 가 필요합니다. production 에서 `false`/미설정이면 mock **API는 막히고**, Worker도 mock queued job을 claim하지 않으며 기존 queued 행을 failed로 바꾸지 않습니다. **공개 유료 production**은 이미 구현된 외부 KataGo Worker 경로를 사용하되, 최신 production 명세의 정확성·금전·최소권한·보존 gate를 먼저 통과해야 합니다.
 
 ### Render 배포 절차 (요약)
 
@@ -483,11 +489,11 @@ corepack pnpm credits:audit -- --limit=100000
 - **`POST /api/analyze`** 는 크레딧 차감 후 **`status=queued`** 행만 만들고, **`ANALYSIS_WORKER_MODE`** 에 따라 mock 진행 주체가 갈립니다.
   - **`external`**(production 기본): Express 는 **enqueue 만** 하고, 별도 프로세스 **`pnpm worker:analysis`** 가 RPC **`claim_next_analysis_job(worker_id, stale_seconds)`** 으로 queued·stale running 을 잡은 뒤 **`ANALYSIS_ENGINE`** 에 따라 mock 또는 **KataGo v1** 로 DB 를 갱신합니다.
   - **`inline`**: 로컬 편의를 위해 Express 프로세스 안 **`setTimeout`** 파이프라인을 그대로 사용할 수 있습니다.
-- mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. **다음 단계**는 이 worker 슬롯을 **KataGo 실행 worker** 로 바꾸는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
+- mock 은 여전히 **KataGo·LLM 없이** 동일 테이블만 갱신합니다. 외부 Worker의 **KataGo v1 실행 경로는 이미 구현**됐으며, 다음 production 작업은 관점 정확성·idempotency·capacity와 최소권한/보존 gate를 닫는 것입니다. **Vercel(serverless) 배포는 별도 adapter/worker 분리 전까지 보류**합니다.
 
 **로컬 수동 검증 (`external` + worker):**
 
-1. Supabase 프로젝트에 **`004_analysis_job_claim_rpc.sql`** 과 **`007_analysis_job_lease_retry.sql`** 이 적용되어 있어야 합니다(007 이 004 의 무인자 `claim_next_analysis_job()` 을 대체합니다). 미적용이면 worker 가 `claim_next_analysis_job` 호출에서 실패합니다.
+1. Supabase 프로젝트에 migration **`001`→`014` 전체를 숫자순으로 적용**하고 migration/ACL gate를 통과해야 합니다. 일부 claim migration만 적용한 DB는 현재 계약이 아니며 worker·원장 RPC가 실패하거나 권한 경계가 달라질 수 있습니다.
 2. **Web** 이 Express 인라인 타이머를 켜지 않으려면 `.env` 에 **`ANALYSIS_WORKER_MODE=external`** 을 넣습니다.(`development`/`test` 에서는 미설정 시 기본 **inline** 이라, worker 없이도 mock 타이머가 돌아갑니다.)
 3. 터미널 A: `corepack pnpm dev`, 터미널 B: `corepack pnpm dev:worker`
 4. 로그인 후 SGF 업로드 → Supabase `analysis_jobs` 가 `queued` → `running` → `completed` 로 바뀌는지 확인합니다. Worker 를 끄면 job 은 **queued** 에 남습니다.
@@ -587,7 +593,7 @@ select has_function_privilege('service_role', 'public.ensure_profile_with_signup
 - 실제 고객 SGF corpus와 사람 검수로 분석 정확성·교육적 품질을 검증
 - persistent root+multi-turn의 200 visits/6 turns 품질과 latency는 개선됐지만 로컬 burst 4건은 queue p95 68.4초로 30초 SLO 실패. 메모리가 충분한 전용 host와 staging에서 동시성 2/4 재검증
 - Clerk/Lemon/Supabase/Web/Worker/KataGo/credit ledger 전체 스테이징 E2E 통과
-- queue/ETA/재시도/환불 UX, 운영 메트릭·경보, 보안 헤더, 법적 문서 완성
+- queue/ETA/재시도/환불 UX, 운영 메트릭·경보, CSP 단계 적용, 법적 문서 완성
 
 ## KataGo 로컬 smoke·저장소 위생
 

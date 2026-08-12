@@ -1,10 +1,32 @@
 # KataTalk — 이후 작업 TODO
 
 > 베타에서는 결제 UI가 **Lemon Squeezy** 만 사용합니다( **일회성 크레딧 팩 구매** , 구독 모델 아님). **Toss** 는 **향후 국내 결제 옵션**으로 검토하며(`tossProvider` 스켈레톤) **현재 checkout UI 에는 노출하지 않습니다**. Paddle 은 **추후 fallback 후보**로만 문서에 남기며 코드는 추가하지 않습니다.
+>
+> 2026-08-12 이후 우선순위와 수용 기준은 [전체 production 리뷰](codebase-production-review-2026-08-12.md)와 [글로벌 자연어 해설 명세](production-global-commentary-spec-v1.md)가 단일 기준이다. 아래 COM 목록은 누적 이력으로 보존한다.
 
 ## 상용화 readiness 기준
 
-- [ ] 공개 유료 베타 readiness **76% -> 80% 이상**으로 올리기 (현재 판정·우선순위는 `review.md`, 과거 점수 추이는 `docs/commercialization-review.md` 참고)
+- [ ] 공개 유료 베타를 임의 퍼센트가 아니라 P0·실환경 release gate의 증거로 재판정하기
+
+### P0 — 다음 구현 순서
+
+- [ ] **NLC-002 immediate containment + per-turn 관점 정규화** — 먼저 현재 UI의 BSI 값, BSI/ADI 기반 decisive/review 선택과 deterministic memo `score_loss`/`winrate_loss`를 숨긴다. 이어 candidate마다 black/white/player-to-move winrate·score를 저장하고 BLACK/WHITE/SIDETOMOVE, 흑·백 착수 교차축 동일성 테스트를 통과한 뒤에만 다시 활성화한다.
+- [ ] **NLC-005 분석 request idempotency** — `(owner, request_id)` unique, SGF/옵션 digest conflict, lost-202와 100회 동시 replay에서 job·차감 각각 1개.
+- [ ] **Owner-qualified 경량 status** — 전체 SGF/result `select('*')` 제거, 2KB metadata status와 별도 result/artifact endpoint, foreign/not-found 404.
+- [ ] **Timeline-first EvidenceBundleV2** — 저비용 전체 timeline → adaptive 후보 → targeted/deep 분석, engine/model/config/policy digest와 stable evidence ID.
+- [ ] **결제 reversal/inbox** — durable webhook inbox/DLQ, store·variant·amount·currency·mode 검증, refund/chargeback/debt state와 nightly ledger reconciliation.
+- [ ] **Capacity admission** — shared limiter, queue age·active cap·fairness를 차감 전에 원자 확인하고 overload 거절 job 차감 0 증명.
+- [ ] **Global legal/UX blocker** — 운영 stack 노출 제거, browser PII localStorage 제거, 실제 Terms/Privacy/refund/support links와 versioned consent.
+- [ ] **Pre-provider data/authority gate** — Analysis Worker 최소권한 DB role, lifecycle-managed object storage, finite retention·scheduled purge·account deletion·backup propagation, home region, provider DPA·처리 리전·학습/보존 정책·법적 근거·동의를 승인한다. 완료 전에는 외부 provider와 shadow 호출을 모두 금지한다.
+
+### P1 — P0 직후
+
+- [ ] 위 pre-provider gate 뒤 별도 Commentary Worker/queue/DB role과 `CommentaryArtifactV1`, provider AbortSignal·schema·claim guard·fallback·token/cost trace
+- [ ] `ko-KR`/`en` 독립 품질 gate 후 canary; `ja-JP`/`zh-CN`은 언어별 검수 전 LLM OFF
+- [ ] shared progress transport, metrics/tracing/alerts/on-call, reproducible Web/Worker/KataGo/model image와 rollback drill
+- [ ] WCAG 2.2 AA, 400% zoom, keyboard board/chart alternative, Chromium/Firefox/WebKit·4 locale E2E
+- [ ] retention/reconciliation workflow protected ref·target-project fingerprint·dual approval, Actions SHA pinning과 scheduled dependency scan
+- [ ] `package.json`의 MIT 선언을 실제 배포 정책과 확정하고 root `LICENSE`, third-party notices, SBOM을 일치
 - [x] 고객형 synthetic SGF suite 4개 launch gate 통과 (`katago:product-suite -- --customer-fixtures --strict-warnings --max-successful-p95-ms 120000 --max-expected-pass-failure-rate 0 --max-quality-warning-rows 0 --max-quality-failure-rows 0 --max-product-review-category-quality-failure-rows 0`)
 - [ ] 실제 고객형 SGF corpus 10-20개 manifest + product suite 통과 (`katago:corpus-validate`와 `--corpus-manifest` 구현 완료, 실제 corpus와 검수 결과는 아직 필요)
 - [x] corpus manifest v1 도구 구현 — SHA-256, 익명화 metadata, 최소 10건, 9/13/19·접바둑·pass·setup·장기 대국 coverage, 기대 visits/turn/BSI/ADI/quality 검사
@@ -20,7 +42,7 @@
 - [~] Worker observability foundation implemented: service-role status RPC and `/ops/analysis-worker-health` distinguish idle Worker liveness from job leases. Supabase migration, staging TTL/restart, and long-running job soak remain required.
 - [~] COM-001 quarantine operations visibility and narrow reconciliation command implemented: token-protected `/ops/analysis-finalization-quarantine` returns only unresolved count and oldest timestamp; `pnpm credits:reconcile-finalization -- --job-id=<id>` previews a single quarantined job, while apply additionally requires `--apply --confirm=RECONCILE_FINALIZATION:<id>`. The RPC checks the canonical usage/refund ledger, wallet sum, stored lease, and exact state before it writes. GitHub Actions [31093729191](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31093729191) passed its PostgreSQL contract plus all other four required jobs. Staging response verification, monitor wiring, alert drill, and real Supabase evidence remain required.
 - [~] COM-005 Japanese-only SGF rules, strict root `SZ`/`KM`, initial-player, and root game-metadata contracts implemented. `sgf-game-info-v1` carries safe authored-or-null `PB`/`PW`/`DT`/`RE`; valid FF4 partial/comma `DT` is accepted while invalid shortcut state is rejected; `RE` keeps raw plus canonical generic `B+`/`W+` win and bounded lexical numeric margins (max 1000, exact decimal round-trip required). Invalid optional fields are field-local; malformed UTF-8 is a fixed 400 before wallet/debit/enqueue. Marked results are revalidated; legacy `katago-worker-v1` reparses `sgf_content`/`sgfContent` or hides placeholders. UI displays `DT` directly and uses common `ProductGameResult` parsing for `RE`. Remaining: post-move transition, compressed setup ranges, full legality, additional rulesets, real-exporter compatibility, staging evidence, and non-UTF8 legacy charset/CA transcoding compatibility. Root-only metadata is narrower than FF4 `game-info`; real-corpus privacy rules remain mandatory.
-- [~] **COM-106 production Clerk client artifact gate** — 모든 Vite build에서 Clerk provider·publishable key 문법과 clean Git/platform source commit을 fail-closed 검증하고, raw key 없는 manifest와 Clerk chunk를 동일 env-file 우선순위의 package build에서 재검증한다. staging smoke는 commit/key 지문을 credential 없이 먼저 검사하고 토큰 전송 직전에 재검사한다. 실제 GitHub `staging` 환경 구성, Clerk tenant 실로그인, Web/Worker secret 최소화는 아직 필요하다.
+- [~] **COM-106 production Clerk client artifact gate** — build/manifest gate와 Web/Analysis Worker env secret profile 분리 완료. 실제 GitHub `staging` 환경·Clerk tenant 검증과 Analysis Worker의 범용 Supabase service-role을 전용 최소권한 role로 교체하는 작업이 남았다.
 - [~] **COM-101 authentication read-only hot path** — Clerk JWT와 기존 MySQL identity 조회는 polling/GET에서 write 0이다. MySQL identity는 valid SGF, checkout, 명시적 mutation에서만 first-use 생성하고 Supabase profile은 기존 행 read-only·누락 시 idempotent 생성이다. invalid token은 401, Clerk/JWKS/DB 장애는 고정 503으로 구분한다. 로컬 typecheck, focused 7 files/80 tests, 전체 89 files/976 tests, Playwright 9/9와 기능 커밋 `a150fa8`의 GitHub Actions [`30962851057`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30962851057) 4개 job 통과. 실제 Clerk/JWKS staging E2E(COM-113)는 대기 중이다.
 - [ ] staging Web/Worker/결제 webhook/credit ledger end-to-end 통과
 - [~] SGF/analysis payload deletion and opt-in retention implemented: result UI now exposes an owner-only confirmed delete action; migration 009 provides API deletion; migration 010 plus `data:retention` defaults to dry-run and only purges completed/failed payloads with an explicit expiry. Supabase migration application, staging UI E2E, scheduler, account-level anonymization, and legal review remain.
@@ -29,7 +51,7 @@
 - [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
-- [x] Production dependency gate 유지: 2026-07-24 remediation은 GitHub Actions `30019630160`에서 통과했고, 2026-08-04 새 `GHSA-mwp4-54f8-5fhr`는 `express-rate-limit@8.5.1`의 허용 범위 안에서 lockfile의 `ip-address`를 `10.2.0 → 10.4.0`으로 갱신했다. 로컬 frozen install/production audit와 PR #2 GitHub Actions `30923411845`에서 다시 알려진 취약점 0 및 전체 4개 job 통과를 확인했다.
+- [~] Production dependency gate 유지: 과거 `ip-address` remediation은 통과했다. 2026-08-12 PR #4 run `31367782357`은 `nanoid 5.1.6` advisory 하나로 실패했고 이번 작업에서 direct dependency/lockfile을 `>=5.1.16`으로 갱신했다. 로컬 production audit은 알려진 취약점 0으로 통과했으며 새 원격 CI green이 완료 조건이다.
 - [x] Git delivery restored: PR #1을 `master`에 병합했고 merge commit `5ac090e`의 GitHub Actions `30448737391`에서 PostgreSQL, dependency-audit, quality, build, E2E gate가 통과했다.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 
@@ -50,8 +72,8 @@
 
 ## 알고리즘·해설(향후)
 
-- [x] **BSI/ADI** — multi-turn 기반 결정론적 신호와 product review 경로에 연결.
-- [ ] **Concept Tagger·Explanation Planner·Claim Verification·Q&A Engine** — 핵심 경로 연결과 실제 기보 검증이 필요하며, 설계·행위 근거는 [`docs/algorithm/KataTalk_Algorithm_V2.5.md`](docs/algorithm/KataTalk_Algorithm_V2.5.md)를 따른다.
+- [~] **BSI/ADI** — 계산과 product review 경로 연결은 구현됐지만 per-turn 착수자 관점 손실 정규화가 검증되지 않았다. `NLC-002` containment 동안 production UI/해설 근거로 비노출.
+- [~] **Concept Tagger·Explanation Planner·Claim Verification** — 단위 모듈은 있으나 production runtime·저장·UI에 미연결이고 multilingual semantic verifier가 없다. **Q&A Engine은 미구현**이다. 설계 근거는 [`algorithm/KataTalk_Algorithm_V2.5.md`](algorithm/KataTalk_Algorithm_V2.5.md)를 참고하되 production 계약은 새 글로벌 명세가 우선한다.
 
 ## 분석
 
@@ -65,7 +87,7 @@
 - [x] **analysis plan v1** — SGF 전체 수 파싱·`turnIndex`/`player`/`gtpMove`·간격+최종국면 후보(`shared/analysisPlanV1.ts`, `server/analysisPlan.ts`). KataGo는 1회; `result.analysisPlan`에 동봉.
 - [x] **multi-turn KataGo raw v1** — `analysisPlan` 후보별 착수 직전 국면 추가 분석(`turnAnalyses`, `multiTurnAnalysis`). 배치 시 stdout `id` 중복·누락 검증, 순차 폴백은 env 로만. 운영 전 **로컬 KataGo로 stdin JSONL 배치 smoke** 필수(README).
 - [~] **KataGo worker 고도화** — root/multi-turn 동일 process/model 재사용, bounded C4, query failure 격리, child crash pending 정리, shutdown drain, 안전 설정 guard 완료. stdout 스트리밍·상한, raw Storage/artifact 정책, Worker RSS/GPU VRAM telemetry와 staging 환불/reclaim fault injection이 남음. 공유 C4 8건 whole-system peak delta 약 `2059.9MiB`
-- [x] **BSI v1 (multi-turn 기반 수치)** — `result.bsiV1`·`components`·perspective 메타(`provisional`). KataGo score/winrate 축은 샘플 검증 후 확정. `top_mistakes`/해설 미사용.
+- [~] **BSI v1 (multi-turn 기반 수치)** — 계산·저장은 구현됐고 `provisional`이다. KataGo candidate score/winrate를 착수자 축으로 정규화하는 교차축 검증 전에는 UI/해설 손실 근거로 사용하지 않는다.
 - [x] **ADI v1 (signal only)** — `result.adiV1`·`deepSearchCandidate`·components(`visitEntropy` 등). **Deep Search 실행·`top_mistakes`/해설/LLM 없음.** `docs/algorithm/KataTalk_Algorithm_V2.5.md` 기준 Value & Search 단계 일부.
 - [x] **Deep Search candidate plan v1** — `result.deepSearchPlan` 후보 `turnIndex`만(실행 없음). `final_position` 기본 제외·`DEEP_SEARCH_PLAN_*` env. `top_mistakes`/LLM 없음.
 - [x] **Analysis Learning Events v1** — BSI/ADI/Deep Search plan·result/`turnAnalyses`/`winrateTimelineV1` 기반 deterministic 핵심 검토 후보 최대 5개. ViewModel `learningEvents` 및 후보 chip 우선 입력으로 사용. 추가 KataGo/LLM/`top_mistakes` 없음.
@@ -81,14 +103,14 @@
 - [ ] **바둑판 UX** — 착수 인터랙션·변화도 탐색·애니메이션 등은 미구현.
 - [x] **결과 UI i18n** — `shared/analysisResultI18n.ts` + ViewModel `warnings`/`sgfPlayback.warnings` 코드화·`placeholder.messageKey`·후보 `labelKey`. `AnalysisResultView` 등은 `lang`(기존 `Language`)으로 문구 표시.
 - [ ] **결과 UI / ViewModel 방어** — `turnAnalyses`·`candidateTurns` 등 비정형 배열 요소에 대한 정규화·필터 강화(현재 UI 일부에서 reason badge 등만 방어).
-- [x] **Winrate perspective normalizer v1** — `shared/winratePerspectiveV1.ts`: raw clamp, `BLACK`/`WHITE`/`SIDETOMOVE` 변환, 명시적 current player 근거, legacy `katago_output_only` fallback.
+- [x] **Winrate perspective normalizer v1 (root/timeline 표시 축)** — `shared/winratePerspectiveV1.ts`: raw clamp, `BLACK`/`WHITE`/`SIDETOMOVE` 변환, 명시적 current player 근거, legacy `katago_output_only` fallback. multi-turn 후보의 BSI loss 비교 정규화는 별도 `NLC-002` 미완료.
 - [x] **Winrate perspective hardening** — raw는 `typeof number` + finite만 유효. config 누락·중복·미지원·기대값 불일치와 current player 근거 누락은 fail-closed 또는 미변환.
 - [x] **Winrate axis real-engine verification** — [`docs/winrate-axis-verification.md`](winrate-axis-verification.md): KataGo v1.16.4, config `BLACK`, 흑·백 차례·pass·setup stone product suite 4/4, 품질 0/0.
 - [x] **Full-game winrate timeline v1** — Worker `analyzeTurns`·`result.winrateTimelineV1`·ViewModel/UI 우선(기본 `KATAGO_WINRATE_TIMELINE_ENABLED=false`). 축 metadata와 흑백 변환을 final/progress에 동일 적용.
 - [x] **환경 변수 가이드** — [`docs/env-guide.md`](env-guide.md): Local / Railway Web / Worker·mock·GPU 프로파일.
 - [x] **흑/백 승률 표시 토글** — 검증 metadata가 있는 결과에서 흑 기본·백 보완값 segmented control과 축 라벨 전환. legacy 결과 비활성. 390/430/1440 E2E 통과.
 - [x] **KataGo Deep Search 실행** — feature flag 기반 선택형 실행과 결과 요약 경로 구현.
-- [ ] **검증된 LLM 해설** — Claim 근거 검증을 포함한 선택형 해설 파이프라인을 실제 corpus로 검증.
+- [ ] **검증된 LLM 해설** — `EvidenceBundleV2`와 별도 Commentary Worker/artifact를 제품 경로에 연결하고 raw SGF/PII 미전송, locale/audience, strict schema, 문장별 evidenceRef, 실제 AbortSignal, deterministic fallback, 독립 기사·원어민 corpus 검수를 증명.
 
 ## 최신 master 배포 전 smoke (체크리스트)
 
@@ -114,9 +136,9 @@
 
 | 구분            | 확인 항목                                                                                                                                                                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **공통**        | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Clerk, Lemon, `APP_BASE_URL` (HTTPS), `JWT_SECRET`                                                                                                                           |
-| **Web**         | `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago` (실분석 공개 시), **`KATATALK_ALLOW_MOCK_ANALYSIS` 미설정 또는 false**; **Web 에는 `KATAGO_*` 경로 불필요**(GPU worker 호스트에만 binary/model)                                        |
-| **Worker**      | Web 과 동일 Supabase·Clerk 등 최소 동일 세트; **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` / `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`**; **`ANALYSIS_WORKER_ID`**(선택, lease 식별용) |
+| **공통**        | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`만 현재 코드상 공통. 향후 Worker 전용 DB role로 더 축소                                                                                                                       |
+| **Web**         | Clerk, Lemon, `APP_BASE_URL`, `JWT_SECRET`; `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, mock 금지. **Web에는 `KATAGO_*` 경로 불필요**                                                                                              |
+| **Worker**      | Clerk/Lemon/JWT/`APP_BASE_URL` 금지. **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` / `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`**; `ANALYSIS_WORKER_ID`(선택)                                |
 | **Lease**       | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부                                                                                                                                                          |
 | **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토                                                                                                                            |
 

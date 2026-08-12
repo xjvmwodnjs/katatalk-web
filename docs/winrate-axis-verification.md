@@ -1,8 +1,12 @@
 # KataGo 승률 축 검증
 
-> 상태: **구성 파일에 기록된 승률 축에 대해 VERIFIED**
-> 기준일: 2026-07-14
-> 범위: 승률 관점 계약과 흑/백 표시 변환. 고객 기보 분석 품질과 사람 검수는 별도 출시에 필요한 근거다.
+> 상태: **root/timeline의 구성 축 파싱과 흑/백 UI 변환은 VERIFIED, per-turn BSI/ADI loss는 PROVISIONAL**
+> 기준일: 2026-08-12(실엔진 표는 2026-07-14 역사적 증거)
+> 범위: 승률 관점 계약과 root/timeline 표시 변환. 후보별 착수자 관점 loss, 고객 기보 분석 품질과 사람 검수는 별도 release gate다.
+
+## 0. 2026-08-12 중요 제한
+
+이 문서의 기존 VERIFIED 판정은 config 축 파싱과 root/timeline을 흑·백 표시값으로 바꾸는 계약에만 적용된다. `katagoMultiTurnRun`이 복사한 후보별 raw `moveInfos.winrate`/`scoreLead`를 player-to-move 축으로 정규화한 뒤 BSI가 비교한다는 보장은 아직 없다. `BLACK` config의 백 착수에서 `best - played`가 0 또는 반대 부호가 될 수 있다. 교차축·흑백 테스트 전에는 현재 UI의 BSI 값, BSI/ADI 기반 decisive/review 선택과 deterministic memo의 `score_loss`/`winrate_loss` bullet을 숨기고 root/timeline 수치·PV만 제공한다.
 
 ## 1. 결론
 
@@ -11,6 +15,7 @@
 - 선택 환경 변수 `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`가 실제 설정과 다르면 Worker 시작을 차단한다.
 - 분석 결과에는 검증된 관점과 근거 출처를 기록한다. 관점 metadata가 없는 기존 결과는 변환하지 않고 `KataGo 출력 승률`로 유지한다.
 - 현재 로컬 검증 config는 `BLACK`이며, UI는 흑 승률을 기본으로 표시하고 백 승률을 `1 - blackWinrate`로 전환한다.
+- 이 결과는 per-turn candidate loss 계산을 검증하지 않는다.
 
 공식 계약: [KataGo Analysis Engine documentation](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md)
 
@@ -82,4 +87,4 @@ Evidence commit `99e4a7b` also passed all four jobs at final-head CI [run 304412
 4. strict product suite에서 관점 gate, 품질 경고/실패 0, 흑+백 변환을 확인한다.
 5. 실제 고객 corpus와 독립 바둑 검수자 결과를 별도 AI-01/02/03 gate로 통과시킨다.
 
-KataGo 버전, 모델 또는 analysis config를 변경할 때 이 검증을 다시 수행한다. BSI의 score 관점은 이번 승률 축 검증과 별도이며 아직 provisional이다.
+KataGo 버전, 모델 또는 analysis config를 변경할 때 이 검증을 다시 수행한다. BSI의 winrate·score candidate loss는 모두 별도 교차축 검증이 끝날 때까지 provisional이다.

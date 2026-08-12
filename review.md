@@ -1,9 +1,17 @@
 # KataTalk 상용화 코드베이스 리뷰
 
-> 기준일: 2026-08-04
+> 기준일: 2026-08-12
 > 대상 저장소: `xjvmwodnjs/katatalk-web`
-> 기준 브랜치/구현 상태: `agent/clerk-client-artifact-gate` / 이번 리뷰 작업 트리
-> 문서 목적: 현재 구현을 사실에 근거해 진단하고, 공개 유료 서비스로 전환하기 위한 작업 순서와 합격 기준을 단일 기준점으로 만든다.
+> 기준 브랜치/구현 상태: `agent/finalization-reconciliation` / 검토 시작 HEAD `8ed0035`
+> 문서 목적: 루트 진입점과 누적 이력. 상세 최신 판정은 [`docs/codebase-production-review-2026-08-12.md`](docs/codebase-production-review-2026-08-12.md), 목표 계약은 [`docs/production-global-commentary-spec-v1.md`](docs/production-global-commentary-spec-v1.md)가 단일 기준이다.
+
+## 0. 2026-08-12 최신 판정
+
+현재 제품은 **KataGo 수치·PV 기반 폐쇄형 베타 조건부 GO**, **글로벌 자연어 해설 공개 유료 서비스 NO-GO**다. 이 문서 아래의 COM 항목과 과거 CI 수치는 누적 이력으로 보존하며, 우선순위는 새 production 리뷰의 NLC roadmap이 대체한다.
+
+최우선 P0는 LLM 연결 자체가 아니라 현재 deterministic memo의 BSI/ADI 기반 손실 UI를 즉시 숨기고 per-turn `winrate`/`scoreLead`를 착수자 관점으로 정규화하는 일이다. 현재 BSI의 `best - played`는 BLACK config의 백 착수에서 손실을 0 또는 반대로 해석할 수 있다. 이어서 분석 request idempotency, owner-qualified 경량 status, durable payment reversal/inbox, capacity admission, Analysis Worker 최소권한·finite retention/home region·provider DPA/법적 근거/동의를 닫고 timeline-first evidence를 만든다.
+
+자연어 provider·orchestrator·guard는 단위 코드만 존재하고 Worker/DB/API/UI에 연결되지 않았다. 위 pre-provider gate가 닫히기 전에는 shadow를 포함한 외부 호출을 금지한다. 이후 `ko-KR`/`en`부터 별도 Commentary Worker와 strict evidence/claim/fallback gate로 출시하고 `ja-JP`/`zh-CN`은 언어별 검수 전 LLM OFF로 유지한다.
 
 ---
 
@@ -33,7 +41,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 
 `COM-003`의 프로덕션 의존성 high/critical 게이트는 계속 fail-closed한다. 2026-08-04 새 `ip-address` advisory가 PR CI를 차단했고, 허용된 `express-rate-limit@8.5.1 → ip-address@^10.2.0` 범위 안에서 lockfile만 `10.4.0`으로 갱신했다. 로컬 frozen install과 production audit는 다시 알려진 취약점 0을 확인했고, PR #2 GitHub Actions [`30923411845`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30923411845)의 4개 job도 모두 통과했다.
 
-**첫 구현 작업은 `COM-001: 실패 확정 + 환불 원자화`로 잡는 것이 맞다.** 이 작업이 결제 서비스의 가장 중요한 불변식인 “돈을 냈는데 결과도 환불도 없는 상태”와 “환불받았는데 작업이 다시 성공하는 상태”를 동시에 막는다.
+`COM-001` 실패 확정·환불 원자화와 후속 quarantine/reconciliation은 구현됐다. 다음 구현 순서는 새 명세의 `NLC-002` per-turn 관점 정규화와 `NLC-005` 분석 request idempotency다.
 
 ---
 
@@ -76,15 +84,15 @@ COM-005 strict `SZ`/`KM` 계약 커밋 `4a75b70`은 GitHub CI [`30433097938`](ht
 
 COM-005 실제값 보존 game metadata 커밋 `e2c220f`은 GitHub CI [`30440871859`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30440871859)에서 86 files / 927 tests, Playwright 9/9, format/type/secret scan, 프로덕션 Web/API/Worker 빌드, PostgreSQL migration/ACL/atomicity, 프로덕션 의존성 감사 등 4개 job 전체를 통과했다. 이 근거는 root `PB/PW/DT/RE` 작성값 또는 `null`, malformed UTF-8 과금 전 거절, marker 재검증, legacy SGF 복구와 placeholder 제거를 닫지만 root 외 game-info, legacy charset/`CA` transcoding, 실제 exporter/real-engine/staging 증거를 대신하지 않는다.
 
-최신 `master` merge commit `5ac090e`는 GitHub CI [`30448737391`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30448737391)의 4개 job을 모두 통과했으며, 현재 브랜치의 기준 커밋이다.
+`master` merge commit `5ac090e`와 GitHub CI [`30448737391`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/30448737391)은 당시 4개 job을 통과한 역사적 근거다. 현재 기준 브랜치와 검토 시작 HEAD는 문서 상단을 따른다.
 
-### 문서 신뢰도
+### 문서 신뢰도 — 2026-08-12 정리
 
-- 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 Manus OAuth, MySQL, Stripe, LLM 중심의 과거 구조를 설명해 현재 Clerk, Supabase, Lemon Squeezy, KataGo Worker 구조와 맞지 않는다.
-- [docs/commercialization-review.md](docs/commercialization-review.md)의 상단 수치와 본문은 현재 저장소와 다르며, 같은 문서의 후반 변경 이력과도 모순된다.
+- 루트 [ARCHITECTURE.md](ARCHITECTURE.md)는 현재 Clerk·Supabase·Lemon Squeezy·KataGo Worker 구조와 목표 Commentary 경계를 반영하도록 갱신했다.
+- [docs/commercialization-review.md](docs/commercialization-review.md)의 수치와 본문은 2026-07-16 역사 snapshot으로 동결했으며 현재 판정에 사용하지 않는다.
 - [docs/TODO.md](docs/TODO.md)와 [README.md](README.md)의 과거 `007 → 006` 순서는 `001 → 014` 숫자 순서와 단일 runner 안내로 교정했다.
 
-앞으로는 이 `review.md`의 출시 게이트와 백로그를 기준점으로 삼고, 구조 설명은 별도의 최신 `ARCHITECTURE.md`로 다시 작성하는 편이 안전하다.
+현재 출시 판정은 2026-08-12 production 리뷰, 목표 계약은 글로벌 해설 명세, 구조 설명은 최신 `ARCHITECTURE.md`를 따른다. 이 `review.md`의 나머지는 누적 구현 이력이다.
 
 ---
 
@@ -432,9 +440,9 @@ flowchart LR
 
 ### COM-106. Web과 Worker 환경변수/비밀 분리
 
-**상태: 진행 중 — production Clerk client artifact 계약과 credential 선행 smoke 구현, 실제 staging·Web/Worker 최소 권한 분리 대기 (2026-08-04)**
+**상태: 진행 중 — production Clerk client artifact 계약·credential 선행 smoke·Web/Analysis Worker env profile 분리 구현, 실제 staging과 Worker DB role 최소권한 대기 (2026-08-12)**
 
-현재 Worker도 범용 프로덕션 환경 검증을 거쳐 Clerk, Lemon, APP URL 같은 웹 전용 비밀을 요구할 수 있다. GPU 호스트 침해 시 피해 범위가 불필요하게 커진다.
+Analysis Worker의 env validator는 Clerk, Lemon, JWT, `APP_BASE_URL`을 더 이상 요구하지 않는다. 남은 위험은 Worker가 여전히 범용 Supabase service-role을 사용해 결제·profile RPC까지 실행할 수 있다는 점이다. claim/heartbeat/finalize와 자기 artifact만 허용하는 별도 DB role 또는 내부 queue API가 필요하다.
 
 - 모든 Vite build는 `clerk` provider와 canonical padded/unpadded Clerk publishable key를 요구한다. source SHA는 GitHub/Railway/Render build metadata 또는 clean Git HEAD에서만 가져오며, dirty/unverified source와 선택 claim 불일치는 고정 오류 코드로 fail-closed한다.
 - Vite가 생성한 `client-build-manifest.json`은 provider, source SHA, test/live 구분, publishable-key SHA-256만 포함한다. raw key·server secret·runner 경로·시각은 포함하지 않는다.
@@ -780,7 +788,7 @@ ops/
 |    5 | COM-101 |    P1/P0 | 인증 write amplification 제거                                                 | API·DB          | 없음           | polling 1,000회 write 0                              |
 |    6 | COM-102 |    P1/P0 | status/result/artifact 분리                                                   | API·DB          | COM-101        | status ≤ 2KB, large read 0                           |
 |    7 | COM-003 |       P0 | dependency remediation — GitHub CI 완료                                       | Platform        | 없음           | 실행 30019630160에서 알려진 취약점 0                 |
-|    8 | COM-106 |    P1/P0 | production Clerk artifact gate 구현·Web/Worker env와 secret 분리 대기         | Platform        | 없음           | 실제 staging artifact 일치 + Worker 최소 비밀로 부팅 |
+|    8 | COM-106 |       P1 | production Clerk artifact gate·Web/Worker env secret profile 분리 완료, DB role 최소권한 대기 | Platform | 없음 | 실제 staging artifact 일치 + 전용 Worker DB role |
 |    9 | COM-004 |       P0 | payment entitlement/reversal                                                  | Billing·DB      | COM-001 패턴   | replay/refund/chargeback 통과                        |
 |   10 | COM-008 |       P0 | Worker liveness/queue TTL/refund                                              | Worker·API      | COM-001        | offline 시 과금 손실 0                               |
 |   11 | COM-117 |       P1 | versioned result/provenance                                                   | Contracts       | COM-005        | 구/신 schema 호환 테스트                             |
@@ -919,4 +927,4 @@ ops/
 - 아키텍처가 바뀌면 이 문서와 최신 `ARCHITECTURE.md`를 같은 PR에서 갱신한다.
 - 새 P0가 발견되면 일정에 맞춰 등급을 낮추지 않고 출시 범위를 조정한다.
 
-현재의 가장 합리적인 작업 순서는 **COM-002/006 실제 staging 증거 → COM-001 운영 후속 → COM-005 후속 → COM-101/102 → COM-106의 실제 Web/Worker 비밀 분리 → COM-004/008 → 실제 스테이징 E2E**다. `COM-003`은 GitHub CI 근거로 닫혔고, COM-106의 production Clerk artifact gate는 구현됐지만 외부 staging 증거와 Worker 최소 권한은 남아 있다. 이 순서는 사용자 돈과 데이터 무결성을 먼저 보호하고, 그 위에 운영·제품 기능을 쌓는다.
+현재 작업 순서는 **per-turn 축 정규화 → 분석 idempotency·경량 owner 조회 → 결제 reversal/inbox·capacity admission → Analysis Worker 최소권한·finite retention/home region·provider DPA/법적 근거/동의 → timeline-first EvidenceBundleV2 → 별도 다국어 Commentary Worker → telemetry·실제 staging/soak/복구·최종 rollout 법무 gate**다. 외부 provider와 shadow 호출은 최소권한·보존·DPA/동의 gate 전에는 금지한다. 상세 수용 기준은 2026-08-12 production 리뷰와 글로벌 해설 명세를 따른다.

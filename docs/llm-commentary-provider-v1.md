@@ -1,5 +1,7 @@
 # LLM Commentary Provider v1
 
+> **현재 상태 — 2026-08-12:** adapter/unit test만 존재하고 기본 OFF이며 Worker·DB·API·UI에 연결되지 않았다. prompt는 한국어 전용이고 현재 timeout은 `Promise.race`일 뿐 fetch를 abort하지 않는다. public traffic에서 활성화하지 않는다.
+
 ## 목적
 
 LLM Commentary Provider v1은 `LLM Commentary Orchestrator v1`에 주입할 수 있는 provider adapter다. 이번 단계에서는 UI, Worker 본 분석 흐름, DB schema, 결제와 연결하지 않는다.
@@ -43,11 +45,11 @@ prompt에는 다음 지시를 포함한다.
 
 ## Timeout/Error 정책
 
-- provider 호출에는 timeout을 둔다.
+- provider 호출에는 논리 timeout이 있으나 현재 fetch에 `AbortSignal`을 전달하지 않아 timeout 뒤에도 network/cost가 계속될 수 있다.
 - output length를 제한한다.
 - malformed JSON response는 throw한다.
 - provider throw/timeout/malformed response는 orchestrator에서 fallback으로 처리한다.
-- request-level max token과 AbortController 기반 취소는 실제 provider 연결 전 follow-up으로 확정한다.
+- provider-side hard token cap, 응답 byte cap, deadline 전파, AbortController, bounded 429/5xx retry+jitter, circuit breaker, concurrency/cost budget을 실제 연결 전 필수로 구현한다.
 
 ## 테스트 정책
 

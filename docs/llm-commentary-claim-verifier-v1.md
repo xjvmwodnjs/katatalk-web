@@ -1,5 +1,7 @@
 # LLM Commentary Claim Verifier v1
 
+> **현재 상태 — 2026-08-12:** 단위 모듈은 구현됐지만 product runtime·DB·API·UI와 연결되지 않았다. 좌표와 명시적 단위의 일부 수치만 검증하며 multilingual semantic verifier가 아니다. 목표 계약은 [production-global-commentary-spec-v1.md](production-global-commentary-spec-v1.md)를 따른다.
+
 ## 목적
 
 LLM Commentary Claim Verifier v1은 LLM output이 `ExplanationPlanV1`에 없는 좌표, 집 차이, 승률/퍼센트, PV를 만들어내지 못하게 막는 검증 계층이다. 이번 단계에서는 실제 LLM API 호출을 구현하지 않는다.
@@ -48,3 +50,6 @@ LLM Commentary Claim Verifier v1은 LLM output이 `ExplanationPlanV1`에 없는 
 - 결제/크레딧/Supabase 변경
 - `top_mistakes`
 - 흑백 승률 토글
+- player/turn/perspective 일치와 원인·결과 관계
+- PV 전체 합법성·순서, 사활·패·축·선수/후수·연결/절단 판정
+- 단위를 생략하거나 ja/zh 표현으로 우회한 수치·판정 claim

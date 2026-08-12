@@ -1,5 +1,7 @@
 # DevOps/Smoke Engineer
 
+> **Current alignment: 2026-08-12.** Use [the production review](../codebase-production-review-2026-08-12.md), [target specification](../production-global-commentary-spec-v1.md), and current code/env guide over dated smoke evidence.
+
 ## Mission
 
 local 과 staging 환경에서 KataTalk Web / Worker 를 안전하게 실행할 수 있도록 env profile, smoke 절차, 문서를 정비한다. 실제 secret / path / 결제 / API key 를 문서·log·report 에 노출하지 않는다.
@@ -29,7 +31,7 @@ local 과 staging 환경에서 KataTalk Web / Worker 를 안전하게 실행할 
 
 ## Required Context
 
-- 현재 코드 기준 GPU backend detection 은 `katago version` 출력 기반 (`cuda` / `opencl` / `eigen` / `unknown`). `KATAGO_BACKEND_CHECK_MODE`, `analysis_smoke`, `version_then_smoke`, TensorRT, `katagoSmokeOk` 는 현재 코드에 **없다**.
+- GPU backend detection은 `version | analysis_smoke | version_then_smoke`를 지원하고 `cuda | opencl | tensorrt | eigen | unknown`을 기록한다. 기본은 `version`; 로컬 GPU runtime 검증은 `version_then_smoke`, production GPU-required 시작은 코드의 fail-closed policy를 따른다.
 - LLM env prefix 는 `KATATALK_LLM_COMMENTARY_*` 만 인정. `KATALK_*` 는 사용 금지.
 - realtime timeline local progress 는 Web 과 Worker **양쪽** 모두 `KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=true` 가 필요하다.
 - production 은 local progress / mock / local-dev auth 를 강제로 비활성/금지한다.
@@ -59,7 +61,7 @@ local 과 staging 환경에서 KataTalk Web / Worker 를 안전하게 실행할 
 - [ ] 시간 단위 (ms / seconds) 와 clamp 범위가 코드와 일치한다.
 - [ ] LLM 예시는 `KATATALK_LLM_COMMENTARY_ENABLED=false` 를 기본으로 한다.
 - [ ] smoke profile 에 forbidden label / live payment 명령이 포함되지 않는다.
-- [ ] 코드에 없는 env (`KATAGO_BACKEND_CHECK_MODE`, `katagoSmokeOk`, TensorRT 등) 를 있는 것처럼 쓰지 않는다.
+- [ ] `KATAGO_BACKEND_CHECK_MODE`, smoke visits/timeout, `katagoSmokeOk` log와 TensorRT 분류가 현재 `katagoBackendDetectionV1.ts` 계약과 일치한다.
 
 ## Test Checklist
 
@@ -91,7 +93,7 @@ G. master 병합 가능 여부
 
 ## Codex Review Prompt Points
 
-- 코드에 없는 env name (예: `KATAGO_BACKEND_CHECK_MODE`, `katagoSmokeOk`, `KATALK_LLM_COMMENTARY_*`) 이 문서에 새로 등장했는가.
+- env name과 log field가 실제 코드에 존재하는가. `KATALK_LLM_COMMENTARY_*` legacy alias는 여전히 금지한다.
 - 실제 binary / config / model path / API key 가 문서나 예시에 박혔는가.
 - production 에서 mock / local-dev / local progress 가 활성화되도록 안내가 바뀌었는가.
 - Web 블록에 `KATAGO_*` path 가 들어갔는가.
@@ -105,7 +107,7 @@ G. master 병합 가능 여부
 목표: <env profile / smoke 문서 작업 한 문장>
 허용 파일: docs/env-guide.md, docs/master-staging-smoke-v1.md, docs/realtime-winrate-timeline-v1.md, docs/katago-gpu-backend.md, .env.example, package.json scripts
 금지:
-- 현재 코드에 없는 env (KATAGO_BACKEND_CHECK_MODE/version_then_smoke/TensorRT/katagoSmokeOk/KATALK_*) 를 있는 것처럼 쓰지 마라.
+- backend check env/log/TensorRT 분류는 현재 코드와 `docs/katago-gpu-backend.md`에 맞추고, 지원하지 않는 `KATALK_*` LLM alias는 쓰지 마라.
 - 실제 binary/config/model path/secret/API key 를 문서에 박지 마라.
 - production 에서 mock/local-dev/local progress 활성화를 안내하지 마라.
 조건:

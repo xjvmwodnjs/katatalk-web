@@ -1,5 +1,7 @@
 # KataTalk Current Code Workflow & Cursor Persona System
 
+> **SUPERSEDED SNAPSHOT — DO NOT USE AS CURRENT IMPLEMENTATION GUIDANCE.** This document predates migrations 008–014, the current GPU backend smoke/TensorRT support, finalization reconciliation, request-boundary hardening, and the 2026-08-12 global commentary review. Use [codebase-production-review-2026-08-12.md](codebase-production-review-2026-08-12.md), [production-global-commentary-spec-v1.md](production-global-commentary-spec-v1.md), [../ARCHITECTURE.md](../ARCHITECTURE.md), and [env-guide.md](env-guide.md). The body remains only as historical persona/workflow evidence.
+
 ## 1. Executive Summary
 
 KataTalk은 현재 SGF 파일을 업로드하면 서버가 SGF를 검증하고 크레딧을 차감한 뒤 `analysis_jobs`에 작업을 enqueue하며, 별도 Worker가 Supabase queue에서 작업을 claim해 KataGo 또는 mock 분석 파이프라인을 실행하고, 완료된 결과를 React/Vite 결과 화면에서 승률 그래프, 후보 chip, deterministic memo, SVG 바둑판, PV overlay, try-play로 보여주는 구조다.

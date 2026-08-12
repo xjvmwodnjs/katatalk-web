@@ -1,5 +1,7 @@
 # KataTalk codebase and commercialization review — 2026-08-10
 
+> **Superseded:** This dated review is historical evidence. The current source of truth is the [2026-08-12 production review](codebase-production-review-2026-08-12.md) and [production global commentary spec](production-global-commentary-spec-v1.md).
+
 ## Executive conclusion
 
 **Public paid launch: NO-GO.** The repository has a substantial, testable beta
