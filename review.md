@@ -9,6 +9,8 @@
 
 현재 제품은 **KataGo 수치·PV 기반 폐쇄형 베타 조건부 GO**, **글로벌 자연어 해설 공개 유료 서비스 NO-GO**다. 이 문서 아래의 COM 항목과 과거 CI 수치는 누적 이력으로 보존하며, 우선순위는 새 production 리뷰의 NLC roadmap이 대체한다.
 
+리뷰·명세 구현 커밋 `09e513b`는 PR #4 GitHub Actions [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074)에서 Type/unit/Clerk build/secret/format, PostgreSQL migration·ACL·원자성, production dependency audit, Playwright 네 job을 모두 통과했다. 이 CI는 저장소 계약 증거이며 hosted staging 증거는 아니다.
+
 최우선 P0는 LLM 연결 자체가 아니라 현재 deterministic memo의 BSI/ADI 기반 손실 UI를 즉시 숨기고 per-turn `winrate`/`scoreLead`를 착수자 관점으로 정규화하는 일이다. 현재 BSI의 `best - played`는 BLACK config의 백 착수에서 손실을 0 또는 반대로 해석할 수 있다. 이어서 분석 request idempotency, owner-qualified 경량 status, durable payment reversal/inbox, capacity admission, Analysis Worker 최소권한·finite retention/home region·provider DPA/법적 근거/동의를 닫고 timeline-first evidence를 만든다.
 
 자연어 provider·orchestrator·guard는 단위 코드만 존재하고 Worker/DB/API/UI에 연결되지 않았다. 위 pre-provider gate가 닫히기 전에는 shadow를 포함한 외부 호출을 금지한다. 이후 `ko-KR`/`en`부터 별도 Commentary Worker와 strict evidence/claim/fallback gate로 출시하고 `ja-JP`/`zh-CN`은 언어별 검수 전 LLM OFF로 유지한다.

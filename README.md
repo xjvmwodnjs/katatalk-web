@@ -22,7 +22,7 @@
 
 React(Vite) 프론트와 Express(tRPC) 백엔드가 한 저장소에 있는 **베타** 프로토타입입니다. **Clerk 인증**, **Supabase(DB + RPC) 크레딧**, **Toss Payments(향후 국내 옵션) + Lemon Squeezy(현재 베타 결제)** 추상화가 있으며, SGF 업로드 후 환경 설정에 따라 **mock 분석** 또는 **KataGo worker 기반 수치·PV 분석(베타)**가 동작합니다. 결정론적 결과 경로에는 root/multi-turn/BSI/ADI와 선택형 Deep Search·승률 timeline이 포함되지만, **검증된 LLM 자연어 해설·패착 단정·개인화 Q&A는 아직 핵심 제품 경로에 포함하지 않습니다.** **Stripe는 사용하지 않습니다.**
 
-2026-08-12 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 검토 시작 시 PR #4 GitHub Actions [`31367782357`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31367782357)은 TypeScript/unit, build/secret, PostgreSQL, Playwright를 통과했고 production dependency audit만 `nanoid 5.1.6` 권고로 실패했습니다. 이번 변경은 direct dependency와 lockfile을 `>=5.1.16`으로 올렸고 로컬 production audit은 알려진 취약점 0, TypeScript, Vitest **91 files / 988 tests**, Playwright **9/9**를 통과했으며 새 원격 CI가 최종 증거입니다. 현재 migration은 14개이고 Playwright는 1개 mock 기반 spec입니다. 실제 Supabase·Clerk·Lemon·GPU KataGo·LLM 종단 증거는 아직 없습니다.
+2026-08-12 기준 공개 유료 베타 판정은 **NO-GO**, 로컬·폐쇄형 실제 KataGo 테스트는 조건부 GO입니다. 리뷰·명세 구현 커밋 `09e513b`의 PR #4 GitHub Actions [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074)는 TypeScript, Vitest **91 files / 988 tests**, Clerk production build/secret/format, PostgreSQL migration·ACL·원자성, production dependency audit(known vulnerability 0), Playwright **9/9** 네 job을 모두 통과했습니다. 현재 migration은 14개이고 Playwright는 1개 mock 기반 spec입니다. 실제 Supabase·Clerk·Lemon·GPU KataGo·LLM 종단 증거는 아직 없습니다.
 
 ## 알고리즘 기준 문서
 

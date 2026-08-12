@@ -482,7 +482,7 @@ type CommentaryArtifactV1 = {
 
 ### Phase A — 현재 기준선 복구
 
-- `NLC-000`: failing dependency audit(`nanoid < 5.1.16`) 제거
+- `NLC-000` **완료**: `nanoid >=5.1.16`, local/PR production audit known vulnerability 0 (`31607218074`)
 - `NLC-001`: current review·CI·문서의 단일 source of truth 정리
 - `NLC-002`: 먼저 provisional BSI/ADI loss UI를 숨기고, per-turn winrate/score를 black·white·player-to-move 축으로 정규화한 뒤 교차축 동일성 통과 시에만 다시 활성화
 - `NLC-003`: timeline-first 적응형 후보 선택 뒤 targeted/deep 분석

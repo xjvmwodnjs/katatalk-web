@@ -39,7 +39,7 @@ KataTalk는 단순 시제품이 아니다. 인증된 SGF admission, 원자적 �
 
 이 보고서는 저장소 증거와 기존 자동화 결과를 평가한다. 실제 Clerk tenant, Supabase 프로젝트, Lemon Squeezy live/store 설정, GPU/KataGo image, LLM provider, DNS/CDN/WAF, backup restore는 이번 환경에서 실행하지 않았다. 따라서 로컬·CI 통과를 hosted production 증거로 간주하지 않는다.
 
-검토 시작 시 PR #4 GitHub Actions `31367782357`은 TypeScript/unit, build/secret, PostgreSQL, Playwright를 통과했고 production dependency audit만 `nanoid 5.1.6` advisory로 실패했다. 이번 작업에서 direct dependency와 lockfile을 `>=5.1.16`으로 올렸다. 로컬 frozen install, production audit(known vulnerability 0), TypeScript, Vitest 91 files/988 tests, Playwright 9/9가 통과했으며 새 원격 CI 통과 여부는 push 뒤 확인해야 한다.
+검토 시작 시 PR #4 GitHub Actions `31367782357`은 production dependency audit만 `nanoid 5.1.6` advisory로 실패했다. direct dependency와 lockfile을 `>=5.1.16`으로 올린 뒤 로컬 frozen install, production audit(known vulnerability 0), TypeScript, Vitest 91 files/988 tests, Playwright 9/9와 clean-HEAD production build가 통과했다. 리뷰·명세 커밋 `09e513b`의 원격 run [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074)도 Type/unit/build/secret, PostgreSQL, production audit, Playwright 네 job을 모두 통과했다.
 
 ## 3. 현재 구현에서 강한 부분
 

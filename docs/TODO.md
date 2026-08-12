@@ -51,7 +51,7 @@
 - [x] Product Review Playwright coverage now verifies the confirmed analysis-data deletion UI and the cancellation path with mocked authenticated-result APIs. Authenticated staging Supabase deletion rehearsal remains required.
 - [x] Private corpus launch gate now requires each human-reviewed entry to declare critical turns and verifies that the same turns appear in both BSI and ADI signals. A real consented/licensed corpus with independent reviews is still required before release.
 - [x] Product Review category-quality gate now validates category/taxonomy/evidence consistency and is exposed through `katago:product-suite --max-product-review-category-quality-failure-rows 0`.
-- [~] Production dependency gate 유지: 과거 `ip-address` remediation은 통과했다. 2026-08-12 PR #4 run `31367782357`은 `nanoid 5.1.6` advisory 하나로 실패했고 이번 작업에서 direct dependency/lockfile을 `>=5.1.16`으로 갱신했다. 로컬 production audit은 알려진 취약점 0으로 통과했으며 새 원격 CI green이 완료 조건이다.
+- [x] Production dependency gate 복구: direct dependency/lockfile을 `nanoid >=5.1.16`으로 갱신했고 로컬 audit과 PR #4 run [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074)의 production audit이 알려진 취약점 0으로 통과했다.
 - [x] Git delivery restored: PR #1을 `master`에 병합했고 merge commit `5ac090e`의 GitHub Actions `30448737391`에서 PostgreSQL, dependency-audit, quality, build, E2E gate가 통과했다.
 - [ ] long-running 분석 UX, observability, SGF 보존/삭제 정책, 환불/약관 법무 검토 완료
 

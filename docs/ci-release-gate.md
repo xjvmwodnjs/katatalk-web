@@ -1,6 +1,6 @@
 # CI Release Gate
 
-> **Current review alignment (2026-08-12):** Review-start PR #4 run [`31367782357`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31367782357) passed every gate except the production dependency audit, blocked by the nanoid advisory. The direct dependency/lockfile now use `>=5.1.16`, and the local production audit reports no known vulnerabilities; a new remote pass remains the final evidence. See [production global commentary spec](production-global-commentary-spec-v1.md) and [2026-08-12 production review](codebase-production-review-2026-08-12.md).
+> **Current review alignment (2026-08-12):** Review/spec commit `09e513b` PR #4 run [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074) passed all four jobs: TypeScript/unit/Clerk build/secret/format, PostgreSQL migration/ACL/atomicity, production dependency audit after `nanoid >=5.1.16`, and Playwright. See [production global commentary spec](production-global-commentary-spec-v1.md) and [2026-08-12 production review](codebase-production-review-2026-08-12.md).
 
 ## Implemented local gate
 

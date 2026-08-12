@@ -18,10 +18,10 @@ Do not publish suspected vulnerabilities, credentials, payment data, or customer
   API JSON and form parsers have bounded request sizes; payment raw-body parsing
   remains ahead of normal parsers.
 - Release tooling includes secret scanning and a production dependency-audit
-  gate. Review-start run [31367782357](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31367782357)
-  passed all other jobs but failed that gate for `nanoid 5.1.6`; the repository
-  now pins `>=5.1.16`; the local production audit reports no known
-  vulnerabilities, pending a new remote pass. CI is not a hosted-environment audit.
+  gate. Review/spec commit `09e513b` run
+  [31607218074](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074)
+  passed all four jobs after pinning `nanoid >=5.1.16`, including the production
+  audit with no known vulnerabilities. CI is not a hosted-environment audit.
 - Production Web and Worker environment validation are separate: the Worker
   requires only its Supabase/queue and KataGo settings, reducing unnecessary
   exposure of Clerk, payment, JWT, and public-URL secrets.
