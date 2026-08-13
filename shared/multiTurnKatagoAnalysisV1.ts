@@ -4,6 +4,7 @@
  */
 
 import type { AnalysisPlanCandidateReasonV1 } from "./analysisPlanV1";
+import type { VerifiedPerTurnLossPerspectiveV1 } from "./perTurnLossPerspectiveV1";
 
 export const MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION =
   "multi-turn-katago-analysis-v1" as const;
@@ -67,6 +68,8 @@ export type TurnAnalysisEntrySuccessV1 = {
   query: TurnAnalysisQueryMetaV1;
   katago: TurnAnalysisKatagoSliceV1;
   comparisonReady: TurnAnalysisComparisonReadyV1;
+  /** Present only on artifacts whose per-turn loss axis was captured by the Worker. */
+  lossPerspective?: VerifiedPerTurnLossPerspectiveV1;
   /** `moveInfos` 에서 best·played 행만 요약(추가 KataGo 호출 없음) */
   moveSummary?: TurnAnalysisMovePairSummaryV1;
   /** `moveInfos` 상위 N개만 요약(ADI v1 등; stdout 원문 저장 아님) */

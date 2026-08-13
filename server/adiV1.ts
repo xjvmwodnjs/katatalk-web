@@ -2,6 +2,7 @@ import type { AdiV1Band, AdiV1Result, AdiV1Signal, AdiV1SignalComponents, AdiV1S
 import { ADI_V1_COMPUTED_FROM, ADI_V1_VERSION } from "@shared/adiV1";
 import type { BsiV1Result, BsiV1Signal } from "@shared/bsiV1";
 import type { TurnAnalysisCandidateMoveSummaryV1, TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "@shared/multiTurnKatagoAnalysisV1";
+import { normalizePerTurnCandidateWinrateForPlayerV1 } from "@shared/perTurnLossPerspectiveV1";
 
 const W_VISIT = 0.25;
 const W_RANK = 0.2;
@@ -204,6 +205,16 @@ export function computeAdiV1FromTurnAnalysesAndBsi(
     const playedInCandidates = t.comparisonReady.playedMoveFoundInCandidates;
     const cands = t.candidateMoves ?? [];
     const bsiSig = bsiByTurn.get(t.turnIndex);
+    const interpretationStatus =
+      bsiSig?.interpretationStatus === "verified" ? "verified" : "provisional";
+    const normalizedCandidates = cands.map(candidate => {
+      const winrate = normalizePerTurnCandidateWinrateForPlayerV1(
+        t.lossPerspective,
+        t.player,
+        candidate.winrate
+      );
+      return winrate == null ? candidate : { ...candidate, winrate };
+    });
 
     if (!bsiSig || cands.length < 2) {
       insufficientCount += 1;
@@ -223,17 +234,17 @@ export function computeAdiV1FromTurnAnalysesAndBsi(
           rareUserMoveRisk: null,
           availableWeightSum: 0,
         },
-        interpretationStatus: "provisional",
+        interpretationStatus,
       });
       continue;
     }
 
-    const visitEntropy = visitEntropyFromCandidates(cands);
-    const rankInstability = rankInstabilityFromCandidates(cands);
-    const tacticalPvRisk = tacticalPvRiskFromCandidates(cands);
+    const visitEntropy = visitEntropyFromCandidates(normalizedCandidates);
+    const rankInstability = rankInstabilityFromCandidates(normalizedCandidates);
+    const tacticalPvRisk = tacticalPvRiskFromCandidates(normalizedCandidates);
     const ownershipVolatility: number | null = null;
     const bsiNorm = bsiNormFromSignal(bsiSig);
-    const rareRisk = rareUserMoveRisk(t.playedMove, playedInCandidates, cands);
+    const rareRisk = rareUserMoveRisk(t.playedMove, playedInCandidates, normalizedCandidates);
 
     const baseComponents = {
       visitEntropy,
@@ -257,7 +268,7 @@ export function computeAdiV1FromTurnAnalysesAndBsi(
           ...baseComponents,
           availableWeightSum: 0,
         },
-        interpretationStatus: "provisional",
+        interpretationStatus,
       });
       continue;
     }
@@ -276,7 +287,7 @@ export function computeAdiV1FromTurnAnalysesAndBsi(
           ...baseComponents,
           availableWeightSum: 0,
         },
-        interpretationStatus: "provisional",
+        interpretationStatus,
       });
       continue;
     }
@@ -305,7 +316,7 @@ export function computeAdiV1FromTurnAnalysesAndBsi(
       adiBand,
       deepSearchCandidate: adiScore >= DEEP_SEARCH_SCORE_THRESHOLD,
       components: fullComponents,
-      interpretationStatus: "provisional",
+      interpretationStatus,
     });
   }
 

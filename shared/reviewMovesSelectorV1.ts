@@ -16,6 +16,7 @@ import type {
 import { isProductReviewMoveV1 } from "./analysisProductEventsV1";
 import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTurnKatagoAnalysisV1";
 import type { WinrateTimelineV1 } from "./winrateTimelineV1";
+import { resolvePerTurnMoveLossV1 } from "./perTurnLossPerspectiveV1";
 
 export type BuildProductReviewMovesV1Input = {
   gameResult?: ProductGameResultV1 | null;
@@ -273,24 +274,11 @@ function isPassOrInvalidMove(move: string | null): boolean {
 }
 
 function scoreLossFromTurn(turn: TurnAnalysisEntrySuccessV1): number | null {
-  const best = turn.moveSummary?.best;
-  const played = turn.moveSummary?.played;
-  if (typeof best?.scoreLead === "number" && Number.isFinite(best.scoreLead) && typeof played?.scoreLead === "number" && Number.isFinite(played.scoreLead)) {
-    return Math.max(0, best.scoreLead - played.scoreLead);
-  }
-  if (typeof best?.scoreMean === "number" && Number.isFinite(best.scoreMean) && typeof played?.scoreMean === "number" && Number.isFinite(played.scoreMean)) {
-    return Math.max(0, best.scoreMean - played.scoreMean);
-  }
-  return null;
+  return resolvePerTurnMoveLossV1(turn).scoreBestMinusPlayed ?? null;
 }
 
 function winrateLossFromTurn(turn: TurnAnalysisEntrySuccessV1): number | null {
-  const best = turn.moveSummary?.best?.winrate;
-  const played = turn.moveSummary?.played?.winrate;
-  if (typeof best !== "number" || !Number.isFinite(best) || typeof played !== "number" || !Number.isFinite(played)) {
-    return null;
-  }
-  return Math.max(0, Math.min(1, best - played));
+  return resolvePerTurnMoveLossV1(turn).winrateBestMinusPlayed ?? null;
 }
 
 function learningCategory(event: AnalysisLearningEventV1): ProductReviewMoveCategoryV1 {
