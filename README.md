@@ -35,6 +35,9 @@ POST 유지보수 차단·구 Web drain·required-header 순서를 따라야 한
 
 현재 작업 트리의 2026-08-19 로컬 재검증은 TypeScript 오류 0, Vitest **94
 files / 264 suites / 1,020 tests** 전부 통과, Playwright Chromium **10/10**이다.
+clean feature commit `786a626`에서는 production Clerk manifest·artifact verifier와
+Web API·Analysis Worker 번들도 모두 통과했다. 최종 문서 commit에서도 같은
+provenance build를 다시 실행한다.
 Docker/psql이 없는 로컬 환경이라 migration `015`의 실제 PostgreSQL 실행은
 원격 DB CI와 staging evidence 전까지 미검증이며, 이 수치만으로 출시 GO를
 선언하지 않는다.

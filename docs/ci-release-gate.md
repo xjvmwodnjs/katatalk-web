@@ -6,8 +6,10 @@
 > submission idempotency contract and the database gate now requires 100 serial
 > replays plus a 32-way contention race to produce one job, one usage ledger,
 > and one debit. HTTP tests require 100 lost-response replays to return the same
-> job. This is local/repository evidence only until the commit's GitHub jobs and
-> protected Supabase staging evidence pass.
+> job. The clean feature commit `786a626` passed the local Clerk manifest and
+> artifact verifier plus the Web API and Analysis Worker production bundles.
+> This is still local/repository evidence only until the commit's GitHub jobs
+> and protected Supabase staging evidence pass.
 
 ## Implemented local gate
 

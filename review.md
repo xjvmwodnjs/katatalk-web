@@ -95,7 +95,7 @@ KataTalk는 단순한 화면 시제품을 넘어섰다. SGF 업로드, 비동기
 | ------------------------------------------ | -----------------------------: | ------------------------------------------------------------------------------------------------------------------------ |
 | TypeScript `tsc --noEmit`                  |   **로컬 PASS / 원격 CI 대기** | 2026-08-19 현재 브랜치 타입 오류 0                                                                                       |
 | Vitest                                     |   **로컬 PASS / 원격 CI 대기** | 2026-08-19 현재 94 files / 264 suites / 1,020 tests, 실패·skip 0                                                         |
-| 프로덕션 빌드                              |   **clean commit 재검증 대기** | provenance gate 특성상 이번 변경 commit 직후 Clerk manifest·verifier + API + Worker 번들을 다시 실행                     |
+| 프로덕션 빌드                              |   **로컬 PASS / 원격 CI 대기** | clean feature commit `786a626`에서 Clerk manifest·verifier + API + Worker 번들 통과; 최종 문서 commit에서도 재검증       |
 | Playwright Chromium                        |   **로컬 PASS / 원격 CI 대기** | 2026-08-19 paid-request recovery·결과 UI·timeline hardening 10/10, local-dev/mock API 기반                               |
 | 프로덕션 의존성 감사                       |   **로컬 PASS / 원격 CI 대기** | pnpm 10.18.1 frozen lockfile·production audit, 알려진 취약점 0                                                           |
 | 실제 외부 KataGo 종단 테스트               |                     **미검증** | 바이너리·모델·GPU·실데이터가 필요한 별도 게이트                                                                          |
