@@ -1,8 +1,11 @@
-import type { AnalysisJobGetResponse } from "@shared/analysisJob";
+import type { AnalysisJobResultMeta } from "@shared/analysisJob";
 import { isKatagoWorkerV1ResultPayload } from "@shared/analysisJob";
 import type { AnalysisJobDbRow } from "./creditService";
 import { getAnalysisWorkerMode } from "./analysisWorkerMode";
-import { getAnalysisEngineName, type AnalysisEngineName } from "./worker/analysisEngines/config";
+import {
+  getAnalysisEngineName,
+  type AnalysisEngineName,
+} from "./worker/analysisEngines/config";
 
 export type WorkerPipelineChoiceV1 = "katago" | "mock" | "engine_mismatch";
 
@@ -49,7 +52,11 @@ export function isLegacyMockResultPayload(data: unknown): boolean {
     return true;
   }
   const src = r.source;
-  if (src != null && typeof src === "object" && (src as { mock?: boolean }).mock === true) {
+  if (
+    src != null &&
+    typeof src === "object" &&
+    (src as { mock?: boolean }).mock === true
+  ) {
     return true;
   }
   return false;
@@ -59,17 +66,19 @@ export function isLegacyMockResultPayload(data: unknown): boolean {
 export function resolveCompletedJobMetaMock(
   row: Pick<AnalysisJobDbRow, "is_mock">,
   parsedResult: unknown
-): AnalysisJobGetResponse["meta"] {
+): AnalysisJobResultMeta | undefined {
   if (isKatagoWorkerV1ResultPayload(parsedResult)) {
     return {
       mock: false,
-      message: "KataGo worker v1: BSI/ADI v1 computed from multi-turn; Deep Search not executed.",
+      message:
+        "KataGo worker v1: BSI/ADI v1 computed from multi-turn; Deep Search not executed.",
     };
   }
   if (row.is_mock === true) {
     return {
       mock: true,
-      message: "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
+      message:
+        "Mock analysis job finished. SGF was validated at enqueue; KataGo not used.",
     };
   }
   if (isLegacyMockResultPayload(parsedResult)) {
@@ -126,7 +135,10 @@ function redactSgfLikePayloadInErrorBody(body: string): string {
 }
 
 /** DB error_message — 코드 접두 유지, SGF 원문·property fragment·긴 tail 제거 */
-export function sanitizeAnalysisJobErrorMessage(raw: string, maxLen = 400): string {
+export function sanitizeAnalysisJobErrorMessage(
+  raw: string,
+  maxLen = 400
+): string {
   const normalized = raw.replace(/\r\n/g, "\n").trim();
   const prefixMatch = /^([A-Z][A-Z0-9_]+):\s*([\s\S]*)$/.exec(normalized);
   const prefix = prefixMatch ? `${prefixMatch[1]}: ` : "";
@@ -149,7 +161,9 @@ export function analysisJobErrorCodeFromMessage(message: string): string {
 }
 
 /** Allowlisted message safe to persist in user-readable analysis_jobs rows. */
-export function publicAnalysisJobErrorMessage(errorCode: string | null | undefined): string {
+export function publicAnalysisJobErrorMessage(
+  errorCode: string | null | undefined
+): string {
   switch (errorCode) {
     case "KATAGO_TIMEOUT":
       return "Analysis timed out. Please try again.";

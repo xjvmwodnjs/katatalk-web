@@ -51,7 +51,16 @@ export const EXPECTED_SECURITY_DEFINER_FUNCTIONS = [
   },
   {
     signature:
+      "public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)",
+    volatility: "volatile",
+  },
+  {
+    signature:
       "public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)",
+    volatility: "volatile",
+  },
+  {
+    signature: "public.reconcile_analysis_job_finalization(text, boolean)",
     volatility: "volatile",
   },
 ];
@@ -94,7 +103,7 @@ export const EXPECTED_SENSITIVE_TABLES = [
   },
   {
     qualifiedName: "public.analysis_job_finalization_failures",
-    serviceRolePrivileges: ["INSERT", "SELECT", "UPDATE"],
+    serviceRolePrivileges: ["SELECT"],
   },
   {
     qualifiedName: "public.katatalk_schema_migrations",

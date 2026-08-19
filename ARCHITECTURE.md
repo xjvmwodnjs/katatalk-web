@@ -1,290 +1,139 @@
-# KataTalk — 인증 및 보안 아키텍처 문서
+# KataTalk current architecture
 
-**서비스명:** KataTalk (카타톡)  
-**버전:** 1.0.0-MVP  
-**작성일:** 2026-05-11  
-**작성자:** Manus AI
+> Current implementation record: 2026-08-19. This document describes the code
+> now in the repository, not a production deployment claim. The detailed
+> production review is in [docs/codebase-production-review-2026-08-12.md](docs/codebase-production-review-2026-08-12.md); the target contract is [docs/production-global-commentary-spec-v1.md](docs/production-global-commentary-spec-v1.md).
 
-> **최신성 경고 (2026-08-04):** 아래 1~10절의 Manus OAuth·MySQL 중심 설명은 초기 MVP의 역사적 구조이며 현재 production source of truth가 아니다. 현재 출시 판정과 작업 순서는 [`review.md`](review.md), 환경 분리는 [`docs/env-guide.md`](docs/env-guide.md)를 따른다. 이 경고 아래의 기존 본문은 아직 사용하는 legacy 경로를 추적하기 위해 보존한다.
+## System boundary
 
-## 0. 현재 production 인증·빌드 경계
-
-- 공개 Web 인증은 `AUTH_PROVIDER=clerk`/`VITE_AUTH_PROVIDER=clerk` 조합과 Clerk Bearer JWT 경로가 기준이다. Supabase는 Clerk subject를 `profiles.id`로 사용하는 크레딧·분석 작업 DB이며, Drizzle/MySQL 사용자는 legacy 동기화 경로다.
-- Web은 Express API·결제 webhook·정적 React bundle을 제공하고, 외부 Worker는 service-role DB 권한과 KataGo 실행 권한만 가져야 한다. Web/Worker secret 최소화 자체는 COM-106의 남은 작업이다.
-- 모든 Vite build는 Clerk publishable key와 실제 source provenance를 검증한다. source SHA는 GitHub/Railway/Render의 build metadata 또는 clean Git HEAD에서만 가져오고, 선택 `KATATALK_BUILD_COMMIT_SHA`는 그 값과 일치해야 한다. Vite가 같은 build 안에서 `client-build-manifest.json`을 만들고 package verifier가 동일한 env-file 우선순위로 provider·commit·key SHA-256·index asset·Clerk chunk를 검증한 뒤에만 서버/Worker bundle을 만든다.
-- 배포 smoke는 manifest의 commit과 protected Clerk key fingerprint를 credential 없이 먼저 확인하고, credential 요청 직전에 동기적으로 재검사한다. 불일치·redirect·oversize·잘못된 MIME/cache header에서는 Clerk/Ops token을 보내지 않는다.
-- 이 manifest는 구성 provenance gate이며 서명된 공급망 증명은 아니다. 실제 Clerk tenant, publishable/secret key 짝, allowed origin, 로그인·세션 동작은 보호된 staging E2E로 별도 증명해야 한다.
-
----
-
-## 1. 시스템 개요
-
-KataTalk은 AI 기반 바둑 기보(SGF) 다국어 요약 서비스로, 사용자가 업로드한 SGF 파일을 KataGo 엔진으로 분석한 뒤 LLM을 통해 자연어 해설을 생성하는 SaaS 플랫폼입니다. 본 문서는 인증(Authentication), 인가(Authorization), 데이터베이스 모델링, 그리고 보안 아키텍처에 대한 기술 명세를 기술합니다.
-
----
-
-## 2. 기술 스택
-
-| 계층             | 기술                               | 역할                        |
-| ---------------- | ---------------------------------- | --------------------------- |
-| **프론트엔드**   | React 19 + Tailwind CSS 4 + Vite 7 | SPA 클라이언트              |
-| **API 계층**     | tRPC 11 + Express 4                | 타입 안전 RPC 통신          |
-| **인증**         | Manus OAuth 2.0 + JWT (jose)       | 세션 관리 및 사용자 인증    |
-| **데이터베이스** | MySQL (TiDB) + Drizzle ORM         | 사용자/구독/분석 이력 저장  |
-| **직렬화**       | Superjson                          | Date 등 복합 타입 자동 변환 |
-
----
-
-## 3. 인증 흐름 (Authentication Flow)
-
-### 3.1 OAuth 2.0 Authorization Code Flow
-
-KataTalk은 Manus OAuth를 통해 인증을 처리합니다. Manus OAuth 포털은 Google, Apple, GitHub, 이메일/비밀번호 등 다양한 로그인 방식을 지원하며, 비밀번호 해싱 및 소셜 로그인 연동은 OAuth 제공자 측에서 처리됩니다.
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Browser   │     │  Manus OAuth     │     │  KataTalk API   │
-│  (React)    │     │  Portal          │     │  (Express)      │
-└──────┬──────┘     └────────┬─────────┘     └────────┬────────┘
-       │                     │                        │
-       │  1. Click Login     │                        │
-       │────────────────────>│                        │
-       │                     │                        │
-       │  2. User authenticates (Google/Email/etc.)   │
-       │                     │                        │
-       │  3. Redirect with authorization code         │
-       │<────────────────────│                        │
-       │                     │                        │
-       │  4. GET /api/oauth/callback?code=xxx&state=yyy
-       │─────────────────────────────────────────────>│
-       │                     │                        │
-       │                     │  5. Exchange code for  │
-       │                     │     access token       │
-       │                     │<───────────────────────│
-       │                     │                        │
-       │                     │  6. Return user info   │
-       │                     │────────────────────────>│
-       │                     │                        │
-       │  7. Set HttpOnly cookie + redirect to /      │
-       │<─────────────────────────────────────────────│
-       │                     │                        │
-       │  8. Subsequent API calls include cookie      │
-       │─────────────────────────────────────────────>│
-       │                     │                        │
-       │  9. Verify JWT, inject ctx.user              │
-       │<─────────────────────────────────────────────│
+```mermaid
+flowchart LR
+  B["Browser / React + Vite"] -->|"Clerk bearer token"| W["Express Web service"]
+  W -->|"service-role RPC"| S[("Supabase\nprofiles, credits, jobs, ledgers")]
+  W -->|"verified raw-body webhook"| P["Lemon Squeezy"]
+  X["External analysis Worker"] -->|"claim / heartbeat / finalize RPC"| S
+  X --> K["KataGo process + model"]
+  B -->|"owner-scoped job/result API"| W
 ```
 
-### 3.2 세션 관리
+The Web service receives browser traffic and payments; the Worker only claims
+and finalizes queued analysis jobs. They must be deployed as distinct processes
+when `ANALYSIS_WORKER_MODE=external`.
 
-세션은 JWT(JSON Web Token) 기반으로 관리되며, 서명 키는 환경 변수 `JWT_SECRET`으로 주입됩니다.
+## Components and sources of truth
 
-| 속성         | 값                  | 보안 목적                                 |
-| ------------ | ------------------- | ----------------------------------------- |
-| **HttpOnly** | `true`              | JavaScript에서 쿠키 접근 차단 (XSS 방어)  |
-| **Secure**   | `true` (HTTPS 환경) | 암호화된 연결에서만 쿠키 전송             |
-| **SameSite** | `none`              | 크로스 오리진 요청 허용 (OAuth 콜백 호환) |
-| **Path**     | `/`                 | 전체 경로에서 세션 유효                   |
-| **만료**     | 1년                 | 장기 세션 유지                            |
+| Area             | Current implementation                                                                             | Boundary                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Client           | React, Vite, React Query, Tailwind/Radix                                                           | Calls Express API; no Supabase service-role access.                                                                                 |
+| Identity         | Clerk in production                                                                                | Browser token is verified server-side. Local/legacy modes are non-production paths.                                                 |
+| Application data | Supabase PostgreSQL and SECURITY DEFINER RPCs                                                      | `profiles`, credit ledger, analysis jobs, worker status, and finalization/reconciliation state are the operational source of truth. |
+| Legacy identity  | Optional MySQL/Drizzle identity sync                                                               | Compatibility path only; reads stay read-only and first-use mutations are explicit.                                                 |
+| Billing          | Lemon Squeezy one-time credit packs                                                                | Raw-body webhook verification and idempotency grant credits. Toss is scaffolded, not an enabled checkout path.                      |
+| Analysis         | External Worker plus KataGo                                                                        | The Web service enqueues; the Worker owns KataGo execution, lease heartbeat, result/finalization, and worker health.                |
+| Commentary       | Deterministic planner/guard experiments only                                                       | No production Worker, database state, API, UI artifact, or provider call path exists.                                               |
+| Release gates    | Vitest, Playwright, build/provenance, secret scan, dependency audit, PostgreSQL migration/ACL gate | CI proves repository contracts, not third-party staging integration.                                                                |
 
-### 3.3 쿠키 이름
+## Main flows
 
-```
-app_session_id
-```
+### Analysis lifecycle
 
----
+1. An authenticated owner uploads an SGF to `POST /api/analyze`.
+2. The client persists an opaque request ID keyed by an account-scope and
+   SGF/options digest. It first queries the owner-qualified
+   `/api/analyze/requests/:requestId` recovery boundary; an already committed
+   job therefore bypasses later upload/validator policy changes. New requests
+   are validated and call
+   `enqueue_paid_analysis_job_v2`; `(owner, request_id)` replay, debit, ledger,
+   and enqueue are serialized in one transaction. A lost 202 returns the
+   original job without another charge.
+3. An external Worker claims a leased job, sends heartbeat updates, and runs
+   the selected engine. Production KataGo uses `ANALYSIS_ENGINE=katago`.
+4. The Worker writes a normalized result, completes/refunds through RPCs, and
+   reports health. A bounded reconciliation command handles only quarantined
+   finalization anomalies.
+5. The owner polls a small owner-qualified status projection. Completion causes
+   one request to `/api/analyze/:jobId/result`, which carries a versioned
+   envelope and ETag; the client then renders the normalized view model.
 
-## 4. 인가 (Authorization)
+Status and timeline authorization no longer read the full job row. Realtime
+timeline progress still uses node-local JSONL, which is not a valid scale-out
+boundary and must be replaced by a shared durable progress transport.
 
-### 4.1 Procedure 계층 구조
+### Payment lifecycle
 
-tRPC 미들웨어를 통해 3단계 인가 수준을 제공합니다.
+1. The authenticated user requests a configured Lemon Squeezy credit pack.
+2. A verified, raw-body webhook identifies the order/event and calls the
+   idempotent credit-grant RPC.
+3. The immutable credit ledger is the audit trail. Checkout redirects never
+   grant credit by themselves.
 
-```typescript
-publicProcedure; // 인증 불필요 (auth.me, 공개 데이터 조회)
-protectedProcedure; // 로그인 필수 (profile, analysis)
-adminProcedure; // 관리자 전용 (role === 'admin')
-```
+## Production deployment contracts
 
-### 4.2 에러 코드
+| Process | Required responsibility                                                                         | Must not receive                                                    |
+| ------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Web     | Clerk, public URL, Lemon Squeezy, Supabase queue/ledger access                                  | KataGo binary, model, or config paths.                              |
+| Worker  | Supabase URL/service-role key, external Worker mode, atomic enqueue guard, KataGo configuration | Clerk secret, JWT secret, Lemon Squeezy secrets, or `APP_BASE_URL`. |
 
-| 상황                               | HTTP 코드 | 메시지                                        |
-| ---------------------------------- | --------- | --------------------------------------------- |
-| 미인증 사용자가 보호된 리소스 접근 | 401       | `Please login (10001)`                        |
-| 일반 사용자가 관리자 리소스 접근   | 403       | `You do not have required permission (10002)` |
+`validateProductionDeploymentEnv()` validates the Web contract.
+`validateProductionAnalysisWorkerEnv()` validates the Worker contract. Both
+fail closed when atomic enqueue is explicitly disabled. Local combined
+development continues to use the broader validation path.
 
-프론트엔드는 `UNAUTHED_ERR_MSG`를 감지하면 자동으로 로그인 페이지로 리다이렉트합니다.
+The secret profiles are separated, but the Analysis Worker still uses the same
+Supabase service-role credential as Web. That credential can reach privileged
+payment/profile RPCs, so this is not yet a least-privilege database boundary.
 
----
+## Target global commentary boundary
 
-## 5. 보안 방어 체계
+This is a target, not a description of the current runtime.
 
-### 5.1 XSS (Cross-Site Scripting) 방어
-
-KataTalk은 다층 XSS 방어를 적용합니다.
-
-첫째, JWT 토큰이 `HttpOnly` 쿠키에 저장되어 있어 `document.cookie`로 접근이 불가능합니다. 따라서 XSS 공격자가 세션 토큰을 탈취할 수 없습니다. 둘째, React의 기본 JSX 이스케이핑이 모든 사용자 입력을 자동으로 HTML 인코딩합니다. 셋째, `dangerouslySetInnerHTML`을 사용하지 않으며, 모든 동적 콘텐츠는 React의 가상 DOM을 통해 안전하게 렌더링됩니다.
-
-### 5.2 CSRF (Cross-Site Request Forgery) 방어
-
-CSRF 방어는 다음 메커니즘의 조합으로 이루어집니다.
-
-`SameSite` 쿠키 정책과 함께, tRPC의 `httpBatchLink`가 `credentials: 'include'`로 설정되어 있어 동일 출처에서만 인증된 요청이 가능합니다. 또한 OAuth 콜백 시 `state` 파라미터를 통해 CSRF 토큰 역할을 수행하며, 이 값은 클라이언트의 `window.location.origin`을 base64 인코딩하여 생성됩니다.
-
-### 5.3 비밀번호 보안
-
-비밀번호 관련 보안은 Manus OAuth 제공자 측에서 전적으로 관리합니다. KataTalk 서버는 사용자의 비밀번호를 수신하거나 저장하지 않으며, OAuth 토큰 교환 과정에서 `openId`만 수신합니다. 이는 비밀번호 유출 위험을 원천적으로 제거하는 설계입니다.
-
----
-
-## 6. 데이터베이스 스키마
-
-### 6.1 Users 테이블
-
-```sql
-CREATE TABLE users (
-  id              INT AUTO_INCREMENT PRIMARY KEY,
-  openId          VARCHAR(64) NOT NULL UNIQUE,
-  name            TEXT,
-  email           VARCHAR(320),
-  loginMethod     VARCHAR(64),
-  role            ENUM('user', 'admin') DEFAULT 'user' NOT NULL,
-  subscriptionTier ENUM('free', 'basic', 'premium') DEFAULT 'free' NOT NULL,
-  remainingAnalysisCount INT DEFAULT 2 NOT NULL,
-  maxAnalysisCount INT DEFAULT 3 NOT NULL,
-  subscriptionStartDate TIMESTAMP,
-  preferredLanguage VARCHAR(5) DEFAULT 'ko',
-  createdAt       TIMESTAMP DEFAULT NOW() NOT NULL,
-  updatedAt       TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL,
-  lastSignedIn    TIMESTAMP DEFAULT NOW() NOT NULL
-);
-```
-
-### 6.2 Analysis History 테이블
-
-```sql
-CREATE TABLE analysis_history (
-  id              INT AUTO_INCREMENT PRIMARY KEY,
-  userId          INT NOT NULL,
-  fileName        VARCHAR(255),
-  sgfStorageKey   VARCHAR(512),
-  status          ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending' NOT NULL,
-  mistakeCount    INT DEFAULT 0,
-  language        VARCHAR(5) DEFAULT 'ko',
-  resultJson      TEXT,
-  createdAt       TIMESTAMP DEFAULT NOW() NOT NULL,
-  completedAt     TIMESTAMP
-);
+```mermaid
+flowchart LR
+  U["Global user"] --> EDGE["CDN / WAF"]
+  EDGE --> API["Stateless Web API"]
+  API --> DB[("Ledger / control DB")]
+  DB --> AQ["Durable fair analysis queue"]
+  AQ --> KW["Least-privilege GPU KataGo Worker"]
+  KW --> EV["EvidenceBundleV2"]
+  KW --> OBJ["Encrypted object storage"]
+  EV --> CQ["Commentary queue"]
+  CQ --> CW["Least-privilege Commentary Worker"]
+  CW --> LLM["Locale-aware provider"]
+  LLM --> G["Strict schema + claim + policy guard"]
+  G --> OBJ
+  DB --> API
 ```
 
-### 6.3 구독 티어별 제한
+The required analysis order is low-cost full-game timeline, adaptive moment
+selection, targeted analysis, bounded Deep Search, then a versioned evidence
+bundle. Every candidate stores black, white, and player-to-move perspectives.
+Natural language is a separate asynchronous expression layer and never repairs
+or invents missing Go evidence. Provider or verifier failure stores a
+deterministic fallback without rerunning KataGo or charging another credit.
 
-| 티어        | 월 분석 횟수 | 지원 언어 | 참고도(PV) | 가격      |
-| ----------- | ------------ | --------- | ---------- | --------- |
-| **Free**    | 3회          | 한국어만  | 1개        | 무료      |
-| **Basic**   | 30회         | 4개 언어  | 5개        | $4.99/월  |
-| **Premium** | 100회        | 4개 언어  | 전체       | $11.99/월 |
+Initial global deployment uses one authoritative write region for the ledger,
+with CDN/edge distribution around stateless Web processes. Active-active credit
+ledger writes are out of scope until conflict semantics are explicitly designed.
 
-신규 가입 시 `subscriptionTier = 'free'`, `remainingAnalysisCount = 2`로 초기화됩니다. 이는 KataGo 서버 비용을 방어하기 위한 필수 장치입니다.
+See [docs/env-guide.md](docs/env-guide.md) for exact deployment variables and
+[docs/database-migration-gate.md](docs/database-migration-gate.md) for the
+migration/ACL evidence procedure.
 
----
+## Deliberate limits
 
-## 7. API 엔드포인트 구조
-
-### 7.1 인증 관련
-
-| 엔드포인트            | 메서드   | 인가 수준 | 설명                  |
-| --------------------- | -------- | --------- | --------------------- |
-| `/api/oauth/callback` | GET      | Public    | OAuth 콜백 처리       |
-| `trpc.auth.me`        | Query    | Public    | 현재 사용자 정보 조회 |
-| `trpc.auth.logout`    | Mutation | Public    | 세션 쿠키 삭제        |
-
-### 7.2 프로필/구독 관련
-
-| 엔드포인트                     | 메서드   | 인가 수준 | 설명           |
-| ------------------------------ | -------- | --------- | -------------- |
-| `trpc.profile.getSubscription` | Query    | Protected | 구독 정보 조회 |
-| `trpc.profile.updateLanguage`  | Mutation | Protected | 선호 언어 변경 |
-
-### 7.3 분석 관련
-
-| 엔드포인트                 | 메서드   | 인가 수준 | 설명                    |
-| -------------------------- | -------- | --------- | ----------------------- |
-| `trpc.analysis.canAnalyze` | Query    | Protected | 잔여 크레딧 확인        |
-| `trpc.analysis.start`      | Mutation | Protected | 분석 시작 (크레딧 차감) |
-| `trpc.analysis.history`    | Query    | Protected | 분석 이력 조회          |
-
----
-
-## 8. 환경 변수 설정
-
-### 8.1 .env.example
-
-```env
-# ─── Database ───
-DATABASE_URL=mysql://user:password@host:port/database?ssl={"rejectUnauthorized":true}
-
-# ─── Auth (Manus OAuth) ───
-JWT_SECRET=your-jwt-signing-secret
-VITE_APP_ID=your-manus-app-id
-OAUTH_SERVER_URL=https://api.manus.im
-VITE_OAUTH_PORTAL_URL=https://auth.manus.im
-
-# ─── Owner Info ───
-OWNER_OPEN_ID=owner-open-id
-OWNER_NAME=Owner Name
-
-# ─── Built-in APIs ───
-BUILT_IN_FORGE_API_URL=https://forge-api.manus.im
-BUILT_IN_FORGE_API_KEY=your-forge-api-key
-VITE_FRONTEND_FORGE_API_KEY=your-frontend-forge-key
-VITE_FRONTEND_FORGE_API_URL=https://forge-api.manus.im
-```
-
-### 8.2 보안 주의사항
-
-`BUILT_IN_FORGE_API_KEY`와 `JWT_SECRET`은 절대 클라이언트에 노출되어서는 안 됩니다. `VITE_` 접두사가 붙은 변수만 프론트엔드 번들에 포함되며, 서버 전용 변수는 빌드 시 제외됩니다.
-
----
-
-## 9. 프로젝트 디렉토리 구조
-
-```
-baduk-ai-report/
-├── client/
-│   └── src/
-│       ├── _core/hooks/useAuth.ts    ← 인증 상태 훅
-│       ├── components/               ← UI 컴포넌트
-│       ├── lib/
-│       │   ├── mockData.ts           ← Mock 데이터 + i18n 번역
-│       │   └── trpc.ts              ← tRPC 클라이언트
-│       └── pages/Home.tsx            ← 메인 페이지 (인증 통합)
-├── drizzle/
-│   └── schema.ts                     ← DB 스키마 (users + analysis_history)
-├── server/
-│   ├── _core/
-│   │   ├── sdk.ts                    ← OAuth SDK (JWT 서명/검증)
-│   │   ├── oauth.ts                  ← OAuth 콜백 라우트
-│   │   ├── cookies.ts                ← 쿠키 보안 옵션
-│   │   ├── context.ts                ← tRPC 컨텍스트 (인증 주입)
-│   │   └── trpc.ts                   ← 미들웨어 (public/protected/admin)
-│   ├── db.ts                         ← DB 쿼리 헬퍼
-│   ├── routers.ts                    ← tRPC 라우터 정의
-│   └── routers.test.ts               ← 인증/구독 테스트
-├── shared/
-│   └── const.ts                      ← 공유 상수
-└── ARCHITECTURE.md                   ← 본 문서
-```
-
----
-
-## 10. 향후 확장 계획
-
-본 MVP에서 구현된 인증 아키텍처는 다음 단계의 기능 확장을 위한 기반을 제공합니다.
-
-첫째, **Stripe 결제 연동** 시 `subscriptionTier` 필드를 웹훅으로 자동 업데이트하는 로직을 추가할 수 있습니다. 둘째, **월간 크레딧 리셋**은 `subscriptionStartDate`를 기준으로 cron job 또는 periodic update를 통해 구현할 수 있습니다. 셋째, **Rate Limiting**은 Express 미들웨어 수준에서 IP 기반 또는 사용자 기반 제한을 추가하여 DDoS 및 남용을 방지할 수 있습니다.
-
----
-
-_본 문서는 KataTalk MVP의 인증 아키텍처를 기술한 것으로, 프로덕션 배포 전 보안 감사(Security Audit)를 권장합니다._
+- A GitHub Actions pass is not a Supabase, Clerk, Lemon Squeezy, or GPU Worker
+  staging proof.
+- Rate limiting is in-process and must become a shared store before horizontal
+  Web scaling.
+- Analyze submission has owner-scoped request idempotency, but the rollout
+  compatibility flag must be staged and queue capacity/per-user fairness are
+  still absent before debit.
+- SGF playback is deliberately partial; it is not a complete Go-rules engine.
+- Raw SGF/result storage and retention need a reviewed object-storage, TTL,
+  deletion, and legal policy before general availability.
+- No LLM explanatory path is released as verified game advice.
+- Per-turn loss perspective normalization and cross-axis regression tests are
+  implemented. Worker-level provenance, mixed score-metric, real-engine, and
+  staging evidence remain required before commentary consumes those signals.
+- Payment handles credit grant but not a complete refund/chargeback event state
+  machine or durable webhook inbox/DLQ.

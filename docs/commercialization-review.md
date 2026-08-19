@@ -1,12 +1,22 @@
 # KataTalk 상용화 통합 리뷰
 
+> **Superseded and frozen:** This 2026-07-16 review, including every percentage
+> score and completion log below, is historical evidence only. Do not use or
+> update it for a current release decision. Use the [2026-08-12 production
+> review](codebase-production-review-2026-08-12.md) and [production global
+> commentary spec](production-global-commentary-spec-v1.md) as the current
+> source of truth; the current global public paid decision is **NO-GO**.
+
+The body below is intentionally preserved as a dated snapshot and may contain
+obsolete architecture, test counts, and readiness claims.
+
 - 기준일: 2026-07-16
 - 대상: KataTalk AI 바둑 기보 분석 서비스
-- 문서 역할: 2026-07-16 시점의 상용화 점수·검증 이력 snapshot. 현재 구현 현황, 출시 판정과 다음 작업의 단일 기준은 루트 [`review.md`](../review.md)다.
+- 문서 역할: 2026-07-16 시점의 상용화 점수·검증 이력 snapshot. 현재 구현 현황과 출시 판정에는 이 문서를 사용하지 않는다.
 
 ## 0. 문서 운영 규칙
 
-다음 작업자는 작업을 시작하기 전에 이 문서를 읽고, 작업을 마칠 때 아래 항목을 함께 갱신한다.
+아래 규칙은 2026-07-16 당시의 운영 방식이며 현재는 폐기되었다. 이 문서의 본문과 변경 이력은 더 이상 갱신하지 않는다.
 
 1. 현재 판정과 달성률
 2. 작업 목록의 상태 및 완료 근거
@@ -258,7 +268,7 @@ health/readiness, Worker lease/heartbeat, stale fencing, bounded C4 scheduler와
 - [x] **RT-01 운영 프로필 성능**: root 200 visits, multi-turn 6 persistent root+multi product suite 4/4, p50 23,053ms, p95 30,769ms, 실패·품질 경고 0. root-only 기준선 대비 전체 시간 53.7% 감소. 실제 corpus는 AI-01/02에서 별도 검증.
 - [~] **RT-02 동시성 검증**: bounded Worker C1~C4, strict 공유 세션 guard, queue/engine/E2E/throughput/memory gate 구현. round-robin 합성 고객형 C4 8건 mini-soak는 8/8, E2E p95 81,686ms, 5.88 jobs/min, peak delta 2,059.9MiB, minimum free 8,423MiB, 품질 0/0으로 로컬 GO. query failure blast radius와 child crash pending cleanup 단위 검증 완료. 실제 corpus, Worker RSS/GPU VRAM, Supabase staging queue, 30~60분 soak와 환불·재claim fault injection은 미완료.
 - [ ] **ST-01 전체 스테이징 E2E**: Clerk → Lemon → Supabase → Web → Worker → KataGo → 결과 → 원장까지 실제 외부 서비스로 검증.
-- [ ] **ST-02 DB 검증**: migration 001~007을 빈 DB와 업그레이드 DB에 적용하고 RPC 권한과 중복 webhook을 검사.
+- [ ] **ST-02 DB 검증**: migration 001→014를 빈 DB와 업그레이드 DB에 순서대로 적용하고 RPC 권한과 중복 webhook을 검사.
 - [ ] **OP-01 운영 메트릭·경보**: queue, duration, failure, refund, webhook 지표와 경보 및 대응 runbook 구성.
 - [ ] **LG-01 정책 문서**: 이용약관, 개인정보, 환불, SGF 보관·삭제 정책 작성과 제품 연결.
 
@@ -545,8 +555,8 @@ corepack pnpm credits:audit
 
 ### 2026-07-24: read-only Supabase staging evidence contract
 
-- Added one fixed `REPEATABLE READ READ ONLY` catalog collector for migration history, the 11 server-only RPCs, six sensitive tables, `public` schema privileges, effective runtime-role access, and RLS. It applies statement, lock, idle-transaction, connection, and default read-only safeguards and never runs migrations, the write-bearing SQL security test, application RPC writes, or baseline DDL against staging.
-- The disposable PostgreSQL gate now runs the same collector against both fresh `001 → 013` and `011 → 013` upgrade databases. It emits a sanitized same-commit expected contract only when both canonical security hashes and application structure hashes match.
+- Added one fixed `REPEATABLE READ READ ONLY` catalog collector for migration history, 12 server-only RPCs, six sensitive tables, `public` schema privileges, effective runtime-role access, and RLS. It applies statement, lock, idle-transaction, connection, and default read-only safeguards and never runs migrations, the write-bearing SQL security test, application RPC writes, or baseline DDL against staging.
+- The disposable PostgreSQL gate now runs the same collector against both fresh `001 → 014` and `011 → 014` upgrade databases. It emits a sanitized same-commit expected contract only when both canonical security hashes and application structure hashes match.
 - Function definitions, relation persistence/replica identity/options, column defaults/collations, constraints, indexes, RLS policy expressions, and triggers are hashed or normalized inside PostgreSQL; their source text never leaves the database. Unexpected public custom types fail closed. Mutation gates change only a SECURITY DEFINER body or table persistence and require the structure hash to detect both.
 - The staging command rejects container targets, verifies the claimed commit against the real clean checkout, verifies the expected-contract file digest, and binds the direct/pooler DB identity to the exact Supabase HTTP project plus a protected approval hash. It has no accept-current or target-derived baseline path.
 - The only HTTP probe is the read-only Worker-health RPC. Anonymous `401/42501` and a separate valid Supabase authenticated-user `403/42501` are the only accepted outcomes; redirects, success, missing RPC/schema-cache responses, invalid credentials, oversized bodies, and transport failures remain release-blocking.

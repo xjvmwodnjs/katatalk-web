@@ -1,5 +1,7 @@
 # LLM Commentary Orchestrator v1
 
+> **현재 상태 — 2026-08-12:** fake function 기반 단위 orchestration이며 production 호출자, persistence, telemetry, locale/audience 계약이 없다. `usedLlm=false`는 최종 표시가 fallback이라는 뜻일 뿐 provider 호출·비용이 없었다는 뜻이 아니므로 production trace를 별도로 설계해야 한다.
+
 ## 목적
 
 LLM Commentary Orchestrator v1은 향후 LLM commentary 실행 순서를 하나의 wrapper로 고정한다. 이번 단계에서는 실제 LLM API 호출, env 추가, UI 연결을 하지 않는다. 테스트에서는 fake LLM function만 주입한다.

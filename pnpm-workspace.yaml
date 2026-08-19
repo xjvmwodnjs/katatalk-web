@@ -1,0 +1,10 @@
+packages:
+  - .
+
+overrides:
+  express>path-to-regexp: 0.1.13
+  js-cookie: 3.0.7
+  tailwindcss>nanoid: 3.3.7
+
+patchedDependencies:
+  wouter@3.7.1: patches/wouter@3.7.1.patch

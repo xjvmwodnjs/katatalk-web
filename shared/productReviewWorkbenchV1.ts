@@ -34,6 +34,7 @@ import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTur
 import { buildProductReviewMovesV1 } from "./reviewMovesSelectorV1";
 import { readSgfContentFromResultPayload } from "./sgfPlaybackV1";
 import { isWinrateTimelineV1, type WinrateTimelineV1 } from "./winrateTimelineV1";
+import { resolvePerTurnMoveLossV1 } from "./perTurnLossPerspectiveV1";
 
 export const PRODUCT_REVIEW_WORKBENCH_V1_VERSION = "product-review-workbench-v1" as const;
 
@@ -262,17 +263,11 @@ function isFinalPosition(turnIndex: number, result: Record<string, unknown>, tot
 }
 
 function scoreLossFromTurn(turn: TurnAnalysisEntrySuccessV1): number | null {
-  const best = turn.moveSummary?.best;
-  const played = turn.moveSummary?.played;
-  if (typeof best?.scoreLead === "number" && typeof played?.scoreLead === "number") return Math.max(0, best.scoreLead - played.scoreLead);
-  if (typeof best?.scoreMean === "number" && typeof played?.scoreMean === "number") return Math.max(0, best.scoreMean - played.scoreMean);
-  return null;
+  return resolvePerTurnMoveLossV1(turn).scoreBestMinusPlayed ?? null;
 }
 
 function winrateLossFromTurn(turn: TurnAnalysisEntrySuccessV1): number | null {
-  const best = turn.moveSummary?.best?.winrate;
-  const played = turn.moveSummary?.played?.winrate;
-  return typeof best === "number" && typeof played === "number" ? Math.max(0, Math.min(1, best - played)) : null;
+  return resolvePerTurnMoveLossV1(turn).winrateBestMinusPlayed ?? null;
 }
 
 function contribution(value: number | null, cap: number, weight: number): number {

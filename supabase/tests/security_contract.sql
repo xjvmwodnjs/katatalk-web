@@ -38,7 +38,9 @@ BEGIN
         ('public.get_analysis_worker_health(text, integer)'),
         ('public.purge_expired_analysis_job_data(integer, boolean)'),
         ('public.enqueue_paid_analysis_job(text, text, integer, text, text, text, text, integer, boolean, timestamp with time zone)'),
-        ('public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)')
+        ('public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)'),
+        ('public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)'),
+        ('public.reconcile_analysis_job_finalization(text, boolean)')
     ) AS expected(signature)
   LOOP
     v_function_oid := pg_catalog.to_regprocedure(v_signature);
@@ -110,7 +112,9 @@ BEGIN
         'public.get_analysis_worker_health(text, integer)'::pg_catalog.regprocedure,
         'public.purge_expired_analysis_job_data(integer, boolean)'::pg_catalog.regprocedure,
         'public.enqueue_paid_analysis_job(text, text, integer, text, text, text, text, integer, boolean, timestamp with time zone)'::pg_catalog.regprocedure,
-        'public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)'::pg_catalog.regprocedure
+        'public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)'::pg_catalog.regprocedure,
+        'public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)'::pg_catalog.regprocedure,
+        'public.reconcile_analysis_job_finalization(text, boolean)'::pg_catalog.regprocedure
       ]::oid[]
     );
   IF v_unexpected IS NOT NULL THEN
@@ -162,7 +166,7 @@ BEGIN
         ('public.credit_logs', ARRAY['SELECT']::text[]),
         ('public.analysis_jobs', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
         ('public.analysis_worker_instances', ARRAY['SELECT']::text[]),
-        ('public.analysis_job_finalization_failures', ARRAY['SELECT', 'INSERT', 'UPDATE']::text[]),
+        ('public.analysis_job_finalization_failures', ARRAY['SELECT']::text[]),
         ('public.katatalk_schema_migrations', ARRAY['SELECT']::text[])
     ) AS expected(relation_name, allowed_privileges)
   LOOP
@@ -256,6 +260,21 @@ SELECT public.enqueue_paid_analysis_job(
   true,
   NULL
 );
+SELECT public.enqueue_paid_analysis_job_v2(
+  '__security_probe__',
+  '__security_job_v2__',
+  'security-request-v2-0001',
+  pg_catalog.repeat('a', 64),
+  1,
+  'security-v2.sgf',
+  'en',
+  '(;GM[1])',
+  pg_catalog.repeat('b', 64),
+  8,
+  true,
+  NULL,
+  NULL
+);
 SELECT public.claim_next_analysis_job('__security_probe_worker__', 900);
 SELECT public.fail_analysis_job_and_refund_with_lease(
   '__security_job__',
@@ -264,6 +283,7 @@ SELECT public.fail_analysis_job_and_refund_with_lease(
   'KATAGO_TIMEOUT',
   'private security probe detail'
 );
+SELECT public.reconcile_analysis_job_finalization('__security_missing_job__', false);
 SELECT public.report_analysis_worker(
   '00000000-0000-0000-0000-000000000013'::uuid,
   '__security_probe__',

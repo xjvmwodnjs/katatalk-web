@@ -1,4 +1,9 @@
-import { ENV, isMockAnalysisAllowed, validateServerEnv } from "../_core/env";
+import {
+  ENV,
+  isMockAnalysisAllowed,
+  validateProductionAnalysisWorkerEnv,
+  validateServerEnv,
+} from "../_core/env";
 import type { AnalysisJobDbRow } from "../creditService";
 import {
   assertAtomicFailureRefundRpcReady,
@@ -261,7 +266,13 @@ export async function runAnalysisWorkerLoop(opts?: {
 }
 
 export async function startAnalysisWorkerMain(): Promise<void> {
-  validateServerEnv();
+  // Production Workers do not serve browser or payment routes. Validate only
+  // their queue/database contract so deployment can withhold unrelated secrets.
+  if (ENV.isProduction) {
+    validateProductionAnalysisWorkerEnv();
+  } else {
+    validateServerEnv();
+  }
   assertAnalysisWorkerConcurrencyConfig(process.env);
   await assertAtomicFailureRefundRpcReady();
   console.log(
@@ -287,13 +298,14 @@ export async function startAnalysisWorkerMain(): Promise<void> {
   };
   process.on("SIGTERM", onStop);
   process.on("SIGINT", onStop);
-  const workerStatus = getAnalysisWorkerMode() === "external"
-    ? startAnalysisWorkerStatusHeartbeat({
-        instanceId: createAnalysisWorkerInstanceId(),
-        workerId: getResolvedAnalysisWorkerId(),
-        engine: getAnalysisEngineName(),
-      })
-    : null;
+  const workerStatus =
+    getAnalysisWorkerMode() === "external"
+      ? startAnalysisWorkerStatusHeartbeat({
+          instanceId: createAnalysisWorkerInstanceId(),
+          workerId: getResolvedAnalysisWorkerId(),
+          engine: getAnalysisEngineName(),
+        })
+      : null;
   try {
     await runAnalysisWorkerLoop({
       signal: ac.signal,

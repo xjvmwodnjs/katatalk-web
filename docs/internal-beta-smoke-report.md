@@ -1,5 +1,10 @@
 # Internal Beta Smoke Report
 
+> **Historical evidence:** 2026-05-17 local numeric KataGo smoke only. It does
+> not prove the current migrations, per-turn perspective correctness, payments,
+> natural-language commentary, or global production readiness. See the
+> [2026-08-12 production review](codebase-production-review-2026-08-12.md).
+
 일시: 2026-05-17 12:08-12:18 KST<br>
 기준 브랜치: `feature/local-real-katago-smoke-report-v1` from `master`<br>
 기준 커밋: `e558ac0`<br>

@@ -1,4 +1,8 @@
-export type AuthProviderName = "local-dev" | "legacy-manus" | "supabase" | "clerk";
+export type AuthProviderName =
+  | "local-dev"
+  | "legacy-manus"
+  | "supabase"
+  | "clerk";
 
 function readAuthProvider(): AuthProviderName {
   const raw = process.env.AUTH_PROVIDER?.trim();
@@ -35,7 +39,8 @@ export const ENV = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
   /** 서버 전용 서비스 롤 — VITE_ 접두사 금지, 클라이언트에 노출 금지 */
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
+  supabaseAnonKey:
+    process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
   /** Clerk 서버 전용 — 프론트 번들에 포함 금지 */
   clerkSecretKey: process.env.CLERK_SECRET_KEY ?? "",
   appId: process.env.VITE_APP_ID ?? "",
@@ -63,7 +68,8 @@ export const ENV = {
     process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID ?? "",
   lemonsqueezyCreditPackStandardVariantId:
     process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID ?? "",
-  lemonsqueezyCreditPackProVariantId: process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID ?? "",
+  lemonsqueezyCreditPackProVariantId:
+    process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID ?? "",
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
 };
 
@@ -88,35 +94,63 @@ export function validateProductionDeploymentEnv(): void {
 
   requireProdNonEmpty("AUTH_PROVIDER", process.env.AUTH_PROVIDER);
   if (process.env.AUTH_PROVIDER?.trim() !== "clerk") {
-    throw new Error("운영(production)에서는 AUTH_PROVIDER=clerk 만 허용됩니다.");
+    throw new Error(
+      "운영(production)에서는 AUTH_PROVIDER=clerk 만 허용됩니다."
+    );
   }
 
   requireProdNonEmpty("VITE_AUTH_PROVIDER", process.env.VITE_AUTH_PROVIDER);
   if (process.env.VITE_AUTH_PROVIDER?.trim() !== "clerk") {
-    throw new Error("운영(production)에서는 VITE_AUTH_PROVIDER=clerk 가 필요합니다.");
+    throw new Error(
+      "운영(production)에서는 VITE_AUTH_PROVIDER=clerk 가 필요합니다."
+    );
   }
-  requireProdNonEmpty("VITE_CLERK_PUBLISHABLE_KEY", process.env.VITE_CLERK_PUBLISHABLE_KEY);
+  requireProdNonEmpty(
+    "VITE_CLERK_PUBLISHABLE_KEY",
+    process.env.VITE_CLERK_PUBLISHABLE_KEY
+  );
 
   requireProdNonEmpty("CLERK_SECRET_KEY", process.env.CLERK_SECRET_KEY);
   requireProdNonEmpty("JWT_SECRET", process.env.JWT_SECRET);
 
   requireProdNonEmpty("SUPABASE_URL", process.env.SUPABASE_URL);
-  requireProdNonEmpty("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
+  requireProdNonEmpty(
+    "SUPABASE_SERVICE_ROLE_KEY",
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   const analysisWorkerMode = requireProdNonEmpty(
     "ANALYSIS_WORKER_MODE",
     process.env.ANALYSIS_WORKER_MODE
   ).toLowerCase();
   if (analysisWorkerMode !== "external") {
-    throw new Error("운영(production)에서는 ANALYSIS_WORKER_MODE=external 만 허용됩니다.");
+    throw new Error(
+      "운영(production)에서는 ANALYSIS_WORKER_MODE=external 만 허용됩니다."
+    );
   }
   if (process.env.KATATALK_ATOMIC_ENQUEUE?.trim().toLowerCase() === "false") {
-    throw new Error("운영(production)에서는 KATATALK_ATOMIC_ENQUEUE=false 를 사용할 수 없습니다.");
+    throw new Error(
+      "운영(production)에서는 KATATALK_ATOMIC_ENQUEUE=false 를 사용할 수 없습니다."
+    );
+  }
+  if (
+    process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED?.trim().toLowerCase() !==
+    "true"
+  ) {
+    throw new Error(
+      "운영(production)에서는 ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true 가 필요합니다."
+    );
   }
 
   requireProdNonEmpty("LEMONSQUEEZY_API_KEY", process.env.LEMONSQUEEZY_API_KEY);
-  requireProdNonEmpty("LEMONSQUEEZY_STORE_ID", process.env.LEMONSQUEEZY_STORE_ID);
-  requireProdNonEmpty("LEMONSQUEEZY_WEBHOOK_SECRET", process.env.LEMONSQUEEZY_WEBHOOK_SECRET);
+  requireProdNonEmpty(
+    "LEMONSQUEEZY_STORE_ID",
+    process.env.LEMONSQUEEZY_STORE_ID
+  );
+  requireProdNonEmpty(
+    "LEMONSQUEEZY_WEBHOOK_SECRET",
+    process.env.LEMONSQUEEZY_WEBHOOK_SECRET
+  );
   requireProdNonEmpty(
     "LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID",
     process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID
@@ -132,13 +166,48 @@ export function validateProductionDeploymentEnv(): void {
 
   const baseUrl = requireProdNonEmpty("APP_BASE_URL", process.env.APP_BASE_URL);
   const lower = baseUrl.toLowerCase();
-  if (lower.startsWith("http://localhost") || lower.startsWith("http://127.0.0.1")) {
+  if (
+    lower.startsWith("http://localhost") ||
+    lower.startsWith("http://127.0.0.1")
+  ) {
     throw new Error(
       "운영(production) APP_BASE_URL 은 http://localhost 또는 loopback 을 사용할 수 없습니다."
     );
   }
   if (!lower.startsWith("https://")) {
-    throw new Error("운영(production) APP_BASE_URL 은 https:// 로 시작해야 합니다.");
+    throw new Error(
+      "운영(production) APP_BASE_URL 은 https:// 로 시작해야 합니다."
+    );
+  }
+}
+
+/**
+ * Validate the separately deployed analysis worker. The worker only needs the
+ * queue/database contract, not browser authentication or payment secrets.
+ */
+export function validateProductionAnalysisWorkerEnv(): void {
+  if (process.env.NODE_ENV !== "production") {
+    return;
+  }
+
+  requireProdNonEmpty("SUPABASE_URL", process.env.SUPABASE_URL);
+  requireProdNonEmpty(
+    "SUPABASE_SERVICE_ROLE_KEY",
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const mode = requireProdNonEmpty(
+    "ANALYSIS_WORKER_MODE",
+    process.env.ANALYSIS_WORKER_MODE
+  ).toLowerCase();
+  if (mode !== "external") {
+    throw new Error(
+      "운영(production) Worker에서는 ANALYSIS_WORKER_MODE=external 만 허용됩니다."
+    );
+  }
+  if (process.env.KATATALK_ATOMIC_ENQUEUE?.trim().toLowerCase() === "false") {
+    throw new Error(
+      "운영(production) Worker에서는 KATATALK_ATOMIC_ENQUEUE=false 를 사용할 수 없습니다."
+    );
   }
 }
 
@@ -174,7 +243,10 @@ export function validateServerEnv() {
     validateProductionDeploymentEnv();
   }
 
-  if (ENV.authProvider === "legacy-manus" && (!ENV.appId || !ENV.oAuthServerUrl)) {
+  if (
+    ENV.authProvider === "legacy-manus" &&
+    (!ENV.appId || !ENV.oAuthServerUrl)
+  ) {
     throw new Error(
       "AUTH_PROVIDER=legacy-manus requires VITE_APP_ID and OAUTH_SERVER_URL. Use AUTH_PROVIDER=local-dev for local development."
     );
@@ -192,23 +264,38 @@ export function validateServerEnv() {
     throw new Error("프로덕션 supabase 모드는 DATABASE_URL 이 필요합니다.");
   }
 
-  if (ENV.authProvider === "supabase" && !ENV.databaseUrl && !ENV.isProduction) {
-    console.warn("[env] supabase 모드인데 DATABASE_URL 없음 — 사용자 동기화가 실패할 수 있습니다.");
+  if (
+    ENV.authProvider === "supabase" &&
+    !ENV.databaseUrl &&
+    !ENV.isProduction
+  ) {
+    console.warn(
+      "[env] supabase 모드인데 DATABASE_URL 없음 — 사용자 동기화가 실패할 수 있습니다."
+    );
   }
 
   if (ENV.authProvider === "clerk") {
     if (!ENV.clerkSecretKey) {
-      throw new Error("AUTH_PROVIDER=clerk 일 때 CLERK_SECRET_KEY 가 필요합니다.");
+      throw new Error(
+        "AUTH_PROVIDER=clerk 일 때 CLERK_SECRET_KEY 가 필요합니다."
+      );
     }
   }
 
-  if (ENV.authProvider === "clerk" && !ENV.databaseUrl?.trim() && !ENV.isProduction) {
+  if (
+    ENV.authProvider === "clerk" &&
+    !ENV.databaseUrl?.trim() &&
+    !ENV.isProduction
+  ) {
     console.warn(
       "[env] clerk 모드인데 DATABASE_URL 없음 — MySQL users 동기화는 생략되며, Clerk 인증·Supabase profiles 크레딧은 동작할 수 있습니다."
     );
   }
 
-  if (!ENV.isProduction && (!ENV.supabaseUrl.trim() || !ENV.supabaseServiceRoleKey.trim())) {
+  if (
+    !ENV.isProduction &&
+    (!ENV.supabaseUrl.trim() || !ENV.supabaseServiceRoleKey.trim())
+  ) {
     console.warn(
       "[env] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY 없음 — 크레딧·분석 과금 API는 해당 기능 호출 시 한국어 안내와 함께 실패할 수 있습니다."
     );

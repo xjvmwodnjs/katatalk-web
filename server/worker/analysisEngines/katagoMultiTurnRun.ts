@@ -15,6 +15,11 @@ import type {
 } from "@shared/multiTurnKatagoAnalysisV1";
 import { MULTI_TURN_KATAGO_ANALYSIS_V1_VERSION } from "@shared/multiTurnKatagoAnalysisV1";
 import {
+  PER_TURN_LOSS_PERSPECTIVE_V1_VERSION,
+  type VerifiedPerTurnLossPerspectiveV1,
+} from "@shared/perTurnLossPerspectiveV1";
+import type { KatagoConfiguredWinratePerspectiveV1 } from "@shared/winratePerspectiveV1";
+import {
   selectCandidatesForMultiTurnAnalysis,
   sliceMovesBeforeTurnIndex,
 } from "../../analysisPlan";
@@ -242,6 +247,7 @@ type PreparedTurn = {
   query: { movesBeforeCount: number; boardSize: number; komi: number };
   playedMoveGtp: string;
   player: "B" | "W";
+  lossPerspective: VerifiedPerTurnLossPerspectiveV1;
 };
 
 export type KatagoMultiTurnPersistentSession = Pick<
@@ -267,7 +273,8 @@ function prepareTurns(
   candidates: AnalysisPlanCandidateTurnV1[],
   maxVisits: number,
   jobId: string,
-  ts: string
+  ts: string,
+  winratePerspective: Exclude<KatagoConfiguredWinratePerspectiveV1, "unknown">
 ): PreparedTurn[] {
   return candidates.map((c, i) => {
     const { movesBefore, movesBeforeCount, playedMoveGtp, player } =
@@ -294,6 +301,12 @@ function prepareTurns(
       },
       playedMoveGtp,
       player,
+      lossPerspective: {
+        version: PER_TURN_LOSS_PERSPECTIVE_V1_VERSION,
+        configuredPerspective: winratePerspective,
+        playerToMove: player,
+        status: "verified",
+      },
     };
   });
 }
@@ -362,6 +375,7 @@ function entryForPrepared(
       query: p.query,
       katago,
       comparisonReady: buildComparisonReady(p.playedMoveGtp, moveInfos),
+      lossPerspective: p.lossPerspective,
       moveSummary,
       candidateMoves,
       ...(opts?.fallbackUsed ? { fallbackUsed: true } : {}),
@@ -765,6 +779,7 @@ export async function runMultiTurnKatagoRawV1(opts: {
   env: NodeJS.ProcessEnv;
   spawnFn?: SpawnFn;
   persistentSession?: KatagoMultiTurnPersistentSession;
+  winratePerspective: Exclude<KatagoConfiguredWinratePerspectiveV1, "unknown">;
 }): Promise<{
   turnAnalyses: TurnAnalysisEntryV1[];
   multiTurnAnalysis: MultiTurnKatagoAnalysisMetaV1;
@@ -785,7 +800,8 @@ export async function runMultiTurnKatagoRawV1(opts: {
     candidates,
     mtMaxVisits,
     opts.jobId,
-    ts
+    ts,
+    opts.winratePerspective
   );
 
   const useBatch = opts.env.KATAGO_MULTI_TURN_BATCH?.trim() !== "0";

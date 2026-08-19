@@ -15,7 +15,7 @@ Master 기준 local/Railway staging smoke 절차와 기록 템플릿은 `docs/ma
 
 공통 원칙:
 
-- `SUPABASE_SERVICE_ROLE_KEY`, `CLERK_SECRET_KEY`, `LEMONSQUEEZY_*` secret, `JWT_SECRET` → **서버/Worker 전용**, `VITE_` 접두사 금지
+- 모든 secret은 `VITE_` 접두사 금지. 현재 `SUPABASE_SERVICE_ROLE_KEY`는 Web/Analysis Worker에 필요하지만, `CLERK_SECRET_KEY`, `LEMONSQUEEZY_*`, `JWT_SECRET`, `APP_BASE_URL`은 Web 전용이며 Analysis Worker에 배포하지 않음
 - `KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` → **Worker(또는 로컬 통합 dev)만** — Web Railway 서비스에는 넣지 않음
 - KataGo cfg는 **analysis 전용** (`analysis_example.cfg` 계열). GTP용 `gtp_example.cfg` 혼동 금지
 - `vite build`/`pnpm build`는 Clerk 전용 산출물 게이트다. `VITE_AUTH_PROVIDER=clerk`와 유효한 publishable key가 필요하며, source SHA는 `GITHUB_SHA`/`RAILWAY_GIT_COMMIT_SHA`/`RENDER_GIT_COMMIT` 또는 clean Git HEAD에서 검증한다. 선택 `KATATALK_BUILD_COMMIT_SHA`는 이 값과 같아야 한다. `pnpm dev`에는 provenance gate를 적용하지 않는다.
@@ -56,6 +56,8 @@ LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID=<placeholder>
 # 분석 큐
 ANALYSIS_WORKER_MODE=external
 ANALYSIS_ENGINE=mock
+KATATALK_ATOMIC_ENQUEUE=true
+ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=false # local/closed rollout only
 # 로컬 실 KataGo: ANALYSIS_ENGINE=katago + 아래 KATAGO_*
 # production mock 테스트만: KATATALK_ALLOW_MOCK_ANALYSIS=true (로컬 NODE_ENV=development 에서는 mock 기본 허용)
 
@@ -114,7 +116,7 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 
 - Web: `pnpm dev`
 - Worker: `pnpm worker:analysis` (동일 `.env`, `ANALYSIS_WORKER_MODE=external` 필수)
-- Supabase **004+007**(`claim_next_analysis_job`) 적용 후 external worker 검증
+- 현재 Web/Worker 배포 전 Supabase migration **001→015 전체**를 숫자 순서로 적용하고 catalog/ACL gate를 통과한 뒤 external Worker 검증
 
 ### 로컬 KataGo 실분석 체크리스트
 
@@ -128,7 +130,7 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 8. **새로 업로드한 job** 과 예전 `queued` mock job 구분 (`is_mock` 다름)
 9. Supabase `analysis_jobs.is_mock` — 실분석은 `false`
 10. 완료 후 `result.source` — `katago-worker-v1`
-11. `GET /api/analyze/:id` → `meta.mock` — `false`
+11. `GET /api/analyze/:id/result` → `meta.mock` — `false`
 12. Worker 로그 `[analysis-engine]` — `selectedPipeline: katago`, `rowIsMock: false`
 13. GPU backend smoke는 `KATAGO_REQUIRE_GPU_BACKEND=true`로 실행 후 startup log에서 `katagoBackend=opencl` 또는 `katagoBackend=cuda` 확인
 
@@ -172,7 +174,17 @@ LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID=<placeholder>
 ANALYSIS_WORKER_MODE=external
 ANALYSIS_ENGINE=katago
 KATATALK_ALLOW_MOCK_ANALYSIS=false
+KATATALK_ATOMIC_ENQUEUE=true
+# 공개 유료 POST를 열기 전에 반드시 true
+ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true
 ```
+
+`015`를 먼저 적용한 뒤 분석 POST를 edge에서 일시 차단하고, 모든 구 Web
+instance를 drain한 다음 신 Web/client로 원자 전환한다. 공개 유료 POST를 다시
+열기 전 `ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true`여야 한다. 단순 rolling deploy는
+새 client가 구 Web의 v1 RPC에 도달해 lost-response retry에서 중복 차감될 수
+있으므로 금지한다. 전체 절차와 rollback은
+[`analysis-idempotency-rollout-v1.md`](analysis-idempotency-rollout-v1.md)를 따른다.
 
 빌드는 `dist/public/client-build-manifest.json`에 raw key 대신 key SHA-256만 기록하고 같은 process env/`.env.production` 우선순위를 기준으로 index·asset·Clerk chunk를 검증한다. Git metadata가 있으면 HEAD와 clean 상태를 검사하고, archive build는 플랫폼의 불변 source SHA가 있어야 한다. Railway의 [`RAILWAY_GIT_COMMIT_SHA`](https://docs.railway.com/variables/reference)와 Render의 [`RENDER_GIT_COMMIT`](https://render.com/docs/environment-variables)은 Git 배포 build에서 자동 제공된다. `KATATALK_BUILD_COMMIT_SHA`는 선택적인 추가 assertion이며 설정하면 source SHA와 같아야 한다. publishable key가 이미 환경에 주입된 터미널에서 아래 명령으로 staging 변수 `STAGING_CLERK_PUBLISHABLE_KEY_SHA256` 값을 계산한다.
 
@@ -234,7 +246,7 @@ KATAGO_WINRATE_TIMELINE_TIMEOUT_MS=600000
 KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS=false
 ```
 
-Clerk/Lemon/`APP_BASE_URL`은 Web과 **동일 Values**를 쓰는 배포를 권장(코드·검증 일관성). Worker 단독 최소 세트는 Supabase + 분석 env.
+Production Analysis Worker는 `NODE_ENV`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, 분석/KataGo/lease 설정만 받는다. `CLERK_*`, `LEMONSQUEEZY_*`, `JWT_SECRET`, `APP_BASE_URL`은 Worker에 주입하지 않는다.
 
 `ANALYSIS_WORKER_CONCURRENCY` 기본값은 `1`, 최대값은 `4`다. `2..4`는 위와 같이 persistent root/multi-turn을 모두 enabled+strict로 두고, `KATAGO_PERSISTENT_MULTI_TURN_PER_JOB_CONCURRENCY=1`, Deep Search/timeline `false`를 만족할 때만 Worker가 시작된다. 로컬 200 visits/6 turns 고객형 C4는 통과했지만 실제 staging queue와 대상 GPU 호스트에서 같은 gate를 재검증한 후 `4`로 올린다.
 
@@ -270,7 +282,7 @@ KATATALK_LLM_COMMENTARY_ENABLED=false
 
 - `KATATALK_*` prefix만 허용한다. `KATALK_LLM_COMMENTARY_*` alias는 지원하지 않는다.
 - env 값은 로그·테스트 출력에 노출하지 않는다.
-- 현재는 provider adapter만 있으며 UI/Worker 본 분석 흐름에 연결하지 않는다.
+- 현재 LLM adapter는 **OFF이며 연결되지 않았다**. 향후 API key는 별도 Commentary Worker에만 주입하며 Web/KataGo Worker에는 주입하지 않는다.
 - 실제 연결 전까지 `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정을 유지한다.
 
 ---
@@ -351,14 +363,15 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 
 ---
 
-## 10. Supabase 006 / 007 적용 체크
+## 10. Supabase 001–015 적용 체크
 
 저장소에 SQL 파일이 있다고 **운영 DB에 자동 적용되지 않습니다.**
 
-1. **순서(권장):** `001` → … → `005` → `004` → **`007`** → **`006`**
-2. **007:** `claim_next_analysis_job(text, integer)`, `locked_at` / `locked_by` / `attempt_count` 등
-3. **006:** SECURITY DEFINER RPC — `anon`/`authenticated` EXECUTE **false**, `service_role` **true**
-4. **배포 순서:** 마이그레이션 적용 → Worker env 확인 → Web 배포
+1. **순서(권장):** `001` → `002` → `003` → `004` → `005` → `006` → `007` → `008` → `009` → `010` → `011` → `012` → `013` → `014` → `015`
+2. **011/012:** 원자 enqueue와 leased failure/refund RPC 확인
+3. **013/014/015:** 모든 SECURITY DEFINER owner/search path/ACL, reconciliation RPC, idempotent enqueue v2 확인. `anon`/`authenticated` EXECUTE **false**, `service_role` **true**
+4. **007:** `claim_next_analysis_job(text, integer)`, `locked_at` / `locked_by` / `attempt_count` 등 lease 계약 확인
+5. **배포 순서:** 마이그레이션 적용·DB gate → Worker env/preflight → Web 배포
 
 상세: [`docs/TODO.md`](TODO.md) 「최신 master 배포 전 smoke」
 
@@ -376,29 +389,34 @@ Timeline 실패는 job 실패/환불로 전파하지 않음(`winrateTimelineV1` 
 
 ## 부록: 주요 변수 빠른 참조
 
-| 변수                                   |    Web     | Worker | 설명                                                |
-| -------------------------------------- | :--------: | :----: | --------------------------------------------------- |
-| `NODE_ENV`                             |     ✓      |   ✓    | `production` 시 `validateProductionDeploymentEnv()` |
-| `PORT`                                 |     ✓      |   —    | Railway Web만 (Worker는 별도 start command)         |
-| `APP_BASE_URL`                         |     ✓      |   △    | 결제 redirect; production HTTPS 필수                |
-| `AUTH_PROVIDER` / `VITE_AUTH_PROVIDER` |     ✓      |   △    | production: `clerk`                                 |
-| `CLERK_SECRET_KEY`                     |     ✓      |   △    | 서버 전용                                           |
-| `VITE_CLERK_PUBLISHABLE_KEY`           |  ✓(빌드)   |   —    | 클라이언트 번들                                     |
-| `KATATALK_BUILD_COMMIT_SHA`            | 선택(빌드) |   —    | 검증된 source commit과 같아야 하는 추가 assertion   |
-| `SUPABASE_URL`                         |     ✓      |   ✓    |                                                     |
-| `SUPABASE_SERVICE_ROLE_KEY`            |     ✓      |   ✓    | 서버/Worker 전용                                    |
-| `LEMONSQUEEZY_*`                       |     ✓      |   —    | 결제·웹훅                                           |
-| `ANALYSIS_WORKER_MODE`                 |     ✓      |   ✓    | production katago: **`external`**                   |
-| `ANALYSIS_ENGINE`                      |     ✓      |   ✓    | `mock` \| `katago`                                  |
-| `KATATALK_ALLOW_MOCK_ANALYSIS`         |     ✓      |   ✓    | production mock 허용 플래그                         |
-| `KATATALK_LLM_COMMENTARY_*`            |     ○      |   —    | provider adapter용, 기본 disabled                   |
-| `ANALYSIS_WORKER_ID`                   |     —      |   ○    | lease 식별(미설정 시 자동 생성)                     |
-| `ANALYSIS_CLAIM_STALE_SECONDS`         |     ○      |   ✓    | 기본 900                                            |
-| `ANALYSIS_WORKER_HEARTBEAT_SECONDS`    |     ○      |   ✓    | 기본 60                                             |
-| `ANALYSIS_WORKER_CONCURRENCY`          |     —      |   ○    | 기본 1, 최대 4. C2–C4는 strict 공유 세션 필수       |
-| `KATAGO_*`                             |     ✗      |   ✓    | Worker(또는 로컬 통합 dev)                          |
-| `DEEP_SEARCH_PLAN_*`                   |     ○      |   ○    | plan 후보 수·임계값                                 |
-| `DATABASE_URL`                         |     ○      |   ○    | MySQL users 동기화(선택)                            |
-| `TOSS_*`                               |     ○      |   —    | 국내 결제 스켈레톤                                  |
+`Commentary Worker` 열은 목표 명세이며 현재 runtime에는 없다. 이 Worker는
+별도 최소권한 DB credential과 아래 LLM 설정만 받아야 한다.
 
-✓ 필수 · ○ 선택/조건부 · ✗ 넣지 않음 · △ Web과 동일 권장
+| 변수                                                     |    Web     | Analysis Worker | Commentary Worker(향후) | 설명                                                                                                                        |
+| -------------------------------------------------------- | :--------: | :-------------: | :---------------------: | --------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                               |     ✓      |        ✓        |            ✓            | Web `validateProductionDeploymentEnv()`; Analysis `validateProductionAnalysisWorkerEnv()`; Commentary validator는 구현 필요 |
+| `PORT`                                                   |     ✓      |        —        |            —            | Railway Web만                                                                                                               |
+| `APP_BASE_URL`                                           |     ✓      |        —        |            —            | 결제 redirect; production HTTPS 필수                                                                                        |
+| `AUTH_PROVIDER` / `VITE_AUTH_PROVIDER`                   |     ✓      |        —        |            —            | production: `clerk`                                                                                                         |
+| `CLERK_SECRET_KEY`                                       |     ✓      |        —        |            —            | Web 서버 전용                                                                                                               |
+| `VITE_CLERK_PUBLISHABLE_KEY`                             |  ✓(빌드)   |        —        |            —            | 클라이언트 번들                                                                                                             |
+| `KATATALK_BUILD_COMMIT_SHA`                              | 선택(빌드) |        —        |            —            | 검증된 source commit과 같아야 하는 추가 assertion                                                                           |
+| `SUPABASE_URL`                                           |     ✓      |        ✓        |            —            | 현재 Web/Analysis 계약                                                                                                      |
+| `SUPABASE_SERVICE_ROLE_KEY`                              |     ✓      |  ✓(교체 예정)   |            ✗            | Commentary에 금지; Analysis도 전용 최소권한 role로 교체                                                                     |
+| `COMMENTARY_DATABASE_URL` / 전용 role credential         |     —      |        —        |            ✓            | 이름·validator는 NLC-009/011에서 확정; commentary lease/artifact만 허용                                                     |
+| `LEMONSQUEEZY_*`                                         |     ✓      |        —        |            —            | 결제·웹훅                                                                                                                   |
+| `ANALYSIS_WORKER_MODE` / `ANALYSIS_ENGINE`               |     ✓      |        ✓        |            —            | production KataGo: `external` / `katago`                                                                                    |
+| `KATATALK_ATOMIC_ENQUEUE`                                |     ✓      |        ✓        |            —            | production `true`; false는 새 요청을 fail-closed                                                                            |
+| `ANALYSIS_IDEMPOTENCY_KEY_REQUIRED`                      |     ✓      |        —        |            —            | production Web은 시작 시 true를 강제; local development만 false 가능                                                       |
+| `KATATALK_ALLOW_MOCK_ANALYSIS`                           |     ✓      |        ✓        |            —            | production mock 허용 플래그                                                                                                 |
+| `KATATALK_LLM_COMMENTARY_ENABLED`                        |     —      |        —        |            ○            | 현재 모든 배포에서 false/미설정; pre-provider gate 뒤 Commentary Worker만                                                   |
+| `KATATALK_LLM_COMMENTARY_API_KEY` / `ENDPOINT` / `MODEL` |     ✗      |        ✗        |            ○            | secret-bearing provider 설정; Web/KataGo Worker에 금지                                                                      |
+| `ANALYSIS_WORKER_ID`                                     |     —      |        ○        |            —            | lease 식별(미설정 시 자동 생성)                                                                                             |
+| `ANALYSIS_CLAIM_STALE_SECONDS` / `HEARTBEAT_SECONDS`     |     ○      |        ✓        |            —            | 기본 900 / 60                                                                                                               |
+| `ANALYSIS_WORKER_CONCURRENCY`                            |     —      |        ○        |            —            | 기본 1, 최대 4. C2–C4는 strict 공유 세션 필수                                                                               |
+| `KATAGO_*`                                               |     ✗      |        ✓        |            ✗            | Analysis Worker(또는 로컬 통합 dev)                                                                                         |
+| `DEEP_SEARCH_PLAN_*`                                     |     ○      |        ○        |            —            | plan 후보 수·임계값                                                                                                         |
+| `DATABASE_URL`                                           |     ○      |        —        |            —            | Web의 legacy MySQL users 동기화(선택)                                                                                       |
+| `TOSS_*`                                                 |     ○      |        —        |            —            | 국내 결제 스켈레톤                                                                                                          |
+
+✓ 필수 · ○ 선택/조건부 · ✗ 명시적 금지 · — 넣지 않음

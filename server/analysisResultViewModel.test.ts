@@ -76,6 +76,12 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
           playedMoveRank: 2,
           bestMove: "D16",
         },
+        lossPerspective: {
+          version: "per-turn-loss-perspective-v1",
+          configuredPerspective: "black",
+          playerToMove: "B",
+          status: "verified",
+        },
         moveSummary: {
           played: { move: "Q16", winrate: 0.48 },
           best: { move: "D16", winrate: 0.52 },
@@ -99,6 +105,12 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
           hasOwnership: false,
         },
         comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 3, bestMove: "Q4" },
+        lossPerspective: {
+          version: "per-turn-loss-perspective-v1",
+          configuredPerspective: "black",
+          playerToMove: "W",
+          status: "verified",
+        },
         moveSummary: { played: { move: "D4", winrate: 0.51 }, best: { move: "Q4", winrate: 0.55 } },
       },
     ] as TurnAnalysisEntryV1[],
@@ -127,9 +139,9 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
           bestMove: "D16",
           playedMoveRank: 2,
           scoreMetricUsed: "scoreLead",
-          scorePerspective: "katago_output",
-          winratePerspective: "katago_output",
-          interpretationStatus: "provisional",
+          scorePerspective: "player_to_move_assumed",
+          winratePerspective: "player_to_move_assumed",
+          interpretationStatus: "verified",
           bsiScore: 62,
           status: "scored",
           components: { moveInfosCount: 5, candidateReason: "interval_sample" },
@@ -141,9 +153,9 @@ function baseKatagoResult(over: Record<string, unknown> = {}): Record<string, un
           bestMove: "Q4",
           playedMoveRank: 3,
           scoreMetricUsed: "scoreLead",
-          scorePerspective: "katago_output",
-          winratePerspective: "katago_output",
-          interpretationStatus: "provisional",
+          scorePerspective: "player_to_move_assumed",
+          winratePerspective: "player_to_move_assumed",
+          interpretationStatus: "verified",
           bsiScore: 40,
           status: "scored",
           components: { moveInfosCount: 4, candidateReason: "interval_sample" },
@@ -274,6 +286,18 @@ function embeddedLearningEvent(turnIndex: number, score = 50): Record<string, un
 }
 
 describe("buildAnalysisResultViewModel", () => {
+  it("does not build loss-backed review or memo output for legacy raw moveInfos", () => {
+    const raw = baseKatagoResult();
+    const rows = raw.turnAnalyses as Array<Record<string, unknown>>;
+    for (const row of rows) delete row.lossPerspective;
+    const vm = buildAnalysisResultViewModel(raw);
+    expect(vm.kind).toBe("katago-worker-v1");
+    if (vm.kind === "katago-worker-v1") {
+      expect(vm.productReviewV1).toBeNull();
+      expect(vm.keyMoveCandidates.every(candidate => candidate.bsiScore == null && candidate.adiScore == null)).toBe(true);
+    }
+  });
+
   it("maps katago-worker-v1 and prefers product review candidates when available", () => {
     const vm = buildAnalysisResultViewModel(baseKatagoResult());
     expect(vm.kind).toBe("katago-worker-v1");
@@ -372,7 +396,9 @@ describe("buildAnalysisResultViewModel", () => {
       resultType: "win",
       margin: null,
     });
-    expect(vm.productReviewV1?.decisiveMove).not.toBeNull();
+    // The fixture has no verified loss for White; result semantics and a
+    // loss-backed decisive move are intentionally independent.
+    expect(vm.productReviewV1?.decisiveMove).toBeNull();
   });
 
   it("falls back to learningEvents UI candidates when product review has no product moves", () => {

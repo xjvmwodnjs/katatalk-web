@@ -42,6 +42,12 @@ function turn(turnIndex: number, player: "B" | "W", opts: Partial<Record<string,
       hasOwnership: false,
     },
     comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 2, bestMove },
+    lossPerspective: {
+      version: "per-turn-loss-perspective-v1",
+      configuredPerspective: "side_to_move",
+      playerToMove: player,
+      status: "verified",
+    },
     moveSummary: {
       played: { move: playedMove, winrate: opts.playedWinrate ?? 0.45, scoreLead: opts.playedScoreLead ?? 0 },
       best: { move: bestMove, winrate: opts.bestWinrate ?? 0.55, scoreLead: opts.bestScoreLead ?? 1 },

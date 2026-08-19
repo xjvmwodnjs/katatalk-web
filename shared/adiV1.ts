@@ -16,7 +16,7 @@ export type AdiV1SignalStatus = "scored" | "partial" | "insufficient_data";
 /** Deep Search 필요도 band (패착 심각도 라벨 아님) */
 export type AdiV1Band = "low" | "medium" | "high" | "very_high";
 
-export type AdiV1InterpretationStatus = "provisional";
+export type AdiV1InterpretationStatus = "provisional" | "verified";
 
 export type AdiV1SignalComponents = {
   visitEntropy: number | null;

@@ -13,6 +13,7 @@ import type {
   TurnAnalysisEntryV1,
   TurnAnalysisMoveSummaryV1,
 } from "@shared/multiTurnKatagoAnalysisV1";
+import { resolvePerTurnMoveLossV1 } from "@shared/perTurnLossPerspectiveV1";
 
 /** multi-turn BSI 계산 시 엔진 상한(원시 stdout 없이 메타만) */
 export type BsiV1ComputeOpts = {
@@ -241,7 +242,15 @@ export function computeBsiV1FromTurnAnalyses(
 
     const bestD = pickScoreDetail(ms.best);
     const playedD = pickScoreDetail(ms.played);
-    const sr = resolveUniformScoreDelta(bestD, playedD);
+    const verifiedLoss = resolvePerTurnMoveLossV1(t);
+    const rawScore = resolveUniformScoreDelta(bestD, playedD);
+    const sr = verifiedLoss.interpretationStatus === "verified"
+      ? {
+          unifiedMetric: verifiedLoss.scoreMetricUsed,
+          scoreMetricMixed: verifiedLoss.scoreMetricMixed,
+          scoreBestMinusPlayed: verifiedLoss.scoreBestMinusPlayed,
+        }
+      : rawScore;
     const scoreMetricUsed = sr.unifiedMetric;
     const scoreBestMinusPlayed = sr.scoreBestMinusPlayed;
     const bestWr = pickWinrate(ms.best);
@@ -256,7 +265,9 @@ export function computeBsiV1FromTurnAnalyses(
     };
 
     let winrateBestMinusPlayed: number | undefined;
-    if (bestWr != null && playedWr != null) {
+    if (verifiedLoss.interpretationStatus === "verified") {
+      winrateBestMinusPlayed = verifiedLoss.winrateBestMinusPlayed;
+    } else if (bestWr != null && playedWr != null) {
       winrateBestMinusPlayed = Math.max(0, bestWr - playedWr);
     }
 
@@ -324,8 +335,13 @@ export function computeBsiV1FromTurnAnalyses(
       bestMove,
       playedMoveRank,
       scoreMetricUsed,
-      ...pers,
-      interpretationStatus: "provisional",
+      ...(verifiedLoss.interpretationStatus === "verified"
+        ? {
+            scorePerspective: "player_to_move_assumed" as const,
+            winratePerspective: "player_to_move_assumed" as const,
+          }
+        : pers),
+      interpretationStatus: verifiedLoss.interpretationStatus,
       ...(scoreBestMinusPlayed !== undefined ? { scoreBestMinusPlayed, scoreDelta: scoreBestMinusPlayed } : {}),
       ...(winrateBestMinusPlayed !== undefined
         ? { winrateBestMinusPlayed, winrateDelta: winrateBestMinusPlayed }

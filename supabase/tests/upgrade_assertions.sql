@@ -74,25 +74,22 @@ SELECT public.__ci_assert_true(
   '011 poison row was not quarantined after upgrade'
 );
 
-UPDATE public.analysis_jobs AS j
-SET credit_log_id = l.id
-FROM public.credit_logs AS l
-WHERE j.id = 'upgrade-poison-job'
-  AND l.idempotency_key = 'usage:upgrade-poison-job';
-
 WITH response AS (
-  SELECT public.fail_analysis_job_and_refund_with_lease(
-    f.analysis_job_id,
-    f.lease_worker_id,
-    f.lease_attempt_count,
-    'MAX_ATTEMPTS_EXCEEDED',
-    'upgrade reconciliation'
-  ) AS body
-  FROM public.analysis_job_finalization_failures AS f
-  WHERE f.analysis_job_id = 'upgrade-poison-job'
+  SELECT public.reconcile_analysis_job_finalization('upgrade-poison-job', false) AS body
 )
 SELECT public.__ci_assert_true(
-  body ->> 'code' = 'FAILED_AND_REFUNDED',
+  body ->> 'code' = 'PREVIEW_READY'
+    AND (body ->> 'applied')::boolean IS FALSE,
+  'upgrade poison row did not pass reconciliation preview'
+)
+FROM response;
+
+WITH response AS (
+  SELECT public.reconcile_analysis_job_finalization('upgrade-poison-job', true) AS body
+)
+SELECT public.__ci_assert_true(
+  body ->> 'code' = 'RECONCILED'
+    AND (body ->> 'applied')::boolean IS TRUE,
   'upgrade poison row did not recover with its stored lease'
 )
 FROM response;

@@ -62,6 +62,46 @@ describe("confidenceFromMinVisits", () => {
 });
 
 describe("computeBsiV1FromTurnAnalyses", () => {
+  it.each([
+    ["black", "B", 0.7, 0.55, 4, 1],
+    ["black", "W", 0.3, 0.45, -4, -1],
+    ["white", "B", 0.3, 0.45, -4, -1],
+    ["white", "W", 0.7, 0.55, 4, 1],
+    ["side_to_move", "B", 0.7, 0.55, 4, 1],
+    ["side_to_move", "W", 0.7, 0.55, 4, 1],
+  ])(
+    "normalizes %s moveInfos for %s to the same player loss",
+    (configuredPerspective, player, bestWinrate, playedWinrate, bestScore, playedScore) => {
+      const result = computeBsiV1FromTurnAnalyses([
+        baseOk({
+          player: player as "B" | "W",
+          lossPerspective: {
+            version: "per-turn-loss-perspective-v1",
+            configuredPerspective: configuredPerspective as "black" | "white" | "side_to_move",
+            playerToMove: player as "B" | "W",
+            status: "verified",
+          },
+          moveSummary: {
+            best: { move: "D16", scoreLead: bestScore, winrate: bestWinrate, visits: 200 },
+            played: { move: "Q16", scoreLead: playedScore, winrate: playedWinrate, visits: 200 },
+          },
+        }),
+      ]);
+      const signal = result.signals[0]!;
+      expect(signal.interpretationStatus).toBe("verified");
+      expect(signal.scorePerspective).toBe("player_to_move_assumed");
+      expect(signal.winratePerspective).toBe("player_to_move_assumed");
+      expect(signal.scoreBestMinusPlayed).toBeCloseTo(3, 8);
+      expect(signal.winrateBestMinusPlayed).toBeCloseTo(0.15, 8);
+    }
+  );
+
+  it("keeps a legacy row provisional instead of inferring its loss axis", () => {
+    const signal = computeBsiV1FromTurnAnalyses([baseOk()]).signals[0]!;
+    expect(signal.interpretationStatus).toBe("provisional");
+    expect(signal.scorePerspective).toBe("katago_output");
+  });
+
   it("scored: scoreBestMinusPlayed / winrateBestMinusPlayed + deprecated aliases match", () => {
     const r = computeBsiV1FromTurnAnalyses([baseOk()]);
     expect(r.version).toBe("bsi-v1");

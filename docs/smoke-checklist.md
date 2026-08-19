@@ -1,5 +1,9 @@
 # Smoke Result UI Harness v1
 
+> **2026-08-12 scope:** local/mock numeric result UI regression only. This does
+> not exercise real Clerk, payment, Supabase queue, GPU KataGo, LLM commentary,
+> multilingual safety, or accessibility release gates.
+
 목적: 내부 베타 smoke에서 completed job 결과 화면을 안정적으로 열고, board/winrate/learningEvents/PV/try-play를 수동 확인한다.
 
 ## Local Auth Smoke

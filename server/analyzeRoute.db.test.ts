@@ -1,4 +1,13 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import express from "express";
 import http from "http";
 import * as clerkAuth from "./_core/clerkAuth";
@@ -10,6 +19,7 @@ import { SGF_UPLOAD_FORM_FIELD } from "@shared/const";
 import type { AuthenticatedUser } from "./_core/sdk";
 import { sha256HexUtf8, utf8ByteLength } from "./sgfPayload";
 import { appendWinrateTimelineProgressEventV1 } from "./winrateTimelineProgressV1";
+import { ANALYSIS_REQUEST_ID_HEADER } from "@shared/analysisRequestId";
 
 vi.mock("./_core/resolveRequestUser", () => ({
   tryResolveUserFromRequest: vi.fn(),
@@ -41,7 +51,30 @@ const userB = {
 
 const minimalSgf = "(;FF[4]GM[1]SZ[19];B[pd];W[dp])";
 
-function listen(app: express.Express): Promise<{ server: http.Server; port: number }> {
+function analysisPostHeaders(requestId = "vitest-analysis-request-default") {
+  return {
+    Authorization: "Bearer fake",
+    [ANALYSIS_REQUEST_ID_HEADER]: requestId,
+  };
+}
+
+function analysisFormData(
+  sgf = minimalSgf,
+  language: "ko" | "en" | "zh" | "ja" = "ko"
+): FormData {
+  const form = new FormData();
+  form.append("language", language);
+  form.append(
+    SGF_UPLOAD_FORM_FIELD,
+    new Blob([sgf], { type: "application/octet-stream" }),
+    "game.sgf"
+  );
+  return form;
+}
+
+function listen(
+  app: express.Express
+): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolvePromise, reject) => {
     const server = http.createServer(app);
     server.listen(0, "127.0.0.1", () => {
@@ -82,19 +115,26 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.useRealTimers();
     delete process.env.ANALYSIS_WORKER_MODE;
     delete process.env.ANALYSIS_ENGINE;
+    delete process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED;
+    delete process.env.KATATALK_ATOMIC_ENQUEUE;
+    delete process.env.KATATALK_ALLOW_MOCK_ANALYSIS;
     delete process.env.KATAGO_WINRATE_TIMELINE_LOCAL_PROGRESS;
     process.env.NODE_ENV = "test";
   });
 
   it("GET /api/analyze/:jobId returns 404 when row is missing", async () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/missing-job-id-xyz`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/missing-job-id-xyz`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(404);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
-  it("GET returns 403 when job.user_id !== viewer", async () => {
+  it("GET returns the same 404 for a foreign-owned job", async () => {
     vitestSeedAnalysisJob({
       id: "job-cross",
       user_id: "user_a",
@@ -113,7 +153,117 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-cross`, {
       headers: { Authorization: "Bearer fake" },
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    const resultRes = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-cross/result`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+    expect(resultRes.status).toBe(404);
+    expect(resultRes.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("recovers a committed request by owner before any upload revalidation", async () => {
+    const requestId = "vitest-recovery-request-0001";
+    const privateMarker = "RECOVERY_MUST_NOT_READ_LARGE_COLUMNS";
+    vitestSeedAnalysisJob({
+      id: "job-recovered-before-upload",
+      user_id: "user_a",
+      request_id: requestId,
+      status: "running",
+      progress: 42,
+      result: { privateMarker },
+      sgf_content: `(;C[${privateMarker}])`,
+      is_mock: false,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/requests/${requestId}`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    const raw = await response.text();
+    expect(raw).not.toContain(privateMarker);
+    expect(JSON.parse(raw)).toMatchObject({
+      success: true,
+      jobId: "job-recovered-before-upload",
+      status: "running",
+      progress: 42,
+    });
+  });
+
+  it("request recovery returns the same no-store 404 for missing and foreign owners", async () => {
+    const requestId = "vitest-foreign-recovery-0001";
+    vitestSeedAnalysisJob({
+      id: "job-foreign-recovery",
+      user_id: "user_a",
+      request_id: requestId,
+      status: "queued",
+      progress: 0,
+      is_mock: false,
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userB);
+
+    for (const value of [requestId, "vitest-missing-recovery-0001"]) {
+      const response = await fetch(
+        `http://127.0.0.1:${port}/api/analyze/requests/${value}`,
+        { headers: { Authorization: "Bearer fake" } }
+      );
+      expect(response.status).toBe(404);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(await response.json()).toEqual({
+        success: false,
+        message: "Job not found.",
+      });
+    }
+  });
+
+  it("request recovery rejects malformed request IDs before querying a job", async () => {
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/requests/invalid!`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({
+      success: false,
+      code: "ANALYSIS_REQUEST_ID_INVALID",
+    });
+  });
+
+  it("GET completed status stays lightweight and points to the result envelope", async () => {
+    const marker = "COMPLETED_RESULT_MUST_NOT_BE_POLLED";
+    vitestSeedAnalysisJob({
+      id: "job-light-status",
+      user_id: "user_a",
+      status: "completed",
+      is_mock: false,
+      progress: 100,
+      result: { marker },
+      sgf_content: `(;C[${marker}])`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-light-status`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    const raw = await response.text();
+    expect(raw).not.toContain(marker);
+    expect(JSON.parse(raw)).toMatchObject({
+      success: true,
+      status: "completed",
+      resultVersion: "analysis-job-result-v1",
+    });
   });
 
   it("GET completed merges DB sgf_content into data for owner", async () => {
@@ -135,15 +285,21 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const logSpy = vi.spyOn(console, "log");
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-db-sgf-merge`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-db-sgf-merge/result`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; data?: Record<string, unknown> };
+    const body = (await res.json()) as {
+      success: boolean;
+      data?: Record<string, unknown>;
+    };
     expect(body.success).toBe(true);
     expect(body.data).toEqual({ ...resultPayload, sgf_content: minimalSgf });
-    const leaked = logSpy.mock.calls.some((args) =>
-      args.some((a) => typeof a === "string" && a.includes(minimalSgf))
+    const leaked = logSpy.mock.calls.some(args =>
+      args.some(a => typeof a === "string" && a.includes(minimalSgf))
     );
     expect(leaked).toBe(false);
     logSpy.mockRestore();
@@ -166,14 +322,81 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-db-result`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-db-result/result`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; data?: unknown };
     expect(body.success).toBe(true);
     expect(body.data).toEqual(resultPayload);
     expect(res.headers.get("X-KataTalk-Mock")).toBe("true");
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    const etag = res.headers.get("ETag");
+    expect(etag).toMatch(/^"sha256-[0-9a-f]{64}"$/);
+    const notModified = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-db-result/result`,
+      {
+        headers: {
+          Authorization: "Bearer fake",
+          "If-None-Match": etag!,
+        },
+      }
+    );
+    expect(notModified.status).toBe(304);
+
+    const row = vitestAnalysisJobsStore.get("job-db-result")!;
+    row.updated_at = "2026-08-19T12:34:56.000Z";
+    const changedEnvelope = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-db-result/result`,
+      {
+        headers: {
+          Authorization: "Bearer fake",
+          "If-None-Match": etag!,
+        },
+      }
+    );
+    expect(changedEnvelope.status).toBe(200);
+    expect(changedEnvelope.headers.get("ETag")).not.toBe(etag);
+  });
+
+  it("GET result distinguishes not-ready and owner-purged terminal data", async () => {
+    vitestSeedAnalysisJob({
+      id: "job-result-running",
+      user_id: "user_a",
+      status: "running",
+      progress: 50,
+      result: null,
+      is_mock: false,
+    });
+    vitestSeedAnalysisJob({
+      id: "job-result-purged",
+      user_id: "user_a",
+      status: "completed",
+      progress: 100,
+      result: null,
+      is_mock: false,
+      data_purged_at: new Date().toISOString(),
+    });
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const running = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-result-running/result`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+    expect(running.status).toBe(409);
+    expect(await running.json()).toMatchObject({
+      code: "ANALYSIS_RESULT_NOT_READY",
+    });
+    const purged = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-result-purged/result`,
+      { headers: { Authorization: "Bearer fake" } }
+    );
+    expect(purged.status).toBe(410);
+    expect(await purged.json()).toMatchObject({
+      code: "ANALYSIS_RESULT_PURGED",
+    });
   });
 
   it("GET running does not expose sgf_content in response even when DB row has it", async () => {
@@ -194,9 +417,12 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: null,
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-run-sgf`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-run-sgf`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain("RUNNING_NO_LEAK_SGF_MARKER");
@@ -235,13 +461,19 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       receivedAt: "2026-01-01T00:00:00.000Z",
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain(minimalSgf);
-    const body = JSON.parse(raw) as { success: boolean; points?: Array<{ turnIndex: number; visits: number }> };
+    const body = JSON.parse(raw) as {
+      success: boolean;
+      points?: Array<{ turnIndex: number; visits: number }>;
+    };
     expect(body.success).toBe(true);
     expect(body.points?.[0]).toMatchObject({ turnIndex: 1, visits: 7 });
   });
@@ -266,11 +498,18 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: null,
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/${jobId}/timeline-progress`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    const body = (await res.json()) as {
+      success: boolean;
+      enabled?: boolean;
+      points?: unknown[];
+    };
     expect(body).toMatchObject({ success: true, enabled: true, points: [] });
   });
 
@@ -292,11 +531,18 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: null,
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/disabled-progress/timeline-progress`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; enabled?: boolean; points?: unknown[] };
+    const body = (await res.json()) as {
+      success: boolean;
+      enabled?: boolean;
+      points?: unknown[];
+    };
     expect(body).toMatchObject({ success: true, enabled: false, points: [] });
   });
 
@@ -318,13 +564,19 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-fail-sgf`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-fail-sgf`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain("FAILED_NO_LEAK_SGF_MARKER");
-    const body = JSON.parse(raw) as { data?: unknown; error?: { message: string } };
+    const body = JSON.parse(raw) as {
+      data?: unknown;
+      error?: { message: string };
+    };
     expect(body.data).toBeUndefined();
     expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
@@ -360,11 +612,18 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       completed_at: new Date().toISOString(),
     });
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
-    const res = await fetch(`http://127.0.0.1:${port}/api/analyze/job-katago-str`, {
-      headers: { Authorization: "Bearer fake" },
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/analyze/job-katago-str/result`,
+      {
+        headers: { Authorization: "Bearer fake" },
+      }
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; status: string; data?: unknown };
+    const body = (await res.json()) as {
+      success: boolean;
+      status: string;
+      data?: unknown;
+    };
     expect(body.success).toBe(true);
     expect(body.status).toBe("completed");
     expect(body.data).toEqual({ ...katagoPayload, sgf_content: minimalSgf });
@@ -417,7 +676,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       headers: { Authorization: "Bearer fake" },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; progress: number | null };
+    const body = (await res.json()) as {
+      status: string;
+      progress: number | null;
+    };
     expect(body.status).toBe("queued");
     expect(body.progress).toBe(0);
   });
@@ -442,7 +704,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       headers: { Authorization: "Bearer fake" },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; error?: { message: string } };
+    const body = (await res.json()) as {
+      success: boolean;
+      error?: { message: string };
+    };
     expect(body.success).toBe(true);
     expect(body.error?.message).toBe("Analysis failed. Please try again.");
   });
@@ -459,10 +724,14 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([minimalSgf], { type: "application/octet-stream" }),
+      "game.sgf"
+    );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
     expect(res.status).toBe(202);
@@ -484,6 +753,121 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(ensureWalletSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("POST exact replay returns the original job 100 times without another row", async () => {
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const requestId = "vitest-lost-response-replay-0001";
+    let originalJobId = "";
+
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+        method: "POST",
+        headers: analysisPostHeaders(requestId),
+        body: analysisFormData(),
+      });
+      expect(response.status).toBe(attempt === 0 ? 202 : 200);
+      const body = (await response.json()) as {
+        jobId: string;
+        replayed: boolean;
+        idempotencyProtected: boolean;
+      };
+      if (attempt === 0) originalJobId = body.jobId;
+      expect(body.jobId).toBe(originalJobId);
+      expect(body.replayed).toBe(attempt > 0);
+      expect(body.idempotencyProtected).toBe(true);
+    }
+
+    expect(vitestAnalysisJobsStore.size).toBe(1);
+  });
+
+  it("POST rejects request-id reuse with a different admitted payload", async () => {
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const requestId = "vitest-idempotency-conflict-0001";
+    const first = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: analysisPostHeaders(requestId),
+      body: analysisFormData(minimalSgf, "ko"),
+    });
+    expect(first.status).toBe(202);
+
+    const conflicting = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: analysisPostHeaders(requestId),
+      body: analysisFormData(minimalSgf, "en"),
+    });
+    expect(conflicting.status).toBe(409);
+    expect(await conflicting.json()).toMatchObject({
+      success: false,
+      code: "IDEMPOTENCY_CONFLICT",
+    });
+    expect(vitestAnalysisJobsStore.size).toBe(1);
+  });
+
+  it("POST replays a committed job before a later admission denial", async () => {
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const requestId = "vitest-replay-before-admission-0001";
+    const first = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: analysisPostHeaders(requestId),
+      body: analysisFormData(),
+    });
+    const firstBody = (await first.json()) as { jobId: string };
+    expect(first.status).toBe(202);
+
+    process.env.NODE_ENV = "production";
+    process.env.ANALYSIS_ENGINE = "mock";
+    delete process.env.KATATALK_ALLOW_MOCK_ANALYSIS;
+    const replay = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: analysisPostHeaders(requestId),
+      body: analysisFormData(),
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
+      jobId: firstBody.jobId,
+      replayed: true,
+    });
+
+    const denied = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: analysisPostHeaders("vitest-new-denied-request-0001"),
+      body: analysisFormData(),
+    });
+    expect(denied.status).toBe(503);
+    expect(await denied.json()).toMatchObject({
+      code: "MOCK_ANALYSIS_DISABLED",
+    });
+    expect(vitestAnalysisJobsStore.size).toBe(1);
+  });
+
+  it("POST supports cached clients during rollout and can later require the key", async () => {
+    process.env.ANALYSIS_WORKER_MODE = "external";
+    vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
+    const compatibility = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: analysisFormData(),
+    });
+    expect(compatibility.status).toBe(202);
+    expect(await compatibility.json()).toMatchObject({
+      replayed: false,
+      idempotencyProtected: false,
+    });
+
+    process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED = "true";
+    const required = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
+      method: "POST",
+      headers: { Authorization: "Bearer fake" },
+      body: analysisFormData(),
+    });
+    expect(required.status).toBe(400);
+    expect(await required.json()).toMatchObject({
+      code: "ANALYSIS_REQUEST_ID_INVALID",
+    });
+  });
+
   it("POST keeps invalid optional game metadata field-local and enqueues once", async () => {
     const ensureWalletSpy = vi.spyOn(
       creditService,
@@ -501,7 +885,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
 
@@ -539,7 +923,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
 
@@ -559,10 +943,16 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob(["(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"], { type: "application/octet-stream" }), "late-setup.sgf");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob(["(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"], {
+        type: "application/octet-stream",
+      }),
+      "late-setup.sgf"
+    );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
     expect(res.status).toBe(400);
@@ -573,7 +963,10 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
   });
 
   it("POST rejects unsupported root rules before wallet, debit, or enqueue", async () => {
-    const ensureWalletSpy = vi.spyOn(creditService, "ensureWalletWithSignupBonus");
+    const ensureWalletSpy = vi.spyOn(
+      creditService,
+      "ensureWalletWithSignupBonus"
+    );
     const atomicEnqueueSpy = vi.spyOn(creditService, "enqueuePaidAnalysisJob");
     const legacySpendSpy = vi.spyOn(creditService, "spendCreditForAnalysisJob");
     const legacyInsertSpy = vi.spyOn(creditService, "insertAnalysisJobQueued");
@@ -590,7 +983,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     );
     const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
 
@@ -678,7 +1071,7 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
       );
       const response = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
         method: "POST",
-        headers: { Authorization: "Bearer fake" },
+        headers: analysisPostHeaders(),
         body: fd,
       });
       expect(response.status).toBe(400);
@@ -697,8 +1090,11 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     expect(legacySpendSpy).not.toHaveBeenCalled();
     expect(legacyInsertSpy).not.toHaveBeenCalled();
     expect(vitestAnalysisJobsStore.size).toBe(0);
-    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledTimes(cases.length);
-    for (const call of vi.mocked(resolve.tryResolveUserFromRequest).mock.calls) {
+    expect(resolve.tryResolveUserFromRequest).toHaveBeenCalledTimes(
+      cases.length
+    );
+    for (const call of vi.mocked(resolve.tryResolveUserFromRequest).mock
+      .calls) {
       expect(call).toHaveLength(1);
     }
   });
@@ -709,10 +1105,14 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([minimalSgf], { type: "application/octet-stream" }),
+      "game.sgf"
+    );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
     expect(res.status).toBe(202);
@@ -727,10 +1127,14 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([minimalSgf], { type: "application/octet-stream" }),
+      "game.sgf"
+    );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
     expect(res.status).toBe(202);
@@ -745,10 +1149,14 @@ describe("analyzeRoute — DB-backed analysis_jobs", () => {
     vi.mocked(resolve.tryResolveUserFromRequest).mockResolvedValue(userA);
     const fd = new FormData();
     fd.append("language", "ko");
-    fd.append(SGF_UPLOAD_FORM_FIELD, new Blob([minimalSgf], { type: "application/octet-stream" }), "game.sgf");
+    fd.append(
+      SGF_UPLOAD_FORM_FIELD,
+      new Blob([minimalSgf], { type: "application/octet-stream" }),
+      "game.sgf"
+    );
     const res = await fetch(`http://127.0.0.1:${port}/api/analyze`, {
       method: "POST",
-      headers: { Authorization: "Bearer fake" },
+      headers: analysisPostHeaders(),
       body: fd,
     });
     expect(res.status).toBe(202);

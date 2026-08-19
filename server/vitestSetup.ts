@@ -16,11 +16,13 @@ if (!process.env.SUPABASE_URL?.trim()) {
   process.env.SUPABASE_URL = "https://vitest-placeholder.supabase.co";
 }
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "vitest-service-role-placeholder-not-real";
+  process.env.SUPABASE_SERVICE_ROLE_KEY =
+    "vitest-service-role-placeholder-not-real";
 }
 
 if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET?.trim()) {
-  process.env.LEMONSQUEEZY_WEBHOOK_SECRET = "vitest-lemon-webhook-secret-32chars___";
+  process.env.LEMONSQUEEZY_WEBHOOK_SECRET =
+    "vitest-lemon-webhook-secret-32chars___";
 }
 
 if (!process.env.LEMONSQUEEZY_API_KEY?.trim()) {
@@ -30,10 +32,12 @@ if (!process.env.LEMONSQUEEZY_STORE_ID?.trim()) {
   process.env.LEMONSQUEEZY_STORE_ID = "999";
 }
 if (!process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID?.trim()) {
-  process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID = "vitest-variant-starter";
+  process.env.LEMONSQUEEZY_CREDIT_PACK_STARTER_VARIANT_ID =
+    "vitest-variant-starter";
 }
 if (!process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID?.trim()) {
-  process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID = "vitest-variant-standard";
+  process.env.LEMONSQUEEZY_CREDIT_PACK_STANDARD_VARIANT_ID =
+    "vitest-variant-standard";
 }
 if (!process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID?.trim()) {
   process.env.LEMONSQUEEZY_CREDIT_PACK_PRO_VARIANT_ID = "vitest-variant-pro";
@@ -44,7 +48,10 @@ function isoNow() {
 }
 
 /** Vitest 전용 in-memory analysis_jobs (실제 Supabase 대체) */
-export const vitestAnalysisJobsStore = new Map<string, Record<string, unknown>>();
+export const vitestAnalysisJobsStore = new Map<
+  string,
+  Record<string, unknown>
+>();
 /** 원자 실패 RPC가 생성한 refund ledger를 job id 기준으로 추적하는 테스트 대역. */
 export const vitestAnalysisRefundedJobsStore = new Set<string>();
 /** 응답 유실 재시도 fixture용 RPC 호출 횟수. */
@@ -64,7 +71,10 @@ export const vitestAnalysisFinalizationFailuresStore = new Map<
 function resolveVitestAnalysisFinalizationFailure(jobId: string): void {
   const existing = vitestAnalysisFinalizationFailuresStore.get(jobId);
   if (existing) {
-    vitestAnalysisFinalizationFailuresStore.set(jobId, { ...existing, resolved: true });
+    vitestAnalysisFinalizationFailuresStore.set(jobId, {
+      ...existing,
+      resolved: true,
+    });
   }
 }
 
@@ -84,17 +94,32 @@ export function vitestSeedAnalysisJob(row: Record<string, unknown>) {
 
 function analysisJobsTableBuilder() {
   return {
-    select(_cols?: string) {
-      return {
-        eq(col: string, val: string) {
-          return {
-            maybeSingle() {
-              const row = vitestAnalysisJobsStore.get(val) ?? null;
-              return Promise.resolve({ data: row, error: null });
-            },
-          };
+    select(cols = "*") {
+      const filters: Array<{ col: string; val: unknown }> = [];
+      const tail = {
+        eq(col: string, val: unknown) {
+          filters.push({ col, val });
+          return tail;
+        },
+        maybeSingle() {
+          const row =
+            Array.from(vitestAnalysisJobsStore.values()).find(candidate =>
+              filters.every(filter => candidate[filter.col] === filter.val)
+            ) ?? null;
+          if (row == null || cols.trim() === "*") {
+            return Promise.resolve({ data: row, error: null });
+          }
+          const projected = Object.fromEntries(
+            cols
+              .split(",")
+              .map(col => col.trim())
+              .filter(Boolean)
+              .map(col => [col, row[col]])
+          );
+          return Promise.resolve({ data: projected, error: null });
         },
       };
+      return tail;
     },
     insert(row: Record<string, unknown>) {
       const id = row.id as string;
@@ -107,7 +132,11 @@ function analysisJobsTableBuilder() {
       return Promise.resolve({ error: null });
     },
     update(patch: Record<string, unknown>) {
-      const filters: Array<{ kind: "eq" | "in" | "is"; col: string; val: unknown }> = [];
+      const filters: Array<{
+        kind: "eq" | "in" | "is";
+        col: string;
+        val: unknown;
+      }> = [];
       function rowMatches(existing: Record<string, unknown>): boolean {
         for (const f of filters) {
           const cur = existing[f.col];
@@ -123,7 +152,10 @@ function analysisJobsTableBuilder() {
         }
         return true;
       }
-      function runUpdate(leaseSelectMode: boolean): { data?: unknown[]; error: null } {
+      function runUpdate(leaseSelectMode: boolean): {
+        data?: unknown[];
+        error: null;
+      } {
         const idFilter = filters.find(f => f.col === "id");
         const id = idFilter?.val != null ? String(idFilter.val) : "";
         const existing = id ? vitestAnalysisJobsStore.get(id) : undefined;
@@ -131,15 +163,23 @@ function analysisJobsTableBuilder() {
           return leaseSelectMode ? { data: [], error: null } : { error: null };
         }
         const ex = existing as Record<string, unknown>;
-        if (filters.length === 1 && filters[0].kind === "eq" && filters[0].col === "id") {
+        if (
+          filters.length === 1 &&
+          filters[0].kind === "eq" &&
+          filters[0].col === "id"
+        ) {
           Object.assign(existing, patch, { updated_at: isoNow() });
-          return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+          return leaseSelectMode
+            ? { data: [{ id }], error: null }
+            : { error: null };
         }
         if (!rowMatches(ex)) {
           return leaseSelectMode ? { data: [], error: null } : { error: null };
         }
         Object.assign(existing, patch, { updated_at: isoNow() });
-        return leaseSelectMode ? { data: [{ id }], error: null } : { error: null };
+        return leaseSelectMode
+          ? { data: [{ id }], error: null }
+          : { error: null };
       }
       const tail = {
         eq(col: string, val: unknown) {
@@ -157,8 +197,14 @@ function analysisJobsTableBuilder() {
         select() {
           return Promise.resolve(runUpdate(true));
         },
-        then(onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
-          return Promise.resolve(runUpdate(false)).then(onFulfilled, onRejected);
+        then(
+          onFulfilled?: (v: unknown) => unknown,
+          onRejected?: (e: unknown) => unknown
+        ) {
+          return Promise.resolve(runUpdate(false)).then(
+            onFulfilled,
+            onRejected
+          );
         },
       };
       return {
@@ -274,7 +320,9 @@ function simulateFailAnalysisJobAndRefundRpc(args?: Record<string, unknown>): {
   const cost = Number(row.credit_cost ?? 0);
 
   if (row.status === "failed") {
-    const sameFinalizer = row.failure_worker_id === workerId && Number(row.failure_attempt_count) === attemptCount;
+    const sameFinalizer =
+      row.failure_worker_id === workerId &&
+      Number(row.failure_attempt_count) === attemptCount;
     if (!sameFinalizer) {
       return {
         data: {
@@ -330,7 +378,10 @@ function simulateFailAnalysisJobAndRefundRpc(args?: Record<string, unknown>): {
       error: null,
     };
   }
-  if (row.locked_by !== workerId || Number(row.attempt_count) !== attemptCount) {
+  if (
+    row.locked_by !== workerId ||
+    Number(row.attempt_count) !== attemptCount
+  ) {
     return {
       data: {
         ok: false,
@@ -374,7 +425,12 @@ function simulateFailAnalysisJobAndRefundRpc(args?: Record<string, unknown>): {
   return {
     data: {
       ok: true,
-      code: cost === 0 ? "FAILED_NO_CHARGE" : refundPreexisting ? "FAILED_ALREADY_REFUNDED" : "FAILED_AND_REFUNDED",
+      code:
+        cost === 0
+          ? "FAILED_NO_CHARGE"
+          : refundPreexisting
+            ? "FAILED_ALREADY_REFUNDED"
+            : "FAILED_AND_REFUNDED",
       duplicate: refundPreexisting,
       refunded: cost > 0,
       credits: 10,
@@ -402,7 +458,8 @@ function simulateClaimNextAnalysisJobRpc(args?: Record<string, unknown>): {
     const stale = !lockedAt || nowMs - lockedMs > staleSec * 1000;
     if (!stale) continue;
     const jobId = String(r.id);
-    if (vitestAnalysisFinalizationFailuresStore.get(jobId)?.resolved === false) continue;
+    if (vitestAnalysisFinalizationFailuresStore.get(jobId)?.resolved === false)
+      continue;
     const finalization = simulateFailAnalysisJobAndRefundRpc({
       p_analysis_job_id: r.id,
       p_locked_by: r.locked_by,
@@ -422,24 +479,26 @@ function simulateClaimNextAnalysisJobRpc(args?: Record<string, unknown>): {
     }
   }
 
-  const candidates = Array.from(vitestAnalysisJobsStore.entries()).filter(([, row]) => {
-    const r = row as Record<string, unknown>;
-    const ac = Number(r.attempt_count ?? 0);
-    const maxA = Number(r.max_attempts ?? 3);
-    if (ac >= maxA) return false;
+  const candidates = Array.from(vitestAnalysisJobsStore.entries()).filter(
+    ([, row]) => {
+      const r = row as Record<string, unknown>;
+      const ac = Number(r.attempt_count ?? 0);
+      const maxA = Number(r.max_attempts ?? 3);
+      if (ac >= maxA) return false;
 
-    if (r.status === "queued") {
-      const nr = r.next_retry_at as string | null | undefined;
-      if (nr && new Date(nr).getTime() > nowMs) return false;
-      return true;
+      if (r.status === "queued") {
+        const nr = r.next_retry_at as string | null | undefined;
+        if (nr && new Date(nr).getTime() > nowMs) return false;
+        return true;
+      }
+      if (r.status === "running") {
+        const lockedAt = r.locked_at as string | null | undefined;
+        const lockedMs = lockedAt ? new Date(lockedAt).getTime() : 0;
+        return !lockedAt || nowMs - lockedMs > staleSec * 1000;
+      }
+      return false;
     }
-    if (r.status === "running") {
-      const lockedAt = r.locked_at as string | null | undefined;
-      const lockedMs = lockedAt ? new Date(lockedAt).getTime() : 0;
-      return !lockedAt || nowMs - lockedMs > staleSec * 1000;
-    }
-    return false;
-  });
+  );
 
   candidates.sort((a, b) =>
     String((a[1] as { created_at?: string }).created_at ?? "").localeCompare(
@@ -481,7 +540,12 @@ vi.mock("./_core/supabaseAdmin", () => {
         const jobId = a.p_analysis_job_id;
         if (jobId === "insufficient-job") {
           return {
-            data: { ok: false, code: "INSUFFICIENT_CREDITS", credits: 0, log_id: null },
+            data: {
+              ok: false,
+              code: "INSUFFICIENT_CREDITS",
+              credits: 0,
+              log_id: null,
+            },
             error: null,
           };
         }
@@ -495,14 +559,50 @@ vi.mock("./_core/supabaseAdmin", () => {
           error: null,
         };
       }
-      if (name === "enqueue_paid_analysis_job") {
+      if (name === "enqueue_paid_analysis_job_v2") {
         const jobId = String(a.p_analysis_job_id ?? "");
+        const requestId = String(a.p_request_id ?? "");
+        const requestFingerprint = String(a.p_request_fingerprint ?? "");
         if (jobId === "insufficient-job") {
-          return { data: { ok: false, code: "INSUFFICIENT_CREDITS" }, error: null };
+          return {
+            data: { ok: false, code: "INSUFFICIENT_CREDITS" },
+            error: null,
+          };
+        }
+        const replay = Array.from(vitestAnalysisJobsStore.values()).find(
+          row => row.user_id === a.p_user_id && row.request_id === requestId
+        );
+        if (replay) {
+          if (replay.request_fingerprint !== requestFingerprint) {
+            return {
+              data: { ok: false, code: "IDEMPOTENCY_CONFLICT" },
+              error: null,
+            };
+          }
+          return {
+            data: {
+              ok: true,
+              code: "ALREADY_ENQUEUED",
+              credits: 1,
+              log_id: replay.credit_log_id,
+              job_id: replay.id,
+              job_status: replay.status,
+              replayed: true,
+            },
+            error: null,
+          };
+        }
+        if (typeof a.p_admission_code === "string") {
+          return {
+            data: { ok: false, code: a.p_admission_code },
+            error: null,
+          };
         }
         vitestSeedAnalysisJob({
           id: jobId,
           user_id: a.p_user_id,
+          request_id: requestId,
+          request_fingerprint: requestFingerprint,
           status: "queued",
           file_name: a.p_file_name,
           language: a.p_language,
@@ -524,6 +624,9 @@ vi.mock("./_core/supabaseAdmin", () => {
             code: "OK",
             credits: 1,
             log_id: "00000000-0000-0000-0000-00000000aa01",
+            job_id: jobId,
+            job_status: "queued",
+            replayed: false,
           },
           error: null,
         };
@@ -535,7 +638,12 @@ vi.mock("./_core/supabaseAdmin", () => {
         }
         if (jobId === "job-refund-dup") {
           return {
-            data: { ok: true, duplicate: true, credits: 9, log_id: "00000000-0000-0000-0000-00000000dd01" },
+            data: {
+              ok: true,
+              duplicate: true,
+              credits: 9,
+              log_id: "00000000-0000-0000-0000-00000000dd01",
+            },
             error: null,
           };
         }
@@ -545,7 +653,15 @@ vi.mock("./_core/supabaseAdmin", () => {
             error: null,
           };
         }
-        return { data: { ok: true, duplicate: false, credits: 10, log_id: "00000000-0000-0000-0000-00000000cc01" }, error: null };
+        return {
+          data: {
+            ok: true,
+            duplicate: false,
+            credits: 10,
+            log_id: "00000000-0000-0000-0000-00000000cc01",
+          },
+          error: null,
+        };
       }
       if (name === "fail_analysis_job_and_refund_with_lease") {
         return simulateFailAnalysisJobAndRefundRpc(args);
@@ -555,7 +671,12 @@ vi.mock("./_core/supabaseAdmin", () => {
       }
       if (name === "add_credits_from_payment") {
         return {
-          data: { ok: true, duplicate: false, credits: 52, log_id: "00000000-0000-0000-0000-00000000bb01" },
+          data: {
+            ok: true,
+            duplicate: false,
+            credits: 52,
+            log_id: "00000000-0000-0000-0000-00000000bb01",
+          },
           error: null,
         };
       }

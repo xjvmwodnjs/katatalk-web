@@ -418,6 +418,7 @@ export async function analyzeSgfKatago(
     env: process.env,
     spawnFn: input.__testSpawnFn,
     persistentSession: persistentMultiTurnSession,
+    winratePerspective,
   }).finally(() => {
     if (rootAnalysisMode === "persistent") {
       scheduleSharedPersistentRootIdleClose(process.env);

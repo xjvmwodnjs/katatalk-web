@@ -14,6 +14,12 @@ $assertion$;
 INSERT INTO public.profiles (id, credits)
 VALUES ('quarantine-poison', 5), ('quarantine-next', 5);
 
+INSERT INTO public.credit_logs (
+  user_id, amount, type, description, idempotency_key
+) VALUES (
+  'quarantine-poison', 5, 'admin_adjustment', 'CI opening balance', 'ci-opening:quarantine-poison'
+);
+
 SELECT public.enqueue_paid_analysis_job(
   'quarantine-poison', 'quarantine-poison-job', 2, NULL, 'ko', '(;GM[1])', 'hash-poison', 8, true, NULL
 );
@@ -82,28 +88,55 @@ SELECT public.__ci_assert_true(
   'unresolved poison row was repeatedly finalized'
 );
 
--- Repair only the broken identity link, then use the exact lease preserved by
--- quarantine. The finalizer itself records resolved_at atomically.
+-- The reconciliation RPC previews without writing, then restores only the
+-- canonical usage link and invokes the exact stored lease atomically.
+WITH response AS (
+  SELECT public.reconcile_analysis_job_finalization(
+    'quarantine-poison-job', false
+  ) AS body
+)
+SELECT public.__ci_assert_true(
+  body ->> 'code' = 'PREVIEW_READY'
+    AND (body ->> 'applied')::boolean IS FALSE
+    AND (SELECT credit_log_id FROM public.analysis_jobs WHERE id = 'quarantine-poison-job') IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.credit_logs WHERE idempotency_key = 'refund:quarantine-poison-job'
+    ),
+  'reconciliation preview wrote or did not accept the poison row'
+)
+FROM response;
+
+-- Refuse a mismatched link and wallet drift with no repair side effects.
 UPDATE public.analysis_jobs AS j
 SET credit_log_id = l.id
 FROM public.credit_logs AS l
 WHERE j.id = 'quarantine-poison-job'
-  AND l.idempotency_key = 'usage:quarantine-poison-job';
+  AND l.idempotency_key = 'usage:quarantine-next-job';
+SELECT public.__ci_assert_true(
+  (public.reconcile_analysis_job_finalization('quarantine-poison-job', false) ->> 'code') = 'LINK_ALREADY_SET'
+    AND (SELECT status FROM public.analysis_jobs WHERE id = 'quarantine-poison-job') = 'running',
+  'reconciliation accepted a wrong pre-existing link'
+);
+UPDATE public.analysis_jobs
+SET credit_log_id = NULL
+WHERE id = 'quarantine-poison-job';
+UPDATE public.profiles SET credits = credits + 1 WHERE id = 'quarantine-poison';
+SELECT public.__ci_assert_true(
+  (public.reconcile_analysis_job_finalization('quarantine-poison-job', false) ->> 'code') = 'LEDGER_INVARIANT'
+    AND (SELECT credit_log_id FROM public.analysis_jobs WHERE id = 'quarantine-poison-job') IS NULL,
+  'reconciliation accepted wallet drift'
+);
+UPDATE public.profiles SET credits = credits - 1 WHERE id = 'quarantine-poison';
 
 WITH response AS (
-  SELECT public.fail_analysis_job_and_refund_with_lease(
-    f.analysis_job_id,
-    f.lease_worker_id,
-    f.lease_attempt_count,
-    'MAX_ATTEMPTS_EXCEEDED',
-    'operator reconciliation'
+  SELECT public.reconcile_analysis_job_finalization(
+    'quarantine-poison-job', true
   ) AS body
-  FROM public.analysis_job_finalization_failures AS f
-  WHERE f.analysis_job_id = 'quarantine-poison-job'
 )
 SELECT public.__ci_assert_true(
-  body ->> 'code' = 'FAILED_AND_REFUNDED',
-  'repaired poison row did not finalize'
+  body ->> 'code' = 'RECONCILED'
+    AND (body ->> 'applied')::boolean IS TRUE,
+  'reconciliation did not atomically finalize the poison row'
 )
 FROM response;
 
@@ -118,6 +151,12 @@ SELECT public.__ci_assert_true(
         AND resolved_at IS NOT NULL
     ),
   'quarantine recovery did not atomically resolve and refund'
+);
+
+SELECT public.__ci_assert_true(
+  (public.reconcile_analysis_job_finalization('quarantine-poison-job', true) ->> 'code') = 'ALREADY_RECONCILED'
+    AND (SELECT count(*) FROM public.credit_logs WHERE idempotency_key = 'refund:quarantine-poison-job') = 1,
+  'reconciliation response-loss replay was not idempotent'
 );
 
 ROLLBACK;

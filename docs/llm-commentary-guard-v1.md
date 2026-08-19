@@ -1,5 +1,7 @@
 # LLM Commentary Guard v1
 
+> **현재 상태 — 2026-08-12:** guard와 별도 claim verifier 단위 코드는 존재하지만 product runtime에는 연결되지 않았다. forbidden 표현은 ko/en 일부만 다루므로 ja/zh 출시 안전성을 증명하지 않는다. 목표 계약은 [production-global-commentary-spec-v1.md](production-global-commentary-spec-v1.md)를 따른다.
+
 ## 목적
 
 LLM Commentary Guard v1은 `ExplanationPlanV1`을 향후 LLM prompt input으로 넘기기 전에 검증하고, LLM output을 사용자에게 보여주기 전에 최소 안전 검사를 수행하는 계층이다. 이번 단계에서는 실제 LLM API 호출을 구현하지 않는다.
@@ -51,16 +53,16 @@ LLM output은 짧은 structured object로 제한한다.
 
 raw SGF, secret/env key, 로컬 path 형태가 섞이면 output을 폐기한다.
 
-## Claim-check 설계
+## Claim-check 연계와 제한
 
-향후 full claim verifier는 다음을 비교해야 한다.
+`verifyLlmCommentaryClaimsV1`은 현재 다음의 명시적 좌표·수치를 비교한다.
 
 - output에 등장한 수치가 `ExplanationPlanV1.evidenceBullets`에 존재하는지 확인한다.
 - output에 등장한 좌표가 `referenceLine` 또는 `pv`에 존재하는지 확인한다.
 - 승률/집 차이는 `winrate_loss`, `score_loss` bullet에서만 가져온다.
 - `timeline_context`는 변동 context로만 사용하고 loss 주장으로 바꾸지 않는다.
 
-이번 단계에서는 full claim verifier를 구현하지 않고, forbidden label과 unsafe payload post-check만 구현한다.
+이 verifier는 full semantic verifier가 아니다. player/turn/perspective, 인과관계, PV 합법성, 사활·패·축·선수/후수, 단위 없는 숫자, ja/zh 우회 표현은 검증하지 못한다. 이 영역을 단정하는 output은 evidence profile에서 금지하고 locale별 회귀 corpus로 별도 승인해야 한다.
 
 ## Fallback 정책
 

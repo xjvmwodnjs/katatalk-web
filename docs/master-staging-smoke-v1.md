@@ -1,5 +1,11 @@
 # Master / Railway Staging Smoke v1
 
+> **2026-08-12 scope:** this is a numeric KataGo beta smoke, not the global
+> natural-language release gate. Keep commentary OFF. The missing end-to-end
+> commentary, payment reversal, capacity, multilingual, accessibility, and
+> fault-injection gates are defined in
+> [production-global-commentary-spec-v1.md](production-global-commentary-spec-v1.md).
+
 ## Production Clerk 클라이언트 산출물 게이트 (COM-106 진행 중)
 
 staging smoke는 credential 요청 전에 `STAGING_CLERK_PUBLISHABLE_KEY_SHA256`와 `/client-build-manifest.json`의 provider·source SHA·Clerk test/live 구분·publishable-key 지문을 검사한다. 이후 인증 smoke 프로세스가 같은 검사를 동기적으로 다시 통과해야만 Clerk/Ops token을 전송한다. publishable key가 프로세스 환경에 주입된 운영 터미널에서 `pnpm client:clerk-key-fingerprint`를 실행하면 원문을 출력하지 않고 지문만 계산한다. 실제 GitHub `staging` 환경·보호 규칙·실제 Clerk 로그인·publishable/secret key tenant 일치 검증은 외부 게이트로 남으므로 COM-106 전체 완료로 표시하지 않는다.
@@ -253,28 +259,26 @@ GitHub `staging` environment의 deployment branch는 `master`만 허용하고, r
 3. `ANALYSIS_WORKER_MODE=external`.
 4. `KATATALK_ALLOW_MOCK_ANALYSIS=false` 또는 미설정.
 5. `KATATALK_LLM_COMMENTARY_ENABLED=false` 또는 미설정.
-6. Worker 로그에 secret/path 원문이 출력되지 않고 정규화된 승률 관점과 `source=config`만 기록되는지 확인한다.
-7. queued job을 claim한 뒤 `queued -> running -> completed` 상태 전이가 되는지 확인한다.
-8. failed job 발생 시 기존 refund 경로가 동작하는지 staging 전용 결제/credit 데이터로만 확인한다.
+6. Worker에 Clerk, Lemon, JWT, `APP_BASE_URL`이 없고 Web과 secret profile이 분리됐는지 확인한다.
+7. Worker 로그에 secret/path 원문이 출력되지 않고 정규화된 승률 관점과 `source=config`만 기록되는지 확인한다.
+8. queued job을 claim한 뒤 `queued -> running -> completed` 상태 전이가 되는지 확인한다.
+9. failed job 발생 시 기존 refund 경로가 동작하는지 staging 전용 결제/credit 데이터로만 확인한다.
 
-### 4.4 Supabase Migration 006/007 확인
+### 4.4 Supabase Migration 001–015 확인
 
-대상 파일:
-
-- `supabase/migrations/006_lock_down_security_definer_rpc.sql`
-- `supabase/migrations/007_analysis_job_lease_retry.sql`
+대상은 `supabase/migrations/001_*.sql`부터 `015_*.sql`까지 숫자 순서 전체다. 특히 011 원자 enqueue, 012 실패·환불, 013 RPC ACL, 014 reconciliation, 015 요청 멱등 enqueue를 생략하면 현재 Web/Worker를 배포하지 않는다.
 
 확인 절차:
 
 1. Supabase project가 staging인지 확인한다.
-2. migration history에서 006/007이 적용됐는지 확인한다.
+2. migration history와 catalog에서 001→015가 숫자 순서로 모두 적용됐는지 database migration gate로 확인한다.
 3. `claim_next_analysis_job` RPC가 존재하는지 확인한다.
 4. lease 관련 컬럼과 retry 관련 컬럼이 `analysis_jobs`에 존재하는지 확인한다.
 5. service-role 권한으로 Worker가 claim/lease 갱신/completed/failed update를 수행할 수 있는지 확인한다.
 6. anon/client 권한에서 보안상 불필요한 RPC 실행이 차단되는지 확인한다.
 7. schema를 수정하지 않는다. 누락이 있으면 smoke를 중단하고 migration 적용 절차를 별도로 진행한다.
 
-007 기준 heartbeat는 별도 `heartbeat_at` 컬럼이 아니라 `locked_at` 갱신으로 동작한다. smoke 중 running job의 `locked_at`이 Worker lease 갱신 주기에 맞춰 갱신되는지 확인한다.
+007 기준 heartbeat는 별도 `heartbeat_at` 컬럼이 아니라 `locked_at` 갱신으로 동작한다. smoke 중 running job의 `locked_at`이 Worker lease 갱신 주기에 맞춰 갱신되는지 확인한다. 013/014의 service-role-only ACL과 quarantine reconciliation contract도 PostgreSQL gate와 실제 catalog에서 확인한다.
 
 예시 확인 SQL은 staging 콘솔에서만 실행한다. 결과에는 secret이 포함되지 않아야 한다.
 
@@ -299,6 +303,18 @@ where table_schema = 'public'
 order by column_name;
 ```
 
+### 4.5 Worker Preflight
+
+Run this command inside the staging Worker runtime before starting `worker:analysis`. It does not claim jobs or connect to the queue. It validates required KataGo paths as regular files, parses the configured winrate perspective, probes the KataGo backend, and enforces the GPU policy.
+
+```bash
+corepack pnpm worker:preflight
+```
+
+### 4.6 Worker Liveness
+
+Apply all Supabase migrations through `015_analysis_request_idempotency.sql` before deploying the external Worker. Configure the high-entropy `OPS_STATUS_TOKEN` only on Web and protected `SMOKE_OPS_TOKEN` in the staging GitHub Environment. With the Worker running, verify authenticated `GET /ops/analysis-worker-health` reports `status: "live"` for the expected engine. Stop the Worker and verify it becomes `stale` only after `ANALYSIS_WORKER_STATUS_STALE_SECONDS`; this must not change `/healthz` or `/readyz`.
+
 ## 5. Result Recording
 
 각 smoke run은 `docs/internal-beta-smoke-report.template.md`를 복사해 별도 파일로 기록한다. 실제 secret/API key/path, full request body, raw private SGF는 기록하지 않는다. 커밋이 필요한 보고서는 사용자 승인 후 별도 요청으로만 진행한다.
@@ -313,15 +329,3 @@ order by column_name;
 - Product Review UI 확인 결과
 - viewport 결과
 - 실패 원인과 재시도 여부
-
-
-### 4.5 Worker Preflight
-
-Run this command inside the staging Worker runtime before starting `worker:analysis`. It does not claim jobs or connect to the queue. It validates required KataGo paths as regular files, parses the configured winrate perspective, probes the KataGo backend, and enforces the GPU policy.
-
-```bash
-corepack pnpm worker:preflight
-```
-### 4.6 Worker Liveness
-
-Apply Supabase migrations through `008_analysis_worker_observability.sql` before deploying the external Worker. Configure the same high-entropy `OPS_STATUS_TOKEN` on Web and protected `SMOKE_OPS_TOKEN` in the staging GitHub Environment. With the Worker running, verify authenticated `GET /ops/analysis-worker-health` reports `status: "live"` for the expected engine. Stop the Worker and verify it becomes `stale` only after `ANALYSIS_WORKER_STATUS_STALE_SECONDS`; this must not change `/healthz` or `/readyz`.

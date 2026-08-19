@@ -71,6 +71,7 @@ import {
   type WinrateTimelinePointV1,
   type WinrateTimelineV1,
 } from "./winrateTimelineV1";
+import { hasVerifiedPerTurnLossPerspectiveV1 } from "./perTurnLossPerspectiveV1";
 
 export type AnalysisResultVmWarningCodeV1 =
   | "beta_numeric_reference"
@@ -1084,6 +1085,16 @@ export function buildAnalysisResultViewModel(
       isPlainObject(multi) &&
       typeof multi.attemptedCount === "number" &&
       multi.attemptedCount > 0;
+    const perTurnLossVerified = hasVerifiedPerTurnLossPerspectiveV1(
+      turnAnalyses.filter(
+        (turn): turn is TurnAnalysisEntrySuccessV1 => turn.status === "ok"
+      )
+    );
+    // Legacy artifacts contain raw moveInfos without their per-query axis.
+    // They may still show root/timeline/PV, but never drive a loss, review, or memo.
+    const safeBsi = perTurnLossVerified ? bsi : undefined;
+    const safeAdi = perTurnLossVerified ? adi : undefined;
+    const safeDeepSearchPlan = perTurnLossVerified ? plan : undefined;
 
     const embeddedLearningEvents = isAnalysisLearningEventsV1(
       result.learningEventsV1
@@ -1098,44 +1109,46 @@ export function buildAnalysisResultViewModel(
       buildAnalysisLearningEventsV1({
         analysisPlan,
         turnAnalyses,
-        bsi,
-        adi,
-        deepSearchPlan: plan,
+        bsi: safeBsi,
+        adi: safeAdi,
+        deepSearchPlan: safeDeepSearchPlan,
         deepSearchResults: deep,
         winrateTimeline,
       });
-    const productReviewV1 = buildProductReviewV1({
-      gameResult: buildProductGameResultForVm(result, sgfText),
-      learningEvents,
-      turnAnalyses,
-      bsi,
-      adi,
-      deepSearchResults: deep,
-      winrateTimeline,
-      totalMoves,
-      sgfText,
-    });
+    const productReviewV1 = perTurnLossVerified
+      ? buildProductReviewV1({
+          gameResult: buildProductGameResultForVm(result, sgfText),
+          learningEvents,
+          turnAnalyses,
+          bsi: safeBsi,
+          adi: safeAdi,
+          deepSearchResults: deep,
+          winrateTimeline,
+          totalMoves,
+          sgfText,
+        })
+      : null;
     const acc = buildCandidateAccumulator(
       analysisPlan,
       turnAnalyses,
-      plan,
-      adi,
-      bsi,
+      safeDeepSearchPlan,
+      safeAdi,
+      safeBsi,
       5
     );
     const keyMoveCandidates =
       productReviewV1 != null
-        ? productReviewToKeyMoveVmList(productReviewV1, deep, adi, bsi)
+        ? productReviewToKeyMoveVmList(productReviewV1, deep, safeAdi, safeBsi)
         : learningEvents.events.length > 0
           ? learningEventsToKeyMoveVmList(
               learningEvents,
-              plan,
+              safeDeepSearchPlan,
               deep,
-              adi,
-              bsi,
+              safeAdi,
+              safeBsi,
               turnAnalyses
             )
-          : buildKeyMoveVmList(acc, plan, deep, adi, bsi);
+          : buildKeyMoveVmList(acc, safeDeepSearchPlan, deep, safeAdi, safeBsi);
     const variationPreview = buildVariationPreview(
       keyMoveCandidates,
       turnAnalyses,

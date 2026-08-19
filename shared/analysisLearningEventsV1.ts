@@ -5,6 +5,7 @@ import type { DeepSearchPlanV1Result } from "./deepSearchPlanV1";
 import type { DeepSearchResultsV1Result, DeepSearchSingleResultOkV1 } from "./deepSearchResultsV1";
 import type { TurnAnalysisEntrySuccessV1, TurnAnalysisEntryV1 } from "./multiTurnKatagoAnalysisV1";
 import type { WinrateTimelineV1 } from "./winrateTimelineV1";
+import { resolvePerTurnMoveLossV1 } from "./perTurnLossPerspectiveV1";
 
 export const ANALYSIS_LEARNING_EVENTS_V1_VERSION = "learning-events-v1" as const;
 
@@ -371,20 +372,17 @@ export function buildAnalysisLearningEventsV1(input: BuildAnalysisLearningEvents
     mergePv(row, extractPvFromTopMove(t.katago?.topMove));
     addScore(row, 4, "turnAnalyses");
 
-    const playedWinrate = finiteNumber(t.moveSummary?.played?.winrate);
-    const bestWinrate = finiteNumber(t.moveSummary?.best?.winrate);
-    if (playedWinrate != null && bestWinrate != null) {
-      const delta = Math.abs(bestWinrate - playedWinrate) * 100;
+    const verifiedLoss = resolvePerTurnMoveLossV1(t);
+    if (verifiedLoss.winrateBestMinusPlayed != null) {
+      const delta = verifiedLoss.winrateBestMinusPlayed * 100;
       row.signals.winrateDelta = Math.max(row.signals.winrateDelta ?? 0, Math.round(delta * 100) / 100);
       if (delta >= 6) {
         addScore(row, Math.min(16, delta * 0.9), "turnAnalyses", "move_summary_winrate_gap");
       }
     }
 
-    const playedLead = finiteNumber(t.moveSummary?.played?.scoreLead) ?? finiteNumber(t.moveSummary?.played?.scoreMean);
-    const bestLead = finiteNumber(t.moveSummary?.best?.scoreLead) ?? finiteNumber(t.moveSummary?.best?.scoreMean);
-    if (playedLead != null && bestLead != null) {
-      const delta = Math.abs(bestLead - playedLead);
+    if (verifiedLoss.scoreBestMinusPlayed != null) {
+      const delta = verifiedLoss.scoreBestMinusPlayed;
       row.signals.scoreLeadDelta = Math.max(row.signals.scoreLeadDelta ?? 0, Math.round(delta * 100) / 100);
       if (delta >= 3) {
         addScore(row, Math.min(14, delta * 1.7), "turnAnalyses", "move_summary_score_gap");
@@ -434,6 +432,7 @@ export function buildAnalysisLearningEventsV1(input: BuildAnalysisLearningEvents
   }
 
   for (const s of input.bsi?.signals ?? []) {
+    if (s.interpretationStatus !== "verified") continue;
     if (s.status !== "scored" || isFinalPositionTurn(s.turnIndex, input.analysisPlan, input.turnAnalyses)) {
       continue;
     }

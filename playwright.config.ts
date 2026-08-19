@@ -15,7 +15,16 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // GitHub's hosted Ubuntu image already ships Chrome and its runtime
+        // dependencies. The workflow opts into that channel explicitly while
+        // local development keeps Playwright's pinned Chromium.
+        channel:
+          process.env.PLAYWRIGHT_USE_SYSTEM_CHROME === "true"
+            ? "chrome"
+            : undefined,
+      },
     },
   ],
   webServer: {

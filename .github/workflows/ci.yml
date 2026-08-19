@@ -96,9 +96,9 @@ jobs:
         run: corepack enable
       - name: Install locked dependencies
         run: corepack pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: corepack pnpm exec playwright install --with-deps chromium
       - name: Run E2E suite
+        env:
+          PLAYWRIGHT_USE_SYSTEM_CHROME: "true"
         run: corepack pnpm e2e
       - name: Upload Playwright failure artifacts
         if: failure()

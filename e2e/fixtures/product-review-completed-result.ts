@@ -1,4 +1,7 @@
-import type { AnalysisJobGetResponse } from "../../shared/analysisJob";
+import type {
+  AnalysisJobGetResponse,
+  AnalysisJobResultResponse,
+} from "../../shared/analysisJob";
 import type { AdiV1Result } from "../../shared/adiV1";
 import type { AnalysisPlanV1 } from "../../shared/analysisPlanV1";
 import type { BsiV1Result } from "../../shared/bsiV1";
@@ -96,6 +99,12 @@ export const productReviewCompletedResult = {
         playedMoveRank: 3,
         bestMove: "D16",
       },
+      lossPerspective: {
+        version: "per-turn-loss-perspective-v1",
+        configuredPerspective: "black",
+        playerToMove: "B",
+        status: "verified",
+      },
       moveSummary: {
         played: { move: "Q16", winrate: 0.48, scoreLead: -2.2 },
         best: { move: "D16", winrate: 0.56, scoreLead: 1.8 },
@@ -127,6 +136,12 @@ export const productReviewCompletedResult = {
         playedMoveFoundInCandidates: true,
         playedMoveRank: 2,
         bestMove: "Q4",
+      },
+      lossPerspective: {
+        version: "per-turn-loss-perspective-v1",
+        configuredPerspective: "black",
+        playerToMove: "W",
+        status: "verified",
       },
       moveSummary: {
         played: { move: "D4", winrate: 0.58, scoreLead: 2.7 },
@@ -162,7 +177,9 @@ export const productReviewCompletedResult = {
         scoreMetricUsed: "scoreLead",
         scorePerspective: "katago_output",
         winratePerspective: "katago_output",
-        interpretationStatus: "provisional",
+        interpretationStatus: "verified",
+        scoreBestMinusPlayed: 4,
+        winrateBestMinusPlayed: 0.08,
         bsiScore: 74,
         status: "scored",
         components: { moveInfosCount: 6, candidateReason: "interval_sample" },
@@ -176,7 +193,7 @@ export const productReviewCompletedResult = {
         scoreMetricUsed: "scoreLead",
         scorePerspective: "katago_output",
         winratePerspective: "katago_output",
-        interpretationStatus: "provisional",
+        interpretationStatus: "verified",
         bsiScore: 42,
         status: "scored",
         components: { moveInfosCount: 5, candidateReason: "interval_sample" },
@@ -292,10 +309,21 @@ export const productReviewCompletedJobResponse = {
   progress: 100,
   createdAt: "2026-05-17T00:00:00.000Z",
   updatedAt: "2026-05-17T00:01:00.000Z",
+  resultVersion: "analysis-job-result-v1",
   data: productReviewCompletedResult,
   meta: {
     mock: false,
     message:
       "Synthetic katago-worker-v1 completed result for Product Review E2E.",
   },
+} satisfies AnalysisJobResultResponse;
+
+export const productReviewCompletedStatusResponse = {
+  success: true,
+  jobId: productReviewE2eJobId,
+  status: "completed",
+  progress: 100,
+  createdAt: "2026-05-17T00:00:00.000Z",
+  updatedAt: "2026-05-17T00:01:00.000Z",
+  resultVersion: "analysis-job-result-v1",
 } satisfies AnalysisJobGetResponse;

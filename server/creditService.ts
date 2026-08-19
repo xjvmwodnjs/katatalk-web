@@ -1,6 +1,10 @@
 import type { AuthenticatedUser } from "./_core/sdk";
 import { getSupabaseAdmin } from "./_core/supabaseAdmin";
-import { analysisDataRetentionUntil, readAnalysisDataRetentionDays } from "./analysisDataRetention";
+import {
+  analysisDataRetentionUntil,
+  readAnalysisDataRetentionDays,
+} from "./analysisDataRetention";
+import type { AnalyzeEnqueueAdmissionCode } from "./middleware/analyzeEnqueueGuard";
 
 const DEFAULT_ANALYSIS_COST = 1;
 
@@ -42,11 +46,19 @@ export type CreditLogRow = {
 };
 
 /** Supabase RPC json/jsonb 반환 — 단일 객체·배열 1행·JSON 문자열 모두 허용 */
-export function parseSupabaseRpcJson(value: unknown): Record<string, unknown> | null {
+export function parseSupabaseRpcJson(
+  value: unknown
+): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
-  if (Array.isArray(value) && value.length > 0 && value[0] && typeof value[0] === "object" && !Array.isArray(value[0])) {
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value[0] &&
+    typeof value[0] === "object" &&
+    !Array.isArray(value[0])
+  ) {
     return value[0] as Record<string, unknown>;
   }
   if (typeof value === "string") {
@@ -55,7 +67,12 @@ export function parseSupabaseRpcJson(value: unknown): Record<string, unknown> | 
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>;
       }
-      if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object" && !Array.isArray(parsed[0])) {
+      if (
+        Array.isArray(parsed) &&
+        parsed[0] &&
+        typeof parsed[0] === "object" &&
+        !Array.isArray(parsed[0])
+      ) {
         return parsed[0] as Record<string, unknown>;
       }
     } catch {
@@ -78,7 +95,9 @@ function str(v: unknown): string | null {
 }
 
 /** Supabase RPC: 프로필 없으면 2크레딧 + signup_bonus 로그, 있으면 email/name만 갱신. */
-export async function ensureProfileForClerkUser(user: AuthenticatedUser): Promise<EnsureProfileResult> {
+export async function ensureProfileForClerkUser(
+  user: AuthenticatedUser
+): Promise<EnsureProfileResult> {
   const sb = getSupabaseAdmin();
   const userId = walletSubjectFromAuthUser(user);
   const { data, error } = await sb.rpc("ensure_profile_with_signup_bonus", {
@@ -124,7 +143,10 @@ export async function getOrProvisionProfileForClerkUser(
   return ensureProfileForClerkUser(user);
 }
 
-export async function getCreditLogs(clerkProfileId: string, limit = 20): Promise<CreditLogRow[]> {
+export async function getCreditLogs(
+  clerkProfileId: string,
+  limit = 20
+): Promise<CreditLogRow[]> {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb
     .from("credit_logs")
@@ -180,24 +202,47 @@ export async function spendCreditForAnalysisJob(
 }
 
 export type EnqueuePaidAnalysisJobResult =
-  | { ok: true; balanceAfter: number; ledgerId: string }
-  | { ok: false; code: "INSUFFICIENT_CREDITS" | "PROFILE_NOT_FOUND" | "JOB_ID_CONFLICT" | "INVALID_ARGUMENT" };
+  | {
+      ok: true;
+      balanceAfter: number;
+      ledgerId: string;
+      jobId: string;
+      jobStatus: string;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "INSUFFICIENT_CREDITS"
+        | "PROFILE_NOT_FOUND"
+        | "JOB_ID_CONFLICT"
+        | "IDEMPOTENCY_CONFLICT"
+        | "LEDGER_INVARIANT"
+        | AnalyzeEnqueueAdmissionCode
+        | "RPC_PROTOCOL_ERROR"
+        | "INVALID_ARGUMENT";
+    };
 
 export async function enqueuePaidAnalysisJob(args: {
   user: AuthenticatedUser;
   jobId: string;
+  requestId: string;
+  requestFingerprint: string;
   fileName: string;
   language: string;
   sgfContent: string;
   sgfSha256: string;
   sgfSizeBytes: number;
   isMock: boolean;
+  admissionCode: AnalyzeEnqueueAdmissionCode | null;
   creditCost?: number;
 }): Promise<EnqueuePaidAnalysisJobResult> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.rpc("enqueue_paid_analysis_job", {
+  const { data, error } = await sb.rpc("enqueue_paid_analysis_job_v2", {
     p_user_id: walletSubjectFromAuthUser(args.user),
     p_analysis_job_id: args.jobId,
+    p_request_id: args.requestId,
+    p_request_fingerprint: args.requestFingerprint,
     p_cost: args.creditCost ?? DEFAULT_ANALYSIS_COST,
     p_file_name: args.fileName,
     p_language: args.language,
@@ -205,26 +250,58 @@ export async function enqueuePaidAnalysisJob(args: {
     p_sgf_sha256: args.sgfSha256,
     p_sgf_size_bytes: args.sgfSizeBytes,
     p_is_mock: args.isMock,
-    p_data_retention_until: analysisDataRetentionUntil(readAnalysisDataRetentionDays()),
+    p_admission_code: args.admissionCode,
+    p_data_retention_until: analysisDataRetentionUntil(
+      readAnalysisDataRetentionDays()
+    ),
   });
   if (error) throw new Error(error.message);
   const row = parseRpcJson(data);
   const code = str(row?.code);
   if (row?.ok !== true) {
-    if (code === "PROFILE_NOT_FOUND" || code === "JOB_ID_CONFLICT" || code === "INVALID_ARGUMENT") {
+    if (
+      code === "PROFILE_NOT_FOUND" ||
+      code === "JOB_ID_CONFLICT" ||
+      code === "IDEMPOTENCY_CONFLICT" ||
+      code === "LEDGER_INVARIANT" ||
+      code === "ANALYSIS_IDEMPOTENCY_UNAVAILABLE" ||
+      code === "KATAGO_INLINE_FORBIDDEN" ||
+      code === "MOCK_ANALYSIS_DISABLED" ||
+      code === "INVALID_ARGUMENT"
+    ) {
       return { ok: false, code };
     }
-    return { ok: false, code: "INSUFFICIENT_CREDITS" };
+    if (code === "INSUFFICIENT_CREDITS") {
+      return { ok: false, code };
+    }
+    return { ok: false, code: "RPC_PROTOCOL_ERROR" };
   }
   const credits = num(row?.credits);
   const ledgerId = str(row?.log_id);
-  if (credits == null || !ledgerId) throw new Error("enqueue_paid_analysis_job: invalid success response");
-  return { ok: true, balanceAfter: credits, ledgerId };
+  const responseJobId = str(row?.job_id);
+  const jobStatus = str(row?.job_status);
+  const replayed = row?.replayed === true;
+  if (credits == null || !ledgerId || !responseJobId || !jobStatus) {
+    throw new Error("enqueue_paid_analysis_job_v2: invalid success response");
+  }
+  return {
+    ok: true,
+    balanceAfter: credits,
+    ledgerId,
+    jobId: responseJobId,
+    jobStatus,
+    replayed,
+  };
 }
 
 export type RefundCreditForAnalysisResult =
   | { ok: true; duplicate: boolean }
-  | { ok: false; duplicate?: boolean; errorCode: string; errorMessage?: string };
+  | {
+      ok: false;
+      duplicate?: boolean;
+      errorCode: string;
+      errorMessage?: string;
+    };
 
 export async function refundCreditIfJobFailed(
   user: AuthenticatedUser,
@@ -249,7 +326,10 @@ export async function refundCreditIfJobFailedByProfileId(
       p_amount: cost,
     });
     if (error) {
-      console.error("[creditService] refund_credit_for_analysis RPC", error.message);
+      console.error(
+        "[creditService] refund_credit_for_analysis RPC",
+        error.message
+      );
       return { ok: false, errorCode: "RPC_ERROR", errorMessage: error.message };
     }
     const row = parseRpcJson(data);
@@ -302,13 +382,16 @@ export async function failAnalysisJobAndRefundWithLease(args: {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const sb = getSupabaseAdmin();
-      const { data, error } = await sb.rpc("fail_analysis_job_and_refund_with_lease", {
-        p_analysis_job_id: args.jobId,
-        p_locked_by: args.lease.lockedBy,
-        p_attempt_count: args.lease.attemptCount,
-        p_error_code: args.errorCode,
-        p_error_message: args.errorMessage,
-      });
+      const { data, error } = await sb.rpc(
+        "fail_analysis_job_and_refund_with_lease",
+        {
+          p_analysis_job_id: args.jobId,
+          p_locked_by: args.lease.lockedBy,
+          p_attempt_count: args.lease.attemptCount,
+          p_error_code: args.errorCode,
+          p_error_message: args.errorMessage,
+        }
+      );
       if (error) {
         throw new Error(error.message);
       }
@@ -321,7 +404,10 @@ export async function failAnalysisJobAndRefundWithLease(args: {
       if (row.ok !== true) {
         return { ok: false, code };
       }
-      if (typeof row.duplicate !== "boolean" || typeof row.refunded !== "boolean") {
+      if (
+        typeof row.duplicate !== "boolean" ||
+        typeof row.refunded !== "boolean"
+      ) {
         throw new Error("invalid RPC success response");
       }
       return {
@@ -332,11 +418,14 @@ export async function failAnalysisJobAndRefundWithLease(args: {
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      console.warn("[creditService] atomic failure finalization transport error", {
-        jobId: args.jobId,
-        attempt,
-        error: lastError.message,
-      });
+      console.warn(
+        "[creditService] atomic failure finalization transport error",
+        {
+          jobId: args.jobId,
+          attempt,
+          error: lastError.message,
+        }
+      );
     }
   }
 
@@ -348,13 +437,16 @@ export async function failAnalysisJobAndRefundWithLease(args: {
 /** Fail Worker startup before claiming jobs when migration 012 is unavailable. */
 export async function assertAtomicFailureRefundRpcReady(): Promise<void> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.rpc("fail_analysis_job_and_refund_with_lease", {
-    p_analysis_job_id: "",
-    p_locked_by: "",
-    p_attempt_count: 0,
-    p_error_code: "PREFLIGHT",
-    p_error_message: "preflight",
-  });
+  const { data, error } = await sb.rpc(
+    "fail_analysis_job_and_refund_with_lease",
+    {
+      p_analysis_job_id: "",
+      p_locked_by: "",
+      p_attempt_count: 0,
+      p_error_code: "PREFLIGHT",
+      p_error_message: "preflight",
+    }
+  );
   if (error) {
     throw new Error(`ATOMIC_FAILURE_RPC_UNAVAILABLE: ${error.message}`);
   }
@@ -374,7 +466,12 @@ export async function addCreditsFromPaymentWebhook(args: {
   paymentOrderId: string | null;
   paymentCheckoutId: string | null;
   description: string | null;
-}): Promise<{ ok: boolean; duplicate: boolean; credits: number | null; errorCode: string | null }> {
+}): Promise<{
+  ok: boolean;
+  duplicate: boolean;
+  credits: number | null;
+  errorCode: string | null;
+}> {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb.rpc("add_credits_from_payment", {
     p_user_id: args.clerkUserId,
@@ -410,9 +507,15 @@ export async function addCreditsFromPaymentWebhook(args: {
 }
 
 /** 웹훅 지급 직후 credit_logs 행 존재 확인(개발 시 RPC·DB 불일치 탐지) */
-export async function fetchCreditLogIdByIdempotencyKey(idempotencyKey: string): Promise<string | null> {
+export async function fetchCreditLogIdByIdempotencyKey(
+  idempotencyKey: string
+): Promise<string | null> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.from("credit_logs").select("id").eq("idempotency_key", idempotencyKey).maybeSingle();
+  const { data, error } = await sb
+    .from("credit_logs")
+    .select("id")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
   if (error) {
     throw new Error(error.message);
   }
@@ -424,6 +527,9 @@ export async function fetchCreditLogIdByIdempotencyKey(idempotencyKey: string): 
 export type AnalysisJobDbRow = {
   id: string;
   user_id: string;
+  /** Migration 015 client-visible submission idempotency fields. */
+  request_id?: string | null;
+  request_fingerprint?: string | null;
   status: string;
   file_name: string | null;
   language: string | null;
@@ -455,6 +561,35 @@ export type AnalysisJobDbRow = {
   failure_attempt_count?: number | null;
 };
 
+export type AnalysisJobStatusDbRow = Pick<
+  AnalysisJobDbRow,
+  | "id"
+  | "user_id"
+  | "status"
+  | "progress"
+  | "created_at"
+  | "updated_at"
+  | "completed_at"
+  | "last_error_code"
+  | "data_purged_at"
+>;
+
+export type AnalysisJobResultDbRow = Pick<
+  AnalysisJobDbRow,
+  | "id"
+  | "user_id"
+  | "status"
+  | "progress"
+  | "result"
+  | "sgf_content"
+  | "is_mock"
+  | "created_at"
+  | "updated_at"
+  | "completed_at"
+  | "last_error_code"
+  | "data_purged_at"
+>;
+
 /** Claim 직후 DB 행 기준으로만 유효한 처리 lease (stale 재claim 시 이전 worker 차단). */
 export type AnalysisJobProcessingLease = {
   lockedBy: string;
@@ -465,7 +600,9 @@ export type UpdateAnalysisJobLeaseResult =
   | { ok: true }
   | { ok: false; reason: "LEASE_LOST" };
 
-export function analysisJobProcessingLeaseFromClaimedRow(row: AnalysisJobDbRow): AnalysisJobProcessingLease | null {
+export function analysisJobProcessingLeaseFromClaimedRow(
+  row: AnalysisJobDbRow
+): AnalysisJobProcessingLease | null {
   const lockedBy = row.locked_by?.trim();
   const ac = row.attempt_count;
   if (!lockedBy || typeof ac !== "number" || !Number.isInteger(ac) || ac < 1) {
@@ -489,7 +626,9 @@ export async function insertAnalysisJobQueued(args: {
 }): Promise<void> {
   const sb = getSupabaseAdmin();
   const isMock = args.isMock ?? true;
-  const dataRetentionUntil = analysisDataRetentionUntil(readAnalysisDataRetentionDays());
+  const dataRetentionUntil = analysisDataRetentionUntil(
+    readAnalysisDataRetentionDays()
+  );
   const { error } = await sb.from("analysis_jobs").insert({
     id: args.jobId,
     user_id: args.profileId,
@@ -510,13 +649,83 @@ export async function insertAnalysisJobQueued(args: {
   }
 }
 
-export async function getAnalysisJobRow(jobId: string): Promise<AnalysisJobDbRow | null> {
+export async function getAnalysisJobRow(
+  jobId: string
+): Promise<AnalysisJobDbRow | null> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.from("analysis_jobs").select("*").eq("id", jobId).maybeSingle();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .select("*")
+    .eq("id", jobId)
+    .maybeSingle();
   if (error) {
     throw new Error(error.message);
   }
   return data != null ? (data as AnalysisJobDbRow) : null;
+}
+
+/** Owner-qualified, small projection for frequent status/timeline polling. */
+export async function getAnalysisJobStatusForOwner(
+  jobId: string,
+  profileId: string
+): Promise<AnalysisJobStatusDbRow | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .select(
+      "id, user_id, status, progress, created_at, updated_at, completed_at, last_error_code, data_purged_at"
+    )
+    .eq("id", jobId)
+    .eq("user_id", profileId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data != null ? (data as AnalysisJobStatusDbRow) : null;
+}
+
+/**
+ * Owner-qualified replay lookup used before re-uploading a paid request.
+ * This deliberately reads only the status projection so a validator deploy
+ * cannot strand a job whose original 202 response was lost.
+ */
+export async function getAnalysisJobStatusByRequestForOwner(
+  requestId: string,
+  profileId: string
+): Promise<AnalysisJobStatusDbRow | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .select(
+      "id, user_id, status, progress, created_at, updated_at, completed_at, last_error_code, data_purged_at"
+    )
+    .eq("request_id", requestId)
+    .eq("user_id", profileId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data != null ? (data as AnalysisJobStatusDbRow) : null;
+}
+
+/** Owner-qualified large projection, fetched once after completion. */
+export async function getAnalysisJobResultForOwner(
+  jobId: string,
+  profileId: string
+): Promise<AnalysisJobResultDbRow | null> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("analysis_jobs")
+    .select(
+      "id, user_id, status, progress, result, sgf_content, is_mock, created_at, updated_at, completed_at, last_error_code, data_purged_at"
+    )
+    .eq("id", jobId)
+    .eq("user_id", profileId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data != null ? (data as AnalysisJobResultDbRow) : null;
 }
 
 export async function updateAnalysisJobRow(
@@ -539,7 +748,10 @@ export async function updateAnalysisJobRow(
   >
 ): Promise<void> {
   const sb = getSupabaseAdmin();
-  const { error } = await sb.from("analysis_jobs").update(patch).eq("id", jobId);
+  const { error } = await sb
+    .from("analysis_jobs")
+    .update(patch)
+    .eq("id", jobId);
   if (error) {
     throw new Error(error.message);
   }
@@ -587,13 +799,18 @@ export async function purgeExpiredAnalysisJobData(args?: {
   return data.flatMap(row => {
     if (!row || typeof row !== "object") return [];
     const value = row as { job_id?: unknown; purged?: unknown };
-    return typeof value.job_id === "string" ? [{ jobId: value.job_id, purged: value.purged === true }] : [];
+    return typeof value.job_id === "string"
+      ? [{ jobId: value.job_id, purged: value.purged === true }]
+      : [];
   });
 }
 
 /** `ANALYSIS_WORKER_HEARTBEAT_SECONDS` (기본 60). running lease 갱신 주기 하한·상한(초). */
 export function readAnalysisWorkerHeartbeatSeconds(): number {
-  const raw = parseInt(process.env.ANALYSIS_WORKER_HEARTBEAT_SECONDS ?? "60", 10);
+  const raw = parseInt(
+    process.env.ANALYSIS_WORKER_HEARTBEAT_SECONDS ?? "60",
+    10
+  );
   if (!Number.isFinite(raw)) {
     return 60;
   }
@@ -608,7 +825,9 @@ export async function heartbeatAnalysisJobLease(
   jobId: string,
   lease: AnalysisJobProcessingLease
 ): Promise<UpdateAnalysisJobLeaseResult> {
-  return updateAnalysisJobRowWithLease(jobId, lease, { locked_at: new Date().toISOString() });
+  return updateAnalysisJobRowWithLease(jobId, lease, {
+    locked_at: new Date().toISOString(),
+  });
 }
 
 /**
@@ -658,7 +877,10 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
   if (data == null) {
     return null;
   }
-  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  const row = (Array.isArray(data) ? data[0] : data) as Record<
+    string,
+    unknown
+  > | null;
   if (!row || typeof row !== "object") {
     return null;
   }
@@ -675,21 +897,38 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
     file_name: typeof row.file_name === "string" ? row.file_name : null,
     language: typeof row.language === "string" ? row.language : null,
     credit_cost: typeof row.credit_cost === "number" ? row.credit_cost : 1,
-    credit_log_id: typeof row.credit_log_id === "string" ? row.credit_log_id : null,
+    credit_log_id:
+      typeof row.credit_log_id === "string" ? row.credit_log_id : null,
     result: row.result ?? null,
-    error_message: typeof row.error_message === "string" ? row.error_message : null,
+    error_message:
+      typeof row.error_message === "string" ? row.error_message : null,
     is_mock: row.is_mock === true,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
     updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
-    completed_at: typeof row.completed_at === "string" ? row.completed_at : null,
-    progress: typeof row.progress === "number" ? row.progress : row.progress === null ? null : undefined,
+    completed_at:
+      typeof row.completed_at === "string" ? row.completed_at : null,
+    progress:
+      typeof row.progress === "number"
+        ? row.progress
+        : row.progress === null
+          ? null
+          : undefined,
     sgf_content: typeof row.sgf_content === "string" ? row.sgf_content : null,
     sgf_sha256: typeof row.sgf_sha256 === "string" ? row.sgf_sha256 : null,
-    sgf_size_bytes: typeof row.sgf_size_bytes === "number" ? row.sgf_size_bytes : null,
-    locked_at: row.locked_at === null || typeof row.locked_at === "string" ? (row.locked_at as string | null) : undefined,
-    locked_by: typeof row.locked_by === "string" || row.locked_by === null ? (row.locked_by as string | null) : undefined,
-    attempt_count: typeof row.attempt_count === "number" ? row.attempt_count : undefined,
-    max_attempts: typeof row.max_attempts === "number" ? row.max_attempts : undefined,
+    sgf_size_bytes:
+      typeof row.sgf_size_bytes === "number" ? row.sgf_size_bytes : null,
+    locked_at:
+      row.locked_at === null || typeof row.locked_at === "string"
+        ? (row.locked_at as string | null)
+        : undefined,
+    locked_by:
+      typeof row.locked_by === "string" || row.locked_by === null
+        ? (row.locked_by as string | null)
+        : undefined,
+    attempt_count:
+      typeof row.attempt_count === "number" ? row.attempt_count : undefined,
+    max_attempts:
+      typeof row.max_attempts === "number" ? row.max_attempts : undefined,
     next_retry_at:
       row.next_retry_at === null || typeof row.next_retry_at === "string"
         ? (row.next_retry_at as string | null)
@@ -699,11 +938,13 @@ function analysisJobRowFromUnknown(data: unknown): AnalysisJobDbRow | null {
         ? (row.last_error_code as string | null)
         : undefined,
     failure_worker_id:
-      typeof row.failure_worker_id === "string" || row.failure_worker_id === null
+      typeof row.failure_worker_id === "string" ||
+      row.failure_worker_id === null
         ? (row.failure_worker_id as string | null)
         : undefined,
     failure_attempt_count:
-      typeof row.failure_attempt_count === "number" || row.failure_attempt_count === null
+      typeof row.failure_attempt_count === "number" ||
+      row.failure_attempt_count === null
         ? (row.failure_attempt_count as number | null)
         : undefined,
   };
@@ -718,8 +959,11 @@ export async function claimNextAnalysisJobRpc(options?: {
   staleSeconds?: number;
 }): Promise<AnalysisJobDbRow | null> {
   const sb = getSupabaseAdmin();
-  const staleRaw = options?.staleSeconds ?? parseInt(process.env.ANALYSIS_CLAIM_STALE_SECONDS ?? "900", 10);
-  const staleSeconds = Number.isFinite(staleRaw) && staleRaw >= 1 ? staleRaw : 900;
+  const staleRaw =
+    options?.staleSeconds ??
+    parseInt(process.env.ANALYSIS_CLAIM_STALE_SECONDS ?? "900", 10);
+  const staleSeconds =
+    Number.isFinite(staleRaw) && staleRaw >= 1 ? staleRaw : 900;
   const workerId = (options?.workerId ?? "unknown").trim() || "unknown";
   const { data, error } = await sb.rpc("claim_next_analysis_job", {
     p_worker_id: workerId,
@@ -731,7 +975,9 @@ export async function claimNextAnalysisJobRpc(options?: {
   return analysisJobRowFromUnknown(data);
 }
 
-export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<string | null> {
+export async function getAnalysisJobOwnerProfileId(
+  jobId: string
+): Promise<string | null> {
   try {
     const row = await getAnalysisJobRow(jobId);
     return row?.user_id ?? null;
@@ -742,11 +988,15 @@ export async function getAnalysisJobOwnerProfileId(jobId: string): Promise<strin
 }
 
 /** @deprecated 이름 호환 — ensureProfileForClerkUser 사용 권장 */
-export async function ensureWalletWithSignupBonus(user: AuthenticatedUser): Promise<void> {
+export async function ensureWalletWithSignupBonus(
+  user: AuthenticatedUser
+): Promise<void> {
   await getOrProvisionProfileForClerkUser(user);
 }
 
-export async function getWalletBalance(user: AuthenticatedUser): Promise<number> {
+export async function getWalletBalance(
+  user: AuthenticatedUser
+): Promise<number> {
   const profile = await getOrProvisionProfileForClerkUser(user);
   return profile.credits;
 }

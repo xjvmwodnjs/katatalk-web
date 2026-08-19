@@ -1,16 +1,30 @@
 import { trpc } from "@/lib/trpc";
 import { registerClerkGetToken } from "@/lib/clerkSessionBridge";
+import { purgeDeprecatedBrowserIdentityCache } from "@/lib/browserPrivacy";
 import { TRPCClientError } from "@trpc/client";
 import { useAuth as useClerkAuth, useUser } from "@clerk/clerk-react";
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { KataTalkAuthContext, type KataTalkAuthContextValue } from "./authContext";
+import {
+  KataTalkAuthContext,
+  type KataTalkAuthContextValue,
+} from "./authContext";
 
 /** Clerk useUser() 기준 표시명: fullName → username → 이메일 @앞 → 이메일 전체 */
-function clerkDisplayNameParts(clerkUser: NonNullable<ReturnType<typeof useUser>["user"]>) {
+function clerkDisplayNameParts(
+  clerkUser: NonNullable<ReturnType<typeof useUser>["user"]>
+) {
   const full = (clerkUser.fullName ?? "").trim();
-  if (full) return { name: full, email: clerkUser.primaryEmailAddress?.emailAddress ?? null };
+  if (full)
+    return {
+      name: full,
+      email: clerkUser.primaryEmailAddress?.emailAddress ?? null,
+    };
   const un = (clerkUser.username ?? "").trim();
-  if (un) return { name: un, email: clerkUser.primaryEmailAddress?.emailAddress ?? null };
+  if (un)
+    return {
+      name: un,
+      email: clerkUser.primaryEmailAddress?.emailAddress ?? null,
+    };
   const email = (clerkUser.primaryEmailAddress?.emailAddress ?? "").trim();
   if (email) {
     const at = email.indexOf("@");
@@ -21,7 +35,11 @@ function clerkDisplayNameParts(clerkUser: NonNullable<ReturnType<typeof useUser>
 }
 
 /** Clerk 세션 + 서버 동기화된 auth.me 를 하나의 컨텍스트로 제공 */
-export function KataTalkClerkAuthProvider({ children }: { children: ReactNode }) {
+export function KataTalkClerkAuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const utils = trpc.useUtils();
   const { isLoaded, isSignedIn, signOut, getToken } = useClerkAuth();
   const { user: clerkUser, isLoaded: clerkUserLoaded } = useUser();
@@ -29,6 +47,10 @@ export function KataTalkClerkAuthProvider({ children }: { children: ReactNode })
   useEffect(() => {
     registerClerkGetToken(async () => (await getToken()) ?? null);
   }, [getToken]);
+
+  useEffect(() => {
+    purgeDeprecatedBrowserIdentityCache();
+  }, []);
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     enabled: isLoaded && isSignedIn,
@@ -71,14 +93,17 @@ export function KataTalkClerkAuthProvider({ children }: { children: ReactNode })
     if (!isSignedIn || !isLoaded || !clerkUserLoaded || !clerkUser) {
       return base;
     }
-    const { name: clerkName, email: clerkEmail } = clerkDisplayNameParts(clerkUser);
+    const { name: clerkName, email: clerkEmail } =
+      clerkDisplayNameParts(clerkUser);
     const baseName = typeof base.name === "string" ? base.name.trim() : "";
     const baseEmail = typeof base.email === "string" ? base.email.trim() : "";
     const resolvedEmail = (clerkEmail ?? "").trim() || baseEmail || null;
     const resolvedName =
       (clerkName ?? "").trim() ||
       baseName ||
-      (resolvedEmail?.includes("@") ? resolvedEmail.split("@")[0]!.trim() : resolvedEmail) ||
+      (resolvedEmail?.includes("@")
+        ? resolvedEmail.split("@")[0]!.trim()
+        : resolvedEmail) ||
       resolvedEmail ||
       null;
     return {
@@ -89,12 +114,12 @@ export function KataTalkClerkAuthProvider({ children }: { children: ReactNode })
   }, [meQuery.data, isSignedIn, isLoaded, clerkUserLoaded, clerkUser]);
 
   const value = useMemo<KataTalkAuthContextValue>(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("katatalk-runtime-user-info", JSON.stringify(mergedUser));
-    }
     return {
       user: mergedUser,
-      loading: !isLoaded || (isSignedIn && meQuery.isLoading) || logoutMutation.isPending,
+      loading:
+        !isLoaded ||
+        (isSignedIn && meQuery.isLoading) ||
+        logoutMutation.isPending,
       error: (meQuery.error ?? logoutMutation.error) as Error | null,
       isAuthenticated: Boolean(isSignedIn && meQuery.data),
       logout,
@@ -116,5 +141,9 @@ export function KataTalkClerkAuthProvider({ children }: { children: ReactNode })
     mergedUser,
   ]);
 
-  return <KataTalkAuthContext.Provider value={value}>{children}</KataTalkAuthContext.Provider>;
+  return (
+    <KataTalkAuthContext.Provider value={value}>
+      {children}
+    </KataTalkAuthContext.Provider>
+  );
 }

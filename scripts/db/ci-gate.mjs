@@ -83,16 +83,37 @@ function migrate(database, through) {
 
 function verifyDeniedRpc(database, role) {
   section(`${role} SQL execution denial`);
-  runSqlExpectingFailure({
-    database,
-    label: `${role} atomic failure RPC denial`,
-    sql: `SET ROLE ${role};
-SELECT public.fail_analysis_job_and_refund_with_lease(
-  'missing-job', 'untrusted-worker', 1, 'KATAGO_TIMEOUT', 'untrusted call'
-);`,
-    match:
-      /42501:[^\n]*permission denied for function fail_analysis_job_and_refund_with_lease/i,
-  });
+  for (const denied of [
+    {
+      label: "idempotent enqueue v2 RPC",
+      name: "enqueue_paid_analysis_job_v2",
+      call: `SELECT public.enqueue_paid_analysis_job_v2(
+        'untrusted-user', 'untrusted-job', 'untrusted-request-0001',
+        pg_catalog.repeat('a', 64), 1, NULL, 'en', '(;GM[1])',
+        pg_catalog.repeat('b', 64), 8, true, NULL, NULL
+      );`,
+    },
+    {
+      label: "atomic failure RPC",
+      name: "fail_analysis_job_and_refund_with_lease",
+      call: "SELECT public.fail_analysis_job_and_refund_with_lease('missing-job', 'untrusted-worker', 1, 'KATAGO_TIMEOUT', 'untrusted call');",
+    },
+    {
+      label: "finalization reconciliation RPC",
+      name: "reconcile_analysis_job_finalization",
+      call: "SELECT public.reconcile_analysis_job_finalization('missing-job', false);",
+    },
+  ]) {
+    runSqlExpectingFailure({
+      database,
+      label: `${role} ${denied.label} denial`,
+      sql: `SET ROLE ${role};\n${denied.call}`,
+      match: new RegExp(
+        `42501:[^\\n]*permission denied for function ${denied.name}`,
+        "i"
+      ),
+    });
+  }
 }
 
 async function waitForLockWait(database, queryMarker, timeoutMs = 2500) {
@@ -269,6 +290,78 @@ COMMIT;`,
   });
 
   runFile(database, "supabase/tests/concurrency_assertions.sql");
+}
+
+async function verifyIdempotentEnqueueConcurrency(database) {
+  section("32-way paid submission idempotency race");
+  runSql({
+    database,
+    label: "Seed idempotent enqueue race",
+    sql: `INSERT INTO public.profiles (id, credits)
+VALUES ('concurrent-idempotent-enqueue', 100);`,
+  });
+
+  const results = await Promise.all(
+    Array.from({ length: 32 }, (_, index) =>
+      runSqlAsync({
+        database,
+        label: `Idempotent enqueue contender ${index + 1}`,
+        sql: `SELECT public.enqueue_paid_analysis_job_v2(
+  'concurrent-idempotent-enqueue',
+  'concurrent-idempotent-job-${String(index + 1).padStart(2, "0")}',
+  'concurrent-idempotent-request-0001',
+  pg_catalog.repeat('a', 64),
+  2,
+  'race.sgf',
+  'ko',
+  '(;GM[1]SZ[19];B[pd])',
+  pg_catalog.repeat('b', 64),
+  20,
+  false,
+  NULL,
+  NULL
+);`,
+      })
+    )
+  );
+
+  const state = runSql({
+    database,
+    label: "Assert idempotent enqueue race",
+    tuplesOnly: true,
+    sql: `SELECT p.credits::text
+  || '|' || pg_catalog.count(DISTINCT j.id)::text
+  || '|' || pg_catalog.count(DISTINCT l.id)::text
+  || '|' || pg_catalog.min(j.id)
+FROM public.profiles AS p
+JOIN public.analysis_jobs AS j ON j.user_id = p.id
+JOIN public.credit_logs AS l
+  ON l.user_id = p.id AND l.type = 'usage' AND l.analysis_job_id = j.id
+WHERE p.id = 'concurrent-idempotent-enqueue'
+GROUP BY p.credits;`,
+  }).stdout.trim();
+  const [credits, jobs, usageLogs, committedJobId] = state.split("|");
+  if (
+    credits !== "98" ||
+    jobs !== "1" ||
+    usageLogs !== "1" ||
+    !committedJobId
+  ) {
+    throw new Error(
+      `Idempotent enqueue race violated ledger invariants: ${state}`
+    );
+  }
+  if (
+    results.some(
+      result =>
+        !result.stdout.includes('"ok": true') ||
+        !result.stdout.includes(committedJobId)
+    )
+  ) {
+    throw new Error(
+      "An idempotent enqueue contender did not receive the committed job"
+    );
+  }
 }
 
 function verifyMigrationDriftGuard(database) {
@@ -566,8 +659,10 @@ async function main() {
     runFile(databases.fresh, "supabase/tests/fresh_atomic_failure_refund.sql");
     runFile(databases.fresh, "supabase/tests/fault_injection.sql");
     runFile(databases.fresh, "supabase/tests/quarantine_recovery.sql");
+    runFile(databases.fresh, "supabase/tests/analysis_request_idempotency.sql");
     runFile(databases.upgrade, "supabase/tests/upgrade_assertions.sql");
     await verifyConcurrency(databases.fresh);
+    await verifyIdempotentEnqueueConcurrency(databases.fresh);
 
     const freshEvidence = collectDatabaseFixture(databases.fresh, manifest);
     const upgradeEvidence = collectDatabaseFixture(databases.upgrade, manifest);
