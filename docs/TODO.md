@@ -10,13 +10,13 @@
 
 ### P0 — 다음 구현 순서
 
-- [ ] **NLC-002 immediate containment + per-turn 관점 정규화** — 먼저 현재 UI의 BSI 값, BSI/ADI 기반 decisive/review 선택과 deterministic memo `score_loss`/`winrate_loss`를 숨긴다. 이어 candidate마다 black/white/player-to-move winrate·score를 저장하고 BLACK/WHITE/SIDETOMOVE, 흑·백 착수 교차축 동일성 테스트를 통과한 뒤에만 다시 활성화한다.
-- [ ] **NLC-005 분석 request idempotency** — `(owner, request_id)` unique, SGF/옵션 digest conflict, lost-202와 100회 동시 replay에서 job·차감 각각 1개.
-- [ ] **Owner-qualified 경량 status** — 전체 SGF/result `select('*')` 제거, 2KB metadata status와 별도 result/artifact endpoint, foreign/not-found 404.
+- [~] **NLC-002 per-turn 관점 정규화** — `lossPerspective`와 BLACK/WHITE/SIDETOMOVE 교차축 회귀는 구현됐다. Worker persistence, `scoreMean`/mixed metric, partial legacy gating, 실제 engine corpus 증거는 남아 있다.
+- [~] **NLC-005 분석 request idempotency** — migration `015` v2 RPC, owner/request unique, 계정-scope browser pending key, SGF+언어 fingerprint conflict, validator 변경을 우회하는 owner-qualified request recovery, route 100회 replay와 serial/32-way PostgreSQL·unique-index gate를 구현했다. 실제 Supabase evidence와 staged backend→client rollout 뒤 required-header 증명이 남았다.
+- [x] **Owner-qualified 경량 status** — status/timeline/delete는 owner 조건과 명시적 small projection을 사용하고 foreign/not-found를 404로 통일했다. 완료 결과는 versioned `/result`에서 1회 읽고 ETag/no-store를 제공한다. SGF 원문 전용 endpoint/object storage 분리는 후속이다.
 - [ ] **Timeline-first EvidenceBundleV2** — 저비용 전체 timeline → adaptive 후보 → targeted/deep 분석, engine/model/config/policy digest와 stable evidence ID.
 - [ ] **결제 reversal/inbox** — durable webhook inbox/DLQ, store·variant·amount·currency·mode 검증, refund/chargeback/debt state와 nightly ledger reconciliation.
 - [ ] **Capacity admission** — shared limiter, queue age·active cap·fairness를 차감 전에 원자 확인하고 overload 거절 job 차감 0 증명.
-- [ ] **Global legal/UX blocker** — 운영 stack 노출 제거, browser PII localStorage 제거, 실제 Terms/Privacy/refund/support links와 versioned consent.
+- [~] **Global legal/UX blocker** — 운영 stack 노출과 browser PII localStorage 쓰기는 제거했고 legacy cache도 startup에서 삭제한다. viewport 확대 차단도 해제했다. 실제 Terms/Privacy/refund/support links, versioned consent, locale-aware error UI는 남아 있다.
 - [ ] **Pre-provider data/authority gate** — Analysis Worker 최소권한 DB role, lifecycle-managed object storage, finite retention·scheduled purge·account deletion·backup propagation, home region, provider DPA·처리 리전·학습/보존 정책·법적 근거·동의를 승인한다. 완료 전에는 외부 provider와 shadow 호출을 모두 금지한다.
 
 ### P1 — P0 직후
@@ -72,16 +72,16 @@
 
 ## 알고리즘·해설(향후)
 
-- [~] **BSI/ADI** — 계산과 product review 경로 연결은 구현됐지만 per-turn 착수자 관점 손실 정규화가 검증되지 않았다. `NLC-002` containment 동안 production UI/해설 근거로 비노출.
+- [~] **BSI/ADI** — 계산과 product review 경로, per-turn `lossPerspective` 교차축 회귀가 구현됐다. Worker persistence·mixed metric·실엔진 증거 전에는 production 자연어 근거로 승격하지 않는다.
 - [~] **Concept Tagger·Explanation Planner·Claim Verification** — 단위 모듈은 있으나 production runtime·저장·UI에 미연결이고 multilingual semantic verifier가 없다. **Q&A Engine은 미구현**이다. 설계 근거는 [`algorithm/KataTalk_Algorithm_V2.5.md`](algorithm/KataTalk_Algorithm_V2.5.md)를 참고하되 production 계약은 새 글로벌 명세가 우선한다.
 
 ## 분석
 
 - [x] **`analysis_jobs` Supabase 저장** — 상태·결과는 DB 행 기준 (`GET` 조회도 DB만 사용).
-- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. 운영에는 **`001 → 014` 전체 migration** 적용 필요.
+- [x] **mock 분석 worker 분리(스켈레톤)** — `claim_next_analysis_job` RPC + `pnpm worker:analysis` / `ANALYSIS_WORKER_MODE`. 운영에는 **`001 → 015` 전체 migration** 적용 필요.
 - [x] **analysis_jobs worker heartbeat** — `heartbeatAnalysisJobLease` + running `progress` 갱신 시 `locked_at` 연장 + KataGo 구간 `ANALYSIS_WORKER_HEARTBEAT_SECONDS` 주기 갱신. **heartbeat RPC 예외·`LEASE_LOST`** 는 `completed`/환불 없이 **running** 유지(stale 재시도).
 - [ ] **SGF 원문 보존 정책 확정** — MVP 는 `analysis_jobs.sgf_content` DB 컬럼; 운영 확대 시 **Supabase Storage/S3 이전**, **TTL 삭제**, 사용자 삭제 요청, raw artifact 권한 분리(README «SGF 원문 저장» 절 참고).
-- [ ] **GET 완료 응답 + `data.sgf_content` 용량** — DB 원문을 JSON 응답에 병합하므로 대형 SGF·동시 폴링 시 **payload·대역폭** 부담이 커질 수 있음(업로드 상한은 기존 검증). 운영 전 **p95 응답 크기** 확인; 장기적으로 **`sgfUrl` presigned** 또는 **별도 다운로드 API**로 분리 검토.
+- [~] **완료 result + `data.sgf_content` 용량** — 동시 폴링은 경량 status로 분리되어 큰 필드 read가 0이며 `/result`는 완료 뒤 1회만 호출한다. 장기적으로 SGF를 **`sgfUrl` presigned** 또는 owner-only source API/object storage로 분리한다.
 - [x] **로컬 KataGo smoke 산출물 Git 제외** — `.tmp/katago/` 및 `raw-*` / `normalized-*` / `stderr-*` 명시 ignore, 광범위 `katago` 디렉터리 패턴을 **`/katago`(루트만)** 등으로 축소해 `docs/katago/`·`samples/` 등과 충돌 방지. 바이너리·모델·cfg 무시는 유지.
 - [x] **KataGo worker v1 (raw capture)** — `ANALYSIS_ENGINE=katago` 일 때 Worker 가 실 binary 1회 실행, `analysis_jobs.result` 에 normalized 요약만 저장(BSI/ADI v1 수치·LLM 없음, Deep Search 미실행). timeout 시 SIGTERM→SIGKILL 시도.
 - [x] **analysis plan v1** — SGF 전체 수 파싱·`turnIndex`/`player`/`gtpMove`·간격+최종국면 후보(`shared/analysisPlanV1.ts`, `server/analysisPlan.ts`). KataGo는 1회; `result.analysisPlan`에 동봉.
@@ -114,12 +114,12 @@
 
 ## 최신 master 배포 전 smoke (체크리스트)
 
-> 저장소에 migration SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 `001 → 014`이 적용됐는지** history·catalog·SQL로 확인하세요.
+> 저장소에 migration SQL 파일이 **있는 것만으로는 부족**합니다. **운영 Supabase 프로젝트에 `001 → 015`이 적용됐는지** history·catalog·SQL로 확인하세요.
 > 아래는 **문서화된 수동 절차**이며, 코드·스키마 변경은 포함하지 않습니다.
 
-### Supabase `001 → 014` 적용 확인 절차
+### Supabase `001 → 015` 적용 확인 절차
 
-1. **적용 순서**: **001 → 002 → … → 014** 숫자순으로 고정한다. 이미 적용된 migration은 수정하지 않으며, 기존 DB는 reviewed baseline 없이는 fail-closed 한다.
+1. **적용 순서**: **001 → 002 → … → 015** 숫자순으로 고정한다. 이미 적용된 migration은 수정하지 않으며, 기존 DB는 reviewed baseline 없이는 fail-closed 한다.
 2. **`007` 반영 여부** — SQL Editor 예시:
    - `claim_next_analysis_job` 시그니처: **`public.claim_next_analysis_job(text, integer)`** 존재(인자명은 DB마다 다를 수 있으나 **text + integer** 두 인자).
    - `analysis_jobs` 컬럼 존재: **`locked_at`**, **`locked_by`**, **`attempt_count`**, **`max_attempts`**, **`next_retry_at`**, **`last_error_code`** (`007_analysis_job_lease_retry.sql` 주석과 일치).
@@ -134,13 +134,13 @@
 
 ### Web / Worker 환경 변수 최종 체크리스트
 
-| 구분            | 확인 항목                                                                                                                                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **공통**        | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`만 현재 코드상 공통. 향후 Worker 전용 DB role로 더 축소                                                                                                                       |
-| **Web**         | Clerk, Lemon, `APP_BASE_URL`, `JWT_SECRET`; `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, mock 금지. **Web에는 `KATAGO_*` 경로 불필요**                                                                                              |
-| **Worker**      | Clerk/Lemon/JWT/`APP_BASE_URL` 금지. **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` / `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`**; `ANALYSIS_WORKER_ID`(선택)                                |
-| **Lease**       | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부                                                                                                                                                          |
-| **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토                                                                                                                            |
+| 구분            | 확인 항목                                                                                                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **공통**        | `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`만 현재 코드상 공통. 향후 Worker 전용 DB role로 더 축소                                                                                             |
+| **Web**         | Clerk, Lemon, `APP_BASE_URL`, `JWT_SECRET`; `ANALYSIS_WORKER_MODE=external`, `ANALYSIS_ENGINE=katago`, mock 금지. **Web에는 `KATAGO_*` 경로 불필요**                                                                  |
+| **Worker**      | Clerk/Lemon/JWT/`APP_BASE_URL` 금지. **`ANALYSIS_ENGINE=katago`** + **`KATAGO_BINARY_PATH` / `KATAGO_CONFIG_PATH` / `KATAGO_MODEL_PATH` / `KATAGO_REPORT_ANALYSIS_WINRATES_AS_EXPECTED`**; `ANALYSIS_WORKER_ID`(선택) |
+| **Lease**       | `ANALYSIS_CLAIM_STALE_SECONDS`, `ANALYSIS_WORKER_HEARTBEAT_SECONDS` — 위 관계 만족 여부                                                                                                                               |
+| **Deep Search** | **`KATAGO_DEEP_SEARCH_ENABLED=false`** (또는 미설정) 가 **운영 기본 안전값**; 켤 경우에만 `KATAGO_DEEP_SEARCH_*` 검토                                                                                                 |
 
 ### Deep Search **OFF** 기본 스모크 (프로덕션·스테이징 공통 권장)
 
@@ -166,7 +166,7 @@
 ## 운영 배포 체크리스트
 
 - [ ] **최신 master 배포 전 smoke** — 위 **「최신 master 배포 전 smoke (체크리스트)」** 절(migration/ACL·env·Deep Search OFF/ON) 전부 수행
-- [ ] Supabase migration **`001 → 014` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: 최초 11개 SECURITY DEFINER owner/search path/ACL 고정, `014`: 12번째 reconciliation RPC — README와 database migration gate 참고)
+- [ ] Supabase migration **`001 → 015` 숫자 순서** 적용 및 DB gate 통과 (`012`: 원자 실패·환불, `013`: 최초 11개 SECURITY DEFINER owner/search path/ACL 고정, `014`: 12번째 reconciliation RPC, `015`: 13번째 idempotent enqueue RPC — README와 database migration gate 참고)
 - [ ] Clerk production 도메인·Redirect URL
 - [ ] Lemon Squeezy live API key·store·webhook signing secret
 - [ ] Lemon live variant ID 3종
@@ -180,4 +180,4 @@
 
 ## Database migration gate
 
-- [~] `001 → 014` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.
+- [~] `001 → 015` 숫자순 migration runner와 `pnpm db:migrate:supabase`/`pnpm test:db:migrations` 구현. same-commit security/application-structure contract, DB↔HTTP project binding, clean-checkout/digest 검증, `pnpm db:evidence:staging` 읽기 전용 collector와 protected manual workflow 구현; 실제 staging environment 구성·성공 snapshot과 기존 DB baseline 승인 대기. 기존 DB는 reviewed baseline 없이는 fail-closed.

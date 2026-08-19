@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { enqueuePaidAnalysisJob, ensureProfileForClerkUser, spendCreditForAnalysisJob } from "./creditService";
+import {
+  enqueuePaidAnalysisJob,
+  ensureProfileForClerkUser,
+  spendCreditForAnalysisJob,
+} from "./creditService";
 import type { AuthenticatedUser } from "./_core/sdk";
 
 const sampleUser = {
@@ -21,7 +25,11 @@ describe("Supabase-backed credit RPC (mocked client)", () => {
   });
 
   it("spendCreditForAnalysisJob deducts when RPC ok", async () => {
-    const r = await spendCreditForAnalysisJob(sampleUser, `job-ok-${Date.now()}`, 1);
+    const r = await spendCreditForAnalysisJob(
+      sampleUser,
+      `job-ok-${Date.now()}`,
+      1
+    );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.balanceAfter).toBe(1);
@@ -30,7 +38,11 @@ describe("Supabase-backed credit RPC (mocked client)", () => {
   });
 
   it("spendCreditForAnalysisJob returns INSUFFICIENT_CREDITS for dedicated job id", async () => {
-    const r = await spendCreditForAnalysisJob(sampleUser, "insufficient-job", 1);
+    const r = await spendCreditForAnalysisJob(
+      sampleUser,
+      "insufficient-job",
+      1
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("INSUFFICIENT_CREDITS");
   });
@@ -39,13 +51,21 @@ describe("Supabase-backed credit RPC (mocked client)", () => {
     const r = await enqueuePaidAnalysisJob({
       user: sampleUser,
       jobId: `atomic-job-${Date.now()}`,
+      requestId: `atomic-request-${Date.now()}`,
+      requestFingerprint: "b".repeat(64),
       fileName: "game.sgf",
       language: "ko",
       sgfContent: "(;FF[4]GM[1]SZ[19])",
       sgfSha256: "a".repeat(64),
       sgfSizeBytes: 22,
       isMock: false,
+      admissionCode: null,
     });
-    expect(r).toMatchObject({ ok: true, balanceAfter: 1 });
+    expect(r).toMatchObject({
+      ok: true,
+      balanceAfter: 1,
+      jobStatus: "queued",
+      replayed: false,
+    });
   });
 });

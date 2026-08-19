@@ -38,7 +38,7 @@ describe("Supabase migration runner", () => {
       Array.from({ length: manifest.length }, (_, index) => index + 1)
     );
     expect(manifest.at(-1).filename).toBe(
-      "014_reconcile_analysis_job_finalization.sql"
+      "015_analysis_request_idempotency.sql"
     );
     expect(
       manifest.every((entry: { checksum: string }) =>

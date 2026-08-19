@@ -12,7 +12,15 @@ import {
   KATATALK_UI_LANG_EVENT,
 } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, User, LogIn, UserPlus, Crown, LogOut, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  User,
+  LogIn,
+  UserPlus,
+  Crown,
+  LogOut,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import {
@@ -23,6 +31,7 @@ import {
 } from "@/lib/mockData";
 import type {
   AnalysisJobGetResponse,
+  AnalysisJobResultResponse,
   WinrateTimelineProgressResponseV1,
 } from "@shared/analysisJob";
 import {
@@ -48,6 +57,13 @@ import AnalysisWinratePanel from "@/components/AnalysisWinratePanel";
 import UploadHero from "@/components/UploadHero";
 import { normalizeWinratePerspectiveV1 } from "@shared/winratePerspectiveV1";
 import type { AnalysisResultWinratePointV1 } from "@shared/analysisResultViewModel";
+import { ANALYSIS_REQUEST_ID_HEADER } from "@shared/analysisRequestId";
+import {
+  clearPendingAnalysisRequest,
+  getOrCreatePendingAnalysisRequest,
+  PendingAnalysisRequestFileTooLargeError,
+  PendingAnalysisRequestStorageError,
+} from "@/lib/pendingAnalysisRequest";
 
 type View = "upload" | "loading" | "result";
 
@@ -223,6 +239,55 @@ export default function Home() {
     return true;
   }
 
+  async function fetchCompletedAnalysisResult(jobId: string): Promise<unknown> {
+    const response = await fetch(
+      `/api/analyze/${encodeURIComponent(jobId)}/result`,
+      {
+        credentials: "include",
+        headers: { ...(await getAnalyzeAuthHeaders()) },
+      }
+    );
+    const body = (await response.json().catch(() => ({}))) as
+      | AnalysisJobResultResponse
+      | { success?: false; message?: string };
+    if (!response.ok || body.success === false || !("data" in body)) {
+      const message =
+        "message" in body && typeof body.message === "string"
+          ? body.message
+          : `Analysis result request failed (${response.status})`;
+      throw new Error(message);
+    }
+    const parsed = parseStoredAnalysisJobResult(body.data);
+    if (parsed == null) {
+      throw new Error("Analysis finished but no data was returned.");
+    }
+    return parsed;
+  }
+
+  async function recoverCommittedAnalysisRequest(
+    requestId: string
+  ): Promise<AnalysisJobGetResponse | null> {
+    const response = await fetch(
+      `/api/analyze/requests/${encodeURIComponent(requestId)}`,
+      {
+        credentials: "include",
+        headers: { ...(await getAnalyzeAuthHeaders()) },
+      }
+    );
+    if (response.status === 404) return null;
+    const body = (await response.json().catch(() => ({}))) as
+      | AnalysisJobGetResponse
+      | { success?: false; message?: string };
+    if (!response.ok || body.success === false || !("jobId" in body)) {
+      const message =
+        "message" in body && typeof body.message === "string"
+          ? body.message
+          : `Analysis request recovery failed (${response.status})`;
+      throw new Error(message);
+    }
+    return body as AnalysisJobGetResponse;
+  }
+
   useEffect(() => {
     if (authLoading) return;
     const search = window.location.search;
@@ -305,10 +370,7 @@ export default function Home() {
           }
 
           if (normalizedStatus === "completed") {
-            const parsed = parseStoredAnalysisJobResult(job.data);
-            if (parsed == null) {
-              throw new Error("Analysis finished but no data was returned.");
-            }
+            const parsed = await fetchCompletedAnalysisResult(jobId);
             if (isKatagoWorkerV1ResultPayload(parsed)) {
               setKatagoWorkerV1Result(parsed as KatagoWorkerV1ResultData);
             } else {
@@ -587,7 +649,7 @@ export default function Home() {
       }
     }
 
-    if (file.size > MAX_SGF_FILE_BYTES) {
+    const showFileTooLargeError = () => {
       toast.error(
         lang === "ko"
           ? "파일이 너무 큽니다."
@@ -607,30 +669,39 @@ export default function Home() {
                   : `SGFは最大${MAX_SGF_FILE_BYTES / (1024 * 1024)}MBまでです。`,
         }
       );
-      return;
-    }
+    };
 
-    pollAbortRef.current = false;
-    setKatagoWorkerV1Result(null);
-    setResultJobId(null);
-    setTimelineProgressSeries([]);
-    setTimelineProgressStats({ completedCount: 0, totalPoints: null });
-    setJobProgress(0);
-    setJobStatus("queued");
-    setView("loading");
     try {
-      const formData = new FormData();
-      formData.append(SGF_UPLOAD_FORM_FIELD, file);
-      formData.append("language", lang);
+      const pendingRequest = await getOrCreatePendingAnalysisRequest(
+        file,
+        lang,
+        user?.openId ?? ""
+      );
+      const recoveredJob = await recoverCommittedAnalysisRequest(
+        pendingRequest.requestId
+      );
 
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        credentials: "include",
-        headers: { ...analyzeAuth },
-        body: formData,
-      });
+      if (recoveredJob == null && file.size > MAX_SGF_FILE_BYTES) {
+        clearPendingAnalysisRequest(
+          pendingRequest.requestId,
+          pendingRequest.contentKey
+        );
+        showFileTooLargeError();
+        return;
+      }
 
-      const createPayload = (await response.json().catch(() => ({}))) as {
+      pollAbortRef.current = false;
+      setKatagoWorkerV1Result(null);
+      setResultJobId(null);
+      setTimelineProgressSeries([]);
+      setTimelineProgressStats({ completedCount: 0, totalPoints: null });
+      setJobProgress(0);
+      setJobStatus("queued");
+      setView("loading");
+
+      let responseStatus = 200;
+      let responseOk = true;
+      let createPayload: {
         success?: boolean;
         jobId?: string;
         status?: string;
@@ -640,8 +711,35 @@ export default function Home() {
         remainingCredits?: number;
       };
 
+      if (recoveredJob != null) {
+        createPayload = {
+          success: true,
+          jobId: recoveredJob.jobId,
+          status: recoveredJob.status,
+        };
+      } else {
+        const formData = new FormData();
+        formData.append(SGF_UPLOAD_FORM_FIELD, file);
+        formData.append("language", lang);
+
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            ...analyzeAuth,
+            [ANALYSIS_REQUEST_ID_HEADER]: pendingRequest.requestId,
+          },
+          body: formData,
+        });
+        responseStatus = response.status;
+        responseOk = response.ok;
+        createPayload = (await response
+          .json()
+          .catch(() => ({}))) as typeof createPayload;
+      }
+
       if (
-        response.status === 402 ||
+        responseStatus === 402 ||
         createPayload.code === "INSUFFICIENT_CREDITS"
       ) {
         throw new Error(
@@ -653,7 +751,7 @@ export default function Home() {
       }
 
       if (
-        !response.ok ||
+        !responseOk ||
         createPayload.success === false ||
         !createPayload.jobId
       ) {
@@ -661,10 +759,10 @@ export default function Home() {
           typeof createPayload.message === "string" &&
           createPayload.message.trim()
             ? createPayload.message
-            : !response.ok
-              ? response.status === 401
+            : !responseOk
+              ? responseStatus === 401
                 ? "로그인이 필요합니다. 다시 로그인한 뒤 시도해 주세요."
-                : `분석을 시작할 수 없습니다 (${response.status})`
+                : `분석을 시작할 수 없습니다 (${responseStatus})`
               : "분석을 시작할 수 없습니다.";
         throw new Error(msg);
       }
@@ -722,10 +820,7 @@ export default function Home() {
         }
 
         if (normalizedStatus === "completed") {
-          const parsed = parseStoredAnalysisJobResult(job.data);
-          if (parsed == null) {
-            throw new Error("Analysis finished but no data was returned.");
-          }
+          const parsed = await fetchCompletedAnalysisResult(jobId);
           if (isKatagoWorkerV1ResultPayload(parsed)) {
             setKatagoWorkerV1Result(parsed as KatagoWorkerV1ResultData);
           } else {
@@ -733,6 +828,10 @@ export default function Home() {
             setReport(parsed as AnalysisReport);
           }
           forgetActiveAnalysisJob(jobId);
+          clearPendingAnalysisRequest(
+            pendingRequest.requestId,
+            pendingRequest.contentKey
+          );
           setResultJobId(jobId);
           setView("result");
           setJobStatus("idle");
@@ -750,6 +849,10 @@ export default function Home() {
 
         if (normalizedStatus === "failed") {
           forgetActiveAnalysisJob(jobId);
+          clearPendingAnalysisRequest(
+            pendingRequest.requestId,
+            pendingRequest.contentKey
+          );
           clearAnalysisJobFromUrl();
           throw new Error(job.error?.message ?? "Analysis job failed.");
         }
@@ -762,6 +865,35 @@ export default function Home() {
       }
       throw buildAnalysisPollTimeoutError(lang);
     } catch (error: any) {
+      if (error instanceof PendingAnalysisRequestFileTooLargeError) {
+        showFileTooLargeError();
+        return;
+      }
+      if (error instanceof PendingAnalysisRequestStorageError) {
+        setView("upload");
+        setJobStatus("idle");
+        setJobProgress(0);
+        toast.error(
+          lang === "ko"
+            ? "안전한 재시도 저장소를 사용할 수 없습니다."
+            : lang === "en"
+              ? "Secure retry storage is unavailable."
+              : lang === "zh"
+                ? "无法使用安全重试存储。"
+                : "安全な再試行ストレージを利用できません。",
+          {
+            description:
+              lang === "ko"
+                ? "중복 과금을 막기 위해 분석을 시작하지 않았습니다. 이 사이트의 브라우저 저장소를 허용한 뒤 다시 시도해 주세요."
+                : lang === "en"
+                  ? "No charge was attempted. Allow browser storage for this site and try again."
+                  : lang === "zh"
+                    ? "为避免重复扣费，本次未发起分析。请允许此网站使用浏览器存储后重试。"
+                    : "重複課金を防ぐため分析は開始していません。このサイトのブラウザストレージを許可して再試行してください。",
+          }
+        );
+        return;
+      }
       if (isAnalysisPollTimeout(error)) {
         setView("loading");
         setJobStatus(prev => (prev === "idle" ? "running" : prev));
@@ -797,24 +929,38 @@ export default function Home() {
 
     setDeletingResultData(true);
     try {
-      const response = await fetch(`/api/analyze/${encodeURIComponent(resultJobId)}/data`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { ...(await getAnalyzeAuthHeaders()) },
-      });
+      const response = await fetch(
+        `/api/analyze/${encodeURIComponent(resultJobId)}/data`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          headers: { ...(await getAnalyzeAuthHeaders()) },
+        }
+      );
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        const body = (await response.json().catch(() => ({}))) as {
+          message?: string;
+        };
         throw new Error(body.message ?? `Delete failed (${response.status})`);
       }
       setKatagoWorkerV1Result(null);
       setResultJobId(null);
       clearAnalysisJobFromUrl();
       setView("upload");
-      toast.success(lang === "ko" ? "분석 데이터가 삭제되었습니다." : "Analysis data deleted.");
+      toast.success(
+        lang === "ko"
+          ? "분석 데이터가 삭제되었습니다."
+          : "Analysis data deleted."
+      );
     } catch (error) {
-      toast.error(lang === "ko" ? "분석 데이터를 삭제하지 못했습니다." : "Could not delete analysis data.", {
-        description: error instanceof Error ? error.message : undefined,
-      });
+      toast.error(
+        lang === "ko"
+          ? "분석 데이터를 삭제하지 못했습니다."
+          : "Could not delete analysis data.",
+        {
+          description: error instanceof Error ? error.message : undefined,
+        }
+      );
     } finally {
       setDeletingResultData(false);
     }
@@ -1259,8 +1405,12 @@ export default function Home() {
                   type="button"
                   onClick={handleDeleteResultData}
                   disabled={deletingResultData}
-                  aria-label={lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"}
-                  title={lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"}
+                  aria-label={
+                    lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"
+                  }
+                  title={
+                    lang === "ko" ? "분석 데이터 삭제" : "Delete analysis data"
+                  }
                   className="inline-flex h-9 w-9 items-center justify-center rounded-lg border text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ borderColor: "rgba(251,113,133,0.35)" }}
                 >

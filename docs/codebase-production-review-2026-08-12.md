@@ -8,6 +8,18 @@
 >
 > 검토 기준: `agent/finalization-reconciliation`, 시작 HEAD `8ed0035`, 저장소 정적 분석과 기존 CI/테스트 증거
 
+> **2026-08-19 구현 addendum:** 이 문서의 원래 finding은 기준일 snapshot으로
+> 유지한다. 이후 per-turn loss 관점 정규화와 교차축 회귀가 추가됐고,
+> migration `015` 기반 owner-scoped 분석 request 멱등성, owner-qualified 경량
+> status/timeline, 별도 versioned result endpoint, 운영 error stack/브라우저 PII
+> cache 제거가 로컬 구현됐다. 실제 Supabase 적용·안전한 rollout 증거는 없고
+> commentary runtime·payment reversal·capacity·최소권한·보존·글로벌 품질 gate는
+> 여전히 열려 있으므로 전체 **NO-GO 판정은 변하지 않는다**. 최신 누적 상태는
+> [`review.md`](../review.md), 목표 계약은
+> [`production-global-commentary-spec-v1.md`](production-global-commentary-spec-v1.md),
+> 과금 전환 절차는
+> [`analysis-idempotency-rollout-v1.md`](analysis-idempotency-rollout-v1.md)를 따른다.
+
 ## 1. 결론
 
 KataTalk는 단순 시제품이 아니다. 인증된 SGF admission, 원자적 크레딧 차감·enqueue, 외부 KataGo Worker, lease fencing, 실패·환불, 격리된 reconciliation, SECURITY DEFINER ACL/RLS, 수치 결과와 PV UI, 상당한 단위·DB·브라우저 테스트가 존재한다.

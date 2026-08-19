@@ -51,6 +51,11 @@ export const EXPECTED_SECURITY_DEFINER_FUNCTIONS = [
   },
   {
     signature:
+      "public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)",
+    volatility: "volatile",
+  },
+  {
+    signature:
       "public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)",
     volatility: "volatile",
   },

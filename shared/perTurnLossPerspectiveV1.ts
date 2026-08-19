@@ -15,7 +15,10 @@ export const PER_TURN_LOSS_PERSPECTIVE_V1_VERSION =
 
 export type VerifiedPerTurnLossPerspectiveV1 = {
   version: typeof PER_TURN_LOSS_PERSPECTIVE_V1_VERSION;
-  configuredPerspective: Exclude<KatagoConfiguredWinratePerspectiveV1, "unknown">;
+  configuredPerspective: Exclude<
+    KatagoConfiguredWinratePerspectiveV1,
+    "unknown"
+  >;
   playerToMove: "B" | "W";
   status: "verified";
 };
@@ -54,7 +57,9 @@ export function normalizePerTurnCandidateWinrateForPlayerV1(
 ): number | null {
   const raw = finiteNumber(rawWinrate);
   if (
-    raw == null || raw < 0 || raw > 1 ||
+    raw == null ||
+    raw < 0 ||
+    raw > 1 ||
     perspective?.version !== PER_TURN_LOSS_PERSPECTIVE_V1_VERSION ||
     perspective.status !== "verified"
   ) {
@@ -64,9 +69,10 @@ export function normalizePerTurnCandidateWinrateForPlayerV1(
   return direction == null ? null : direction === 1 ? raw : 1 - raw;
 }
 
-function scoreMetric(
-  row: TurnAnalysisMoveSummaryV1 | null | undefined
-): { metric: "scoreLead" | "scoreMean" | "none"; value: number | null } {
+function scoreMetric(row: TurnAnalysisMoveSummaryV1 | null | undefined): {
+  metric: "scoreLead" | "scoreMean" | "none";
+  value: number | null;
+} {
   const scoreLead = finiteNumber(row?.scoreLead);
   if (scoreLead != null) return { metric: "scoreLead", value: scoreLead };
   const scoreMean = finiteNumber(row?.scoreMean);
@@ -132,9 +138,7 @@ export function resolvePerTurnMoveLossV1(
     scoreMetricUsed,
     scoreMetricMixed,
     ...(scoreBestMinusPlayed !== undefined ? { scoreBestMinusPlayed } : {}),
-    ...(winrateBestMinusPlayed !== undefined
-      ? { winrateBestMinusPlayed }
-      : {}),
+    ...(winrateBestMinusPlayed !== undefined ? { winrateBestMinusPlayed } : {}),
   };
 }
 
@@ -142,13 +146,12 @@ export function hasVerifiedPerTurnLossPerspectiveV1(
   turnAnalyses: readonly TurnAnalysisEntrySuccessV1[] | undefined
 ): boolean {
   const scored = (turnAnalyses ?? []).filter(
-    turn => turn.comparisonReady.playedMoveFoundInCandidates
+    turn => turn.comparisonReady?.playedMoveFoundInCandidates === true
   );
   return (
     scored.length > 0 &&
     scored.every(
-      turn =>
-        resolvePerTurnMoveLossV1(turn).interpretationStatus === "verified"
+      turn => resolvePerTurnMoveLossV1(turn).interpretationStatus === "verified"
     )
   );
 }

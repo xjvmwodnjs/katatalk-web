@@ -1,8 +1,9 @@
 # KataTalk 글로벌 production 자연어 해설 서비스 명세 v1
 
-> 상태: 구현 전 기준 명세
-> 기준일: 2026-08-12
+> 상태: 부분 구현 기준 명세 — 수치 분석·NLC-002·NLC-005는 진행됐지만 자연어 commentary runtime은 미구현
+> 최초 기준일: 2026-08-12 / 최신 구현 대조: 2026-08-19
 > 목표: KataGo의 검증 가능한 수치·수순 근거를 바탕으로 글로벌 사용자가 이해할 수 있는 자연어 바둑 해설을 안전하고 안정적으로 제공한다.
+> 유료 분석 request 전환은 [`analysis-idempotency-rollout-v1.md`](analysis-idempotency-rollout-v1.md)의 운영 절차를 함께 적용한다.
 
 ## 1. 제품 정의
 
@@ -277,10 +278,10 @@ Artifact 필수 필드:
 - `commentary_schema_version`, `planner_version`, `guard_version`, `claim_verifier_version`
 - `prompt_template_version`, `provider`, `model`, `model_revision`
 - `input_token_count`, `output_token_count`, `estimated_cost_usd`
-- `commentary_json`, `fallback_reason_code`
+- `commentary_json`, `commentary_json_sha256`, `fallback_reason_code`
 - `created_at`, `expires_at`
 
-유일성 키는 최소한 `(analysis_job_id, evidence_hash, locale, audience, prompt_template_version)`를 포함한다. 동일 결과의 재시도나 브라우저 새로고침은 중복 과금·중복 생성하지 않는다.
+유일성 키는 최소한 `(analysis_job_id, request_id, evidence_hash, locale, audience, prompt_template_version)`를 포함한다. 동일 결과의 재시도나 브라우저 새로고침은 중복 과금·중복 생성하지 않는다. `commentary_json_sha256`은 canonical JSON payload 밖의 row/object metadata이며 digest 계산 대상 안에 자기 자신을 포함하지 않는다.
 
 live job/artifact의 owner·analysis·evidence 연결은 terminal 후 최대 30일만 보존한다. owner 삭제나 retention 만료 시 하나의 fenced transaction/outbox 절차가 artifact DB row, object 본문, encryption key, linked commentary job row와 provider request/response·cache를 삭제하거나 crypto-erase한다. 따라서 삭제 뒤 `owner_profile_id`, `analysis_job_id`, `evidence_hash`가 남은 linked job row는 허용하지 않는다. 사용자 조회는 즉시 404가 되고 primary 삭제는 24시간, backup 만료는 30일 이내여야 한다. Provider는 학습 사용 OFF와 zero-retention을 우선하며, 불가피한 보안 로그의 최대 보존·삭제 SLA가 30일 이하임을 DPA로 승인해야 한다.
 
@@ -289,11 +290,10 @@ live job/artifact의 owner·analysis·evidence 연결은 terminal 후 최대 30�
 ### Commentary output
 
 ```ts
-type CommentaryArtifactV1 = {
+type CommentaryArtifactCommonV1 = {
   version: "commentary-v1";
   locale: "ko-KR" | "en" | "ja-JP" | "zh-CN";
   audience: "beginner" | "intermediate" | "dan" | "high_dan";
-  status: "completed" | "fallback";
   summary: Array<{ text: string; evidenceRefs: string[] }>;
   sections: Array<{
     turnIndex: number;
@@ -305,15 +305,66 @@ type CommentaryArtifactV1 = {
     evidenceHash: string;
     engineVersion: string;
     modelDigest: string;
+    configDigest: string;
+    policyDigest: string;
     plannerVersion: string;
     promptTemplateVersion: string;
-    provider: string;
-    model: string;
+    guardVersion: string;
+    claimVerifierVersion: string;
+    generation:
+      | {
+          kind: "provider";
+          provider: string;
+          model: string;
+          modelRevision: string;
+        }
+      | {
+          kind: "deterministic";
+          provider: null;
+          model: null;
+          modelRevision: null;
+        };
   };
 };
+
+type CommentaryArtifactV1 = CommentaryArtifactCommonV1 &
+  (
+    | {
+        status: "completed";
+        fallbackReasonCode: null;
+        provenance: CommentaryArtifactCommonV1["provenance"] & {
+          generation: {
+            kind: "provider";
+            provider: string;
+            model: string;
+            modelRevision: string;
+          };
+        };
+      }
+    | {
+        status: "fallback";
+        fallbackReasonCode:
+          | "evidence_ineligible"
+          | "provider_disabled"
+          | "provider_timeout"
+          | "provider_unavailable"
+          | "schema_rejected"
+          | "claim_rejected"
+          | "locale_rejected"
+          | "policy_rejected";
+        provenance: CommentaryArtifactCommonV1["provenance"] & {
+          generation: {
+            kind: "deterministic";
+            provider: null;
+            model: null;
+            modelRevision: null;
+          };
+        };
+      }
+  );
 ```
 
-`CommentaryArtifactV1`은 provider output schema와 다른 내부 저장 schema다. `evidenceRefs`는 Gateway가 alias를 치환한 DB 내부 stable evidence ID만 참조하며 raw SGF나 provider prompt 전문을 포함하지 않는다. Gateway가 붙이는 provenance는 provider가 덮어쓸 수 없다. 좌표·수치·player·관점·바둑 판정을 포함하는 문장은 `evidenceRefs`가 비어 있으면 schema 단계에서 거절한다. strict parser는 모든 중첩 object의 알 수 없는 추가 필드도 거절한다.
+`CommentaryArtifactV1`은 provider output schema와 다른 내부 저장 schema다. `completed`는 검증된 provider generation만, `fallback`은 byte-stable deterministic generation만 허용한다. Provider를 호출했다가 실패한 경우의 시도 정보는 내부 job trace에 남기되 fallback artifact의 `generation`은 provider-free로 기록한다. `evidenceRefs`는 Gateway가 alias를 치환한 DB 내부 stable evidence ID만 참조하며 raw SGF나 provider prompt 전문을 포함하지 않는다. Gateway가 붙이는 provenance는 provider가 덮어쓸 수 없다. 좌표·수치·player·관점·바둑 판정을 포함하는 문장은 `evidenceRefs`가 비어 있으면 schema 단계에서 거절한다. strict parser는 모든 중첩 object의 알 수 없는 추가 필드도 거절한다.
 
 ## 6. 처리 상태와 실패 정책
 
@@ -347,12 +398,24 @@ type CommentaryArtifactV1 = {
 
 기존 multipart 계약을 유지하며 선택 필드를 추가한다.
 
-- `Idempotency-Key` 또는 동등한 client request ID를 필수로 받는다.
+- production 계약은 `Idempotency-Key`를 필수로 받으며 Web은
+  `ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true`가 아니면 시작하지 않는다.
+  migration-first 전환 중에는 분석 POST를 edge에서 닫고 구 Web을 모두 drain한
+  뒤 신 Web/client를 원자 전환한다. cached 구 client는 400+새로고침으로
+  복구하며 금전 정확성을 위해 optional production 경로를 열지 않는다.
 - `commentaryLocale`: 기본 사용자 locale
 - `commentaryAudience`: 기본 `intermediate`
 - 잘못된 값은 크레딧 차감 전에 400
 
 `(owner, request_id)`는 unique여야 한다. 같은 key·같은 SGF hash/옵션 재요청은 기존 job과 잔액을 반환하고, 같은 key에 다른 SGF hash·언어·audience가 오면 409를 반환한다. 응답 유실 뒤 100회 동시 재시도에서도 job·차감 ledger가 정확히 1개여야 한다. Queue가 한도 또는 SLO를 넘은 경우 **차감 전에** 429/503과 `Retry-After`를 반환한다.
+
+### `GET /api/analyze/requests/:requestId`
+
+- POST 재시도 전에 호출하는 owner-only recovery 경계
+- owner와 request ID를 DB 조회 자체에서 함께 제한하고, foreign/missing은 같은 404
+- 큰 SGF/result column을 읽지 않고 lightweight status envelope만 반환
+- 이미 commit된 job은 현재 upload/SGF validator를 다시 통과시키지 않음
+- `Cache-Control: private, no-store`; malformed request ID는 400
 
 ### `GET /api/analyze/:jobId`
 
@@ -385,6 +448,14 @@ type CommentaryArtifactV1 = {
 기존 분석 payload 삭제는 5장의 동일 fenced transaction/outbox 규칙으로 commentary artifact row·object·key·provider cache와 linked commentary job row를 함께 제거한다. 삭제 뒤 owner/analysis/evidence 연결이 남아서는 안 된다. 신용 ledger는 승인된 법적 보존 기간 동안 유지할 수 있지만 commentary job/artifact ID, evidence hash나 본문을 보유하지 않는다. 별도 tombstone은 비연결 deletion operation ID·시각·reason·policy version만 보존한다.
 
 상태 polling은 전체 SGF/result 행을 읽지 않는다. 완료 artifact는 별도 endpoint/object storage에서 digest·ETag로 제공하며, 진행률은 Web/Worker 로컬 파일이 아닌 공용 durable transport를 사용한다.
+
+> **2026-08-19 구현 상태:** migration `015`와 Web/client는 owner-scoped
+> request replay, account-scoped browser key, validator-before-retry를 우회하는
+> recovery endpoint, payload conflict, 새 요청 202/재생 200, 경량 owner status,
+> 별도 `/result`와 ETag/no-store를 구현했다. route-level 100회 replay, SQL 100회
+> serial replay, 32-way PostgreSQL race와 직접 unique-index gate가 있다. 실제 Supabase evidence,
+> staged enforcement 전환, SGF source/object-storage 분리, queue admission은
+> 미완료이므로 NLC-005는 배포 증거 전까지 `implemented / rollout pending`이다.
 
 ## 8. 안전·개인정보·보안 요구사항
 
@@ -470,7 +541,7 @@ type CommentaryArtifactV1 = {
 ### 운영 출시 gate
 
 - 최신 production dependency high/critical 0
-- Supabase 001–014 및 commentary migration의 실제 catalog/ACL 증거
+- Supabase 001–015 및 commentary migration의 실제 catalog/ACL 증거
 - Clerk 로그인/JWKS 장애, Lemon 결제/중복/환불/차지백, Worker kill/reclaim, provider 장애 drill 통과
 - 30–60분 이상 실제 staging soak와 queue/비용/SLO 보고서
 - 개인정보·약관·환불·AI 고지 법무 승인
@@ -484,10 +555,10 @@ type CommentaryArtifactV1 = {
 
 - `NLC-000` **완료**: `nanoid >=5.1.16`, local/PR production audit known vulnerability 0 (`31607218074`)
 - `NLC-001`: current review·CI·문서의 단일 source of truth 정리
-- `NLC-002`: 먼저 provisional BSI/ADI loss UI를 숨기고, per-turn winrate/score를 black·white·player-to-move 축으로 정규화한 뒤 교차축 동일성 통과 시에만 다시 활성화
+- `NLC-002` **구현/증거 보강 중**: per-turn `lossPerspective`와 교차축 회귀는 구현. Worker persistence, `scoreMean`/mixed metric, partial legacy, 실제 engine corpus gate가 남음
 - `NLC-003`: timeline-first 적응형 후보 선택 뒤 targeted/deep 분석
 - `NLC-004`: strict `AnalysisEvidenceBundleV2`와 engine/model/config/policy digest
-- `NLC-005`: 분석 request idempotency와 owner-qualified 경량 status/result 분리
+- `NLC-005` **구현/rollout 대기**: 분석 request idempotency와 owner-qualified 경량 status/result 분리. 실제 Supabase/staged enforcement/SGF source 분리가 남음
 - `NLC-006`: durable payment webhook inbox와 refund/chargeback/debt state machine
 - `NLC-007`: shared capacity admission·per-user fairness를 차감 전에 원자 적용
 - `NLC-008`: production stack 노출·browser PII storage 제거와 versioned legal links/consent

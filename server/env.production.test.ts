@@ -27,6 +27,7 @@ describe("validateProductionDeploymentEnv", () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service_role_placeholder";
     process.env.ANALYSIS_WORKER_MODE = "external";
     delete process.env.KATATALK_ATOMIC_ENQUEUE;
+    process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED = "true";
     process.env.LEMONSQUEEZY_API_KEY = "lemon_key";
     process.env.LEMONSQUEEZY_STORE_ID = "123";
     process.env.LEMONSQUEEZY_WEBHOOK_SECRET = "whsec_placeholder_32chars______";
@@ -99,6 +100,19 @@ describe("validateProductionDeploymentEnv", () => {
 
     delete process.env.KATATALK_ATOMIC_ENQUEUE;
     expect(() => validateProductionDeploymentEnv()).not.toThrow();
+  });
+
+  it("requires idempotency keys for every production analysis submission", () => {
+    minimalProdBase();
+    process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED = "false";
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true/
+    );
+
+    delete process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED;
+    expect(() => validateProductionDeploymentEnv()).toThrow(
+      /ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true/
+    );
   });
 
   it("passes with minimal valid production env", () => {

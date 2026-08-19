@@ -1,6 +1,6 @@
 # KataTalk current architecture
 
-> Current implementation record: 2026-08-12. This document describes the code
+> Current implementation record: 2026-08-19. This document describes the code
 > now in the repository, not a production deployment claim. The detailed
 > production review is in [docs/codebase-production-review-2026-08-12.md](docs/codebase-production-review-2026-08-12.md); the target contract is [docs/production-global-commentary-spec-v1.md](docs/production-global-commentary-spec-v1.md).
 
@@ -38,21 +38,26 @@ when `ANALYSIS_WORKER_MODE=external`.
 ### Analysis lifecycle
 
 1. An authenticated owner uploads an SGF to `POST /api/analyze`.
-2. The Web service validates the payload, spends credits and enqueues the job
-   through the atomic Supabase contract.
+2. The client persists an opaque request ID keyed by an account-scope and
+   SGF/options digest. It first queries the owner-qualified
+   `/api/analyze/requests/:requestId` recovery boundary; an already committed
+   job therefore bypasses later upload/validator policy changes. New requests
+   are validated and call
+   `enqueue_paid_analysis_job_v2`; `(owner, request_id)` replay, debit, ledger,
+   and enqueue are serialized in one transaction. A lost 202 returns the
+   original job without another charge.
 3. An external Worker claims a leased job, sends heartbeat updates, and runs
    the selected engine. Production KataGo uses `ANALYSIS_ENGINE=katago`.
 4. The Worker writes a normalized result, completes/refunds through RPCs, and
    reports health. A bounded reconciliation command handles only quarantined
    finalization anomalies.
-5. The owner polls the owner-scoped result endpoint; the client renders a
-   normalized view model, board playback, timeline, and deterministic learning
-   signals.
+5. The owner polls a small owner-qualified status projection. Completion causes
+   one request to `/api/analyze/:jobId/result`, which carries a versioned
+   envelope and ETag; the client then renders the normalized view model.
 
-The current status endpoint reads the full job row, and realtime timeline
-progress uses node-local JSONL. Those are not valid scale-out boundaries and
-must be replaced by owner-qualified metadata queries and a shared durable
-progress transport.
+Status and timeline authorization no longer read the full job row. Realtime
+timeline progress still uses node-local JSONL, which is not a valid scale-out
+boundary and must be replaced by a shared durable progress transport.
 
 ### Payment lifecycle
 
@@ -120,13 +125,15 @@ migration/ACL evidence procedure.
   staging proof.
 - Rate limiting is in-process and must become a shared store before horizontal
   Web scaling.
-- Analyze submission has no client request idempotency key, queue capacity
-  admission, or per-user fairness before debit.
+- Analyze submission has owner-scoped request idempotency, but the rollout
+  compatibility flag must be staged and queue capacity/per-user fairness are
+  still absent before debit.
 - SGF playback is deliberately partial; it is not a complete Go-rules engine.
 - Raw SGF/result storage and retention need a reviewed object-storage, TTL,
   deletion, and legal policy before general availability.
 - No LLM explanatory path is released as verified game advice.
-- Per-turn candidate winrate/score normalization is still provisional; BSI/ADI
-  and decisive-event loss claims must not feed commentary until cross-axis tests pass.
+- Per-turn loss perspective normalization and cross-axis regression tests are
+  implemented. Worker-level provenance, mixed score-metric, real-engine, and
+  staging evidence remain required before commentary consumes those signals.
 - Payment handles credit grant but not a complete refund/chargeback event state
   machine or durable webhook inbox/DLQ.

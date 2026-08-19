@@ -264,14 +264,14 @@ GitHub `staging` environment의 deployment branch는 `master`만 허용하고, r
 8. queued job을 claim한 뒤 `queued -> running -> completed` 상태 전이가 되는지 확인한다.
 9. failed job 발생 시 기존 refund 경로가 동작하는지 staging 전용 결제/credit 데이터로만 확인한다.
 
-### 4.4 Supabase Migration 001–014 확인
+### 4.4 Supabase Migration 001–015 확인
 
-대상은 `supabase/migrations/001_*.sql`부터 `014_*.sql`까지 숫자 순서 전체다. 특히 011 원자 enqueue, 012 실패·환불, 013 RPC ACL, 014 reconciliation을 생략하면 현재 Web/Worker를 배포하지 않는다.
+대상은 `supabase/migrations/001_*.sql`부터 `015_*.sql`까지 숫자 순서 전체다. 특히 011 원자 enqueue, 012 실패·환불, 013 RPC ACL, 014 reconciliation, 015 요청 멱등 enqueue를 생략하면 현재 Web/Worker를 배포하지 않는다.
 
 확인 절차:
 
 1. Supabase project가 staging인지 확인한다.
-2. migration history와 catalog에서 001→014가 숫자 순서로 모두 적용됐는지 database migration gate로 확인한다.
+2. migration history와 catalog에서 001→015가 숫자 순서로 모두 적용됐는지 database migration gate로 확인한다.
 3. `claim_next_analysis_job` RPC가 존재하는지 확인한다.
 4. lease 관련 컬럼과 retry 관련 컬럼이 `analysis_jobs`에 존재하는지 확인한다.
 5. service-role 권한으로 Worker가 claim/lease 갱신/completed/failed update를 수행할 수 있는지 확인한다.
@@ -313,7 +313,7 @@ corepack pnpm worker:preflight
 
 ### 4.6 Worker Liveness
 
-Apply all Supabase migrations through `014_reconcile_analysis_finalization.sql` before deploying the external Worker. Configure the high-entropy `OPS_STATUS_TOKEN` only on Web and protected `SMOKE_OPS_TOKEN` in the staging GitHub Environment. With the Worker running, verify authenticated `GET /ops/analysis-worker-health` reports `status: "live"` for the expected engine. Stop the Worker and verify it becomes `stale` only after `ANALYSIS_WORKER_STATUS_STALE_SECONDS`; this must not change `/healthz` or `/readyz`.
+Apply all Supabase migrations through `015_analysis_request_idempotency.sql` before deploying the external Worker. Configure the high-entropy `OPS_STATUS_TOKEN` only on Web and protected `SMOKE_OPS_TOKEN` in the staging GitHub Environment. With the Worker running, verify authenticated `GET /ops/analysis-worker-health` reports `status: "live"` for the expected engine. Stop the Worker and verify it becomes `stale` only after `ANALYSIS_WORKER_STATUS_STALE_SECONDS`; this must not change `/healthz` or `/readyz`.
 
 ## 5. Result Recording
 

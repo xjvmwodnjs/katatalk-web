@@ -8,9 +8,15 @@
 - Uploaded SGF content, filename, language, integrity metadata, analysis job status, errors, timestamps, and analysis results.
 - Credit balances and ledger records, including payment-provider event, order, and checkout references needed for idempotency and audit.
 - Limited technical data required to operate authenticated requests and background analysis jobs.
-- The current browser client also persists an authentication user object that
-  can include display name and email in local storage. This storage is not
-  needed by the current product flow and must be removed before public launch.
+- For paid-analysis retry safety, the browser keeps at most eight pending
+  request records for up to 24 hours. Each record contains only the selected
+  language, a one-way account-scope digest, an SGF SHA-256 digest, an opaque
+  request ID, and a timestamp. It does not contain SGF text, filename, raw
+  account identity, name, or email. The request is not submitted when this
+  storage cannot be persisted.
+- The obsolete pre-launch browser cache that contained an authentication user
+  object has been removed. Current clients also delete that legacy local
+  storage entry on startup.
 
 ## Purpose and Providers
 
@@ -27,7 +33,14 @@ not raw SGF, player names, filenames, account data, or payment data.
 
 ## Deletion and Retention
 
-The authenticated owner of a completed or failed analysis can delete its SGF source, filename, integrity metadata, and result from the product. The job status, timestamps, credit cost, and credit-ledger linkage remain for audit and refund investigation.
+The authenticated owner of a completed or failed analysis can delete its SGF
+source, filename, direct SGF digest, and result from the product. The job
+status, timestamps, credit cost, credit-ledger linkage, opaque request ID, and
+one-way request fingerprint remain for duplicate-charge prevention, ledger
+audit, and refund investigation. That fingerprint is derived from the SGF
+digest and selected analysis language and can therefore still be linkable to a
+candidate SGF. Its finite legal retention period must be approved before paid
+launch.
 
 Automatic analysis-payload expiration is opt-in for newly created jobs only.
 If the production setting is absent, retention is indefinite. Cleanup requires

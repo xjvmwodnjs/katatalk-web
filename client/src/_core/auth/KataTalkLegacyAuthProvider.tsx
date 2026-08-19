@@ -1,11 +1,23 @@
 import { trpc } from "@/lib/trpc";
+import { purgeDeprecatedBrowserIdentityCache } from "@/lib/browserPrivacy";
 import { TRPCClientError } from "@trpc/client";
-import { useCallback, useMemo, type ReactNode } from "react";
-import { KataTalkAuthContext, type KataTalkAuthContextValue } from "./authContext";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import {
+  KataTalkAuthContext,
+  type KataTalkAuthContextValue,
+} from "./authContext";
 
 /** Supabase / local-dev / Manus 등 Clerk 이전 인증 경로 */
-export function KataTalkLegacyAuthProvider({ children }: { children: ReactNode }) {
+export function KataTalkLegacyAuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    purgeDeprecatedBrowserIdentityCache();
+  }, []);
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -40,9 +52,6 @@ export function KataTalkLegacyAuthProvider({ children }: { children: ReactNode }
   }, [logoutMutation, utils]);
 
   const value = useMemo<KataTalkAuthContextValue>(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("katatalk-runtime-user-info", JSON.stringify(meQuery.data));
-    }
     return {
       user: meQuery.data ?? null,
       loading: meQuery.isLoading || logoutMutation.isPending,
@@ -63,5 +72,9 @@ export function KataTalkLegacyAuthProvider({ children }: { children: ReactNode }
     logoutMutation.isPending,
   ]);
 
-  return <KataTalkAuthContext.Provider value={value}>{children}</KataTalkAuthContext.Provider>;
+  return (
+    <KataTalkAuthContext.Provider value={value}>
+      {children}
+    </KataTalkAuthContext.Provider>
+  );
 }

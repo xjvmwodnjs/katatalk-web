@@ -378,7 +378,7 @@ describe("staging migration and expected-contract evidence", () => {
     });
 
     expect(validation.status).toBe("pass");
-    expect(validation.entries).toHaveLength(14);
+    expect(validation.entries).toHaveLength(15);
     expect(validation.unexpected.count).toBe(0);
   });
 

@@ -133,6 +133,14 @@ export function validateProductionDeploymentEnv(): void {
       "운영(production)에서는 KATATALK_ATOMIC_ENQUEUE=false 를 사용할 수 없습니다."
     );
   }
+  if (
+    process.env.ANALYSIS_IDEMPOTENCY_KEY_REQUIRED?.trim().toLowerCase() !==
+    "true"
+  ) {
+    throw new Error(
+      "운영(production)에서는 ANALYSIS_IDEMPOTENCY_KEY_REQUIRED=true 가 필요합니다."
+    );
+  }
 
   requireProdNonEmpty("LEMONSQUEEZY_API_KEY", process.env.LEMONSQUEEZY_API_KEY);
   requireProdNonEmpty(

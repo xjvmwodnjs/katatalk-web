@@ -2,6 +2,13 @@
 
 > **Current review alignment (2026-08-12):** Review/spec commit `09e513b` PR #4 run [`31607218074`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/31607218074) passed all four jobs: TypeScript/unit/Clerk build/secret/format, PostgreSQL migration/ACL/atomicity, production dependency audit after `nanoid >=5.1.16`, and Playwright. See [production global commentary spec](production-global-commentary-spec-v1.md) and [2026-08-12 production review](codebase-production-review-2026-08-12.md).
 
+> **NLC-005 candidate (2026-08-19):** migration `015` adds the v2 paid
+> submission idempotency contract and the database gate now requires 100 serial
+> replays plus a 32-way contention race to produce one job, one usage ledger,
+> and one debit. HTTP tests require 100 lost-response replays to return the same
+> job. This is local/repository evidence only until the commit's GitHub jobs and
+> protected Supabase staging evidence pass.
+
 ## Implemented local gate
 
 `.github/workflows/ci.yml` runs these checks for pull requests and pushes to
@@ -16,6 +23,15 @@
 
 The local secret scanner reports only a file path, line number, and rule name.
 It never prints a suspected secret value.
+
+Dependency resolution settings live in root `pnpm-workspace.yaml`, not the
+deprecated `package.json#pnpm` field. `packageManager` pins pnpm `10.18.1` with
+its SHA-512 digest; CI and release builds must use Corepack/the pinned version.
+Both `overrides` and `patchedDependencies` must match `pnpm-lock.yaml`, and
+`pnpm install --lockfile-only --frozen-lockfile --ignore-scripts` must pass
+before accepting a dependency/config change. This keeps the security overrides
+effective under pnpm 10 and newer clients that no longer read the old package
+field.
 
 ## Current gate status
 

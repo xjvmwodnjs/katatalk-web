@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   productReviewCompletedJobResponse,
+  productReviewCompletedStatusResponse,
   productReviewE2eJobId,
 } from "./fixtures/product-review-completed-result";
 
@@ -14,13 +15,27 @@ async function installCompletedJobFixture(page: Page, language = "ko") {
   await page.addInitScript(lang => {
     localStorage.setItem("katatalk-ui-lang", lang);
   }, language);
+  await installResultFixture(page);
   await page.route(`**/api/analyze/${productReviewE2eJobId}`, async route => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(productReviewCompletedJobResponse),
+      body: JSON.stringify(productReviewCompletedStatusResponse),
     });
   });
+}
+
+async function installResultFixture(page: Page) {
+  await page.route(
+    `**/api/analyze/${productReviewE2eJobId}/result`,
+    async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(productReviewCompletedJobResponse),
+      });
+    }
+  );
 }
 
 async function expectNoPageHorizontalOverflow(page: Page) {
@@ -32,6 +47,53 @@ async function expectNoPageHorizontalOverflow(page: Page) {
 }
 
 test.describe("Product Review result smoke", () => {
+  test("recovers a committed paid request without re-uploading after validator changes", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await installCompletedJobFixture(page);
+    let recoveryCalls = 0;
+    let analyzePostCalls = 0;
+    await page.route("**/api/analyze/requests/*", async route => {
+      recoveryCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify(productReviewCompletedStatusResponse),
+      });
+    });
+    await page.route("**/api/analyze", async route => {
+      if (route.request().method() === "POST") analyzePostCalls += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ success: false, message: "unexpected POST" }),
+      });
+    });
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "previously-admitted.sgf",
+      mimeType: "application/x-go-sgf",
+      // Older releases admitted this shape; the current validator rejects
+      // setup stones after play. Recovery must happen without a new POST.
+      buffer: Buffer.from("(;FF[4]GM[1]SZ[19];B[pd];AW[dd])"),
+    });
+    await page
+      .getByRole("button", { name: "기보 분석 시작", exact: true })
+      .click();
+
+    await expect(page.getByText("Black E2E", { exact: true })).toBeVisible();
+    expect(recoveryCalls).toBe(1);
+    expect(analyzePostCalls).toBe(0);
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("katatalk:pending-analysis-requests:v3")
+      )
+    ).toBeNull();
+  });
+
   for (const viewport of viewports) {
     test(`renders and exercises result UI at ${viewport.width}x${viewport.height}`, async ({
       page,
@@ -175,6 +237,7 @@ test.describe("Product Review result smoke", () => {
     await page.addInitScript(() => {
       localStorage.setItem("katatalk-ui-lang", "ko");
     });
+    await installResultFixture(page);
 
     let statusCalls = 0;
     let timelineCalls = 0;
@@ -212,7 +275,7 @@ test.describe("Product Review result smoke", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(productReviewCompletedJobResponse),
+        body: JSON.stringify(productReviewCompletedStatusResponse),
       });
     });
 
@@ -226,21 +289,26 @@ test.describe("Product Review result smoke", () => {
     expect(timelineCalls).toBe(1);
   });
 
-  test("deletes a completed result only after confirmation", async ({ page }) => {
+  test("deletes a completed result only after confirmation", async ({
+    page,
+  }) => {
     test.setTimeout(30_000);
     await page.setViewportSize({ width: 390, height: 844 });
     await installCompletedJobFixture(page, "en");
 
     let deleteRequests = 0;
-    await page.route(`**/api/analyze/${productReviewE2eJobId}/data`, async route => {
-      deleteRequests += 1;
-      expect(route.request().method()).toBe("DELETE");
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ success: true, purged: true }),
-      });
-    });
+    await page.route(
+      `**/api/analyze/${productReviewE2eJobId}/data`,
+      async route => {
+        deleteRequests += 1;
+        expect(route.request().method()).toBe("DELETE");
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true, purged: true }),
+        });
+      }
+    );
     page.once("dialog", async dialog => {
       expect(dialog.type()).toBe("confirm");
       await dialog.accept();
@@ -269,10 +337,13 @@ test.describe("Product Review result smoke", () => {
     await installCompletedJobFixture(page, "en");
 
     let deleteRequests = 0;
-    await page.route(`**/api/analyze/${productReviewE2eJobId}/data`, async route => {
-      deleteRequests += 1;
-      await route.fulfill({ status: 500 });
-    });
+    await page.route(
+      `**/api/analyze/${productReviewE2eJobId}/data`,
+      async route => {
+        deleteRequests += 1;
+        await route.fulfill({ status: 500 });
+      }
+    );
     page.once("dialog", async dialog => {
       expect(dialog.type()).toBe("confirm");
       await dialog.dismiss();
@@ -295,73 +366,103 @@ test.describe("Product Review result smoke", () => {
 });
 
 test.describe("Timeline progress polling hardening", () => {
-  test("stops progress polling after 404 while status polling completes", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
+    await installResultFixture(page);
+  });
+
+  test("stops progress polling after 404 while status polling completes", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(() => {
       localStorage.setItem("katatalk-ui-lang", "ko");
     });
     let statusCalls = 0;
     let progressCalls = 0;
-    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async route => {
       statusCalls += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(statusCalls === 1 ? {
-          success: true,
-          jobId: productReviewE2eJobId,
-          status: "running",
-          progress: 40,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        } : productReviewCompletedJobResponse),
+        body: JSON.stringify(
+          statusCalls === 1
+            ? {
+                success: true,
+                jobId: productReviewE2eJobId,
+                status: "running",
+                progress: 40,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }
+            : productReviewCompletedStatusResponse
+        ),
       });
     });
-    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
-      progressCalls += 1;
-      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ success: false }) });
-    });
+    await page.route(
+      `**/api/analyze/${productReviewE2eJobId}/timeline-progress`,
+      async route => {
+        progressCalls += 1;
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ success: false }),
+        });
+      }
+    );
 
     await page.goto(`/?jobId=${productReviewE2eJobId}`);
-    await expect(page.getByRole("img", { name: "바둑판 국면 스냅샷" })).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "바둑판 국면 스냅샷" })
+    ).toBeVisible();
     await page.waitForTimeout(1200);
     expect(progressCalls).toBe(1);
     expect(statusCalls).toBeGreaterThanOrEqual(2);
   });
 
-  test("backs off progress polling after 429 without blocking status polling", async ({ page }) => {
+  test("backs off progress polling after 429 without blocking status polling", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(() => {
       localStorage.setItem("katatalk-ui-lang", "ko");
     });
     let statusCalls = 0;
     let progressCalls = 0;
-    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async route => {
       statusCalls += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(statusCalls === 1 ? {
-          success: true,
-          jobId: productReviewE2eJobId,
-          status: "running",
-          progress: 40,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        } : productReviewCompletedJobResponse),
+        body: JSON.stringify(
+          statusCalls === 1
+            ? {
+                success: true,
+                jobId: productReviewE2eJobId,
+                status: "running",
+                progress: 40,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }
+            : productReviewCompletedStatusResponse
+        ),
       });
     });
-    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
-      progressCalls += 1;
-      await route.fulfill({
-        status: 429,
-        contentType: "application/json",
-        body: JSON.stringify({ success: false, code: "RATE_LIMITED" }),
-      });
-    });
+    await page.route(
+      `**/api/analyze/${productReviewE2eJobId}/timeline-progress`,
+      async route => {
+        progressCalls += 1;
+        await route.fulfill({
+          status: 429,
+          contentType: "application/json",
+          body: JSON.stringify({ success: false, code: "RATE_LIMITED" }),
+        });
+      }
+    );
 
     await page.goto(`/?jobId=${productReviewE2eJobId}`);
-    await expect(page.getByRole("img", { name: "바둑판 국면 스냅샷" })).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "바둑판 국면 스냅샷" })
+    ).toBeVisible();
     await page.waitForTimeout(1200);
     expect(progressCalls).toBe(1);
     expect(statusCalls).toBeGreaterThanOrEqual(2);
@@ -374,33 +475,44 @@ test.describe("Timeline progress polling hardening", () => {
     });
     let statusCalls = 0;
     let progressCalls = 0;
-    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async (route) => {
+    await page.route(`**/api/analyze/${productReviewE2eJobId}`, async route => {
       statusCalls += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(statusCalls === 1 ? {
-          success: true,
-          jobId: productReviewE2eJobId,
-          status: "running",
-          progress: 40,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        } : {
-          success: true,
-          jobId: productReviewE2eJobId,
-          status: "failed",
-          progress: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:01.000Z",
-          error: { message: "Analysis job failed." },
-        }),
+        body: JSON.stringify(
+          statusCalls === 1
+            ? {
+                success: true,
+                jobId: productReviewE2eJobId,
+                status: "running",
+                progress: 40,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }
+            : {
+                success: true,
+                jobId: productReviewE2eJobId,
+                status: "failed",
+                progress: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:01.000Z",
+                error: { message: "Analysis job failed." },
+              }
+        ),
       });
     });
-    await page.route(`**/api/analyze/${productReviewE2eJobId}/timeline-progress`, async (route) => {
-      progressCalls += 1;
-      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ success: false }) });
-    });
+    await page.route(
+      `**/api/analyze/${productReviewE2eJobId}/timeline-progress`,
+      async route => {
+        progressCalls += 1;
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ success: false }),
+        });
+      }
+    );
 
     await page.goto(`/?jobId=${productReviewE2eJobId}`);
     await expect.poll(() => statusCalls).toBeGreaterThanOrEqual(2);

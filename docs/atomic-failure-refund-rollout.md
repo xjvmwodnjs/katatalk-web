@@ -5,7 +5,7 @@ Worker to create a terminal failed job and a separate, missing refund.
 
 ## Safety rules
 
-- Treat numbered migrations as immutable and apply them strictly in numeric order: `001` → `002` → … → `014`. If `012` or `013` is already applied, ship corrections as a later migration; never edit or reorder history.
+- Treat numbered migrations as immutable and apply them strictly in numeric order: `001` → `002` → … → `015`. If a migration is already applied, ship corrections as a later migration; never edit or reorder history.
 - Stop and drain every old analysis Worker before applying the migration.
 - Never repair a wallet with a direct `profiles.credits` update. Reconciliation
   must preserve an append-only ledger entry and its idempotency key.
@@ -73,7 +73,7 @@ reviewed forward-only reconciliation migration.
 2. Stop old Workers and wait until no Worker heartbeat is active. Do not start a
    new claim while the schema changes.
 3. Run the preflight audit and reconcile only verified legacy rows.
-4. Apply migrations `001` → `014` in one transaction and retain the output.
+4. Apply migrations `001` → `015` in one transaction and retain the output.
 5. Verify the 12 SECURITY DEFINER functions: the original 11 hardened by `013`, plus `014` reconciliation with the same owner, `search_path=pg_catalog`, and function ACL. Confirm
    `PUBLIC`, `anon`, and `authenticated` cannot execute either Worker RPC.
 6. Deploy the API with `ANALYSIS_WORKER_MODE=external` and atomic enqueue
@@ -94,7 +94,7 @@ reviewed forward-only reconciliation migration.
 - Forced errors after profile update, ledger insert, and job update roll back the
   entire transaction.
 - `anon` and `authenticated` HTTP RPC calls are rejected.
-- Release evidence must show fresh `001 -> 014` and upgrade `011 -> 012 -> 013 -> 014` both pass, including schema/ACL equivalence.
+- Release evidence must show fresh `001 -> 015` and upgrade `011 -> 012 -> 013 -> 014 -> 015` both pass, including schema/ACL equivalence.
 
 ## 4. Quarantine monitoring
 

@@ -16,9 +16,27 @@ function completedResultFixture() {
       boardSize: 19,
       komi: 6.5,
       candidateTurns: [
-        { turnIndex: 2, player: "B", playedMove: "dd", reason: "score_drop", priority: 90 },
-        { turnIndex: 3, player: "W", playedMove: "qq", reason: "shape", priority: 60 },
-        { turnIndex: 6, player: "B", playedMove: "pp", reason: "final_position", priority: 20 },
+        {
+          turnIndex: 2,
+          player: "B",
+          playedMove: "dd",
+          reason: "score_drop",
+          priority: 90,
+        },
+        {
+          turnIndex: 3,
+          player: "W",
+          playedMove: "qq",
+          reason: "shape",
+          priority: 60,
+        },
+        {
+          turnIndex: 6,
+          player: "B",
+          playedMove: "pp",
+          reason: "final_position",
+          priority: 20,
+        },
       ],
     },
     learningEventsV1: {
@@ -40,7 +58,11 @@ function completedResultFixture() {
             deepSearchCompleted: true,
             deepSearchChangedTop: true,
           },
-          evidence: { source: ["learningEventsV1", "bsiV1", "deepSearchResults"], pv: ["pq", "dc"], deepSearchPv: ["pq", "dc", "qp"] },
+          evidence: {
+            source: ["learningEventsV1", "bsiV1", "deepSearchResults"],
+            pv: ["pq", "dc"],
+            deepSearchPv: ["pq", "dc", "qp"],
+          },
         },
         {
           id: "le-3",
@@ -77,9 +99,23 @@ function completedResultFixture() {
         reason: "score_drop",
         priority: 90,
         query: { movesBeforeCount: 1, boardSize: 19, komi: 6.5 },
-        katago: { rootInfo: {}, topMove: { pv: ["pq", "dc", "qp"] }, moveInfosCount: 3, hasWinrate: true, hasScoreLead: true, hasOwnership: false },
-        comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 3, bestMove: "pq" },
-        moveSummary: { best: { move: "pq", winrate: 0.62, scoreLead: 2.1 }, played: { move: "dd", winrate: 0.48, scoreLead: -3.9 } },
+        katago: {
+          rootInfo: {},
+          topMove: { pv: ["pq", "dc", "qp"] },
+          moveInfosCount: 3,
+          hasWinrate: true,
+          hasScoreLead: true,
+          hasOwnership: false,
+        },
+        comparisonReady: {
+          playedMoveFoundInCandidates: true,
+          playedMoveRank: 3,
+          bestMove: "pq",
+        },
+        moveSummary: {
+          best: { move: "pq", winrate: 0.62, scoreLead: 2.1 },
+          played: { move: "dd", winrate: 0.48, scoreLead: -3.9 },
+        },
         candidateMoves: [{ move: "pq", order: 1, pvLength: 3 }],
       },
       {
@@ -90,9 +126,23 @@ function completedResultFixture() {
         reason: "shape",
         priority: 60,
         query: { movesBeforeCount: 2, boardSize: 19, komi: 6.5 },
-        katago: { rootInfo: {}, topMove: { pv: ["dp"] }, moveInfosCount: 2, hasWinrate: true, hasScoreLead: true, hasOwnership: false },
-        comparisonReady: { playedMoveFoundInCandidates: true, playedMoveRank: 2, bestMove: "dp" },
-        moveSummary: { best: { move: "dp", winrate: 0.57, scoreLead: 1.2 }, played: { move: "qq", winrate: 0.54, scoreLead: 0.6 } },
+        katago: {
+          rootInfo: {},
+          topMove: { pv: ["dp"] },
+          moveInfosCount: 2,
+          hasWinrate: true,
+          hasScoreLead: true,
+          hasOwnership: false,
+        },
+        comparisonReady: {
+          playedMoveFoundInCandidates: true,
+          playedMoveRank: 2,
+          bestMove: "dp",
+        },
+        moveSummary: {
+          best: { move: "dp", winrate: 0.57, scoreLead: 1.2 },
+          played: { move: "qq", winrate: 0.54, scoreLead: 0.6 },
+        },
       },
       {
         status: "failed",
@@ -107,13 +157,37 @@ function completedResultFixture() {
     ],
     bsiV1: {
       version: "bsi-v1",
-      signals: [{ turnIndex: 2, player: "B", playedMove: "dd", bestMove: "pq", bsiScore: 88, scoreBestMinusPlayed: 6.0, winrateBestMinusPlayed: 0.14 }],
+      signals: [
+        {
+          turnIndex: 2,
+          player: "B",
+          playedMove: "dd",
+          bestMove: "pq",
+          bsiScore: 88,
+          scoreBestMinusPlayed: 6.0,
+          winrateBestMinusPlayed: 0.14,
+        },
+      ],
     },
     adiV1: {
       version: "adi-v1",
       signals: [
-        { turnIndex: 2, player: "B", playedMove: "dd", bestMove: "pq", adiScore: 0.42, deepSearchCandidate: true },
-        { turnIndex: 3, player: "W", playedMove: "qq", bestMove: "dp", adiScore: 0.7, deepSearchCandidate: false },
+        {
+          turnIndex: 2,
+          player: "B",
+          playedMove: "dd",
+          bestMove: "pq",
+          adiScore: 0.42,
+          deepSearchCandidate: true,
+        },
+        {
+          turnIndex: 3,
+          player: "W",
+          playedMove: "qq",
+          bestMove: "dp",
+          adiScore: 0.7,
+          deepSearchCandidate: false,
+        },
       ],
     },
     deepSearchResults: {
@@ -137,8 +211,20 @@ function completedResultFixture() {
       enabled: true,
       completedCount: 2,
       points: [
-        { status: "ok", turnIndex: 1, player: "W", playedMove: "pd", rawWinrate: 0.51 },
-        { status: "ok", turnIndex: 2, player: "B", playedMove: "dd", rawWinrate: 0.37 },
+        {
+          status: "ok",
+          turnIndex: 1,
+          player: "W",
+          playedMove: "pd",
+          rawWinrate: 0.51,
+        },
+        {
+          status: "ok",
+          turnIndex: 2,
+          player: "B",
+          playedMove: "dd",
+          rawWinrate: 0.37,
+        },
       ],
     },
     sgf_content: "(;FF[4]GM[1]SZ[19]KM[6.5]RE[W+3.5];B[pd];W[dd])",
@@ -155,11 +241,19 @@ describe("productReviewWorkbenchV1", () => {
     expect(report.gameSummary.boardSize).toBe(19);
     expect(report.gameSummary.loserColor).toBe("B");
     expect(report.sourceSummary.source).toBe("katago-worker-v1");
-    expect(report.learningEventsSummary.some((event) => event.turnIndex === 6 && event.finalPositionExcluded)).toBe(true);
-    expect(report.candidatePoolSummary.some((candidate) => candidate.turnIndex === 2 && candidate.deepSearchEvidence)).toBe(true);
+    expect(
+      report.learningEventsSummary.some(
+        event => event.turnIndex === 6 && event.finalPositionExcluded
+      )
+    ).toBe(true);
+    expect(
+      report.candidatePoolSummary.some(
+        candidate => candidate.turnIndex === 2 && candidate.deepSearchEvidence
+      )
+    ).toBe(true);
   });
 
-  it("keeps generic RE[B+] winner semantics in the workbench", () => {
+  it("keeps generic RE[B+] winner semantics without inventing a decisive move", () => {
     const report = buildProductReviewWorkbenchV1({
       ...completedResultFixture(),
       sgf_content: "(;FF[4]GM[1]SZ[19]KM[6.5]RE[B+];B[pd];W[dd])",
@@ -170,31 +264,59 @@ describe("productReviewWorkbenchV1", () => {
       loserColor: "W",
       margin: null,
     });
-    expect(report.decisiveMoveTrace.selected).not.toBeNull();
+    // The reused fixture has positive loss evidence only for Black. Once RE[B+]
+    // makes White the loser, the safe result is no decisive move rather than a
+    // fluent but unsupported selection.
+    expect(report.decisiveMoveTrace.selected).toBeNull();
   });
 
   it("includes decisive selected reason and rejected candidate reasons", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
 
     expect(report.decisiveMoveTrace.selected?.turnIndex).toBe(2);
-    expect(report.decisiveMoveTrace.selectedReason).toContain("positive_score_loss");
-    expect(report.decisiveMoveTrace.rejectedCandidates.some((candidate) => candidate.reasons.includes("final_position_excluded"))).toBe(true);
+    expect(report.decisiveMoveTrace.selectedReason).toContain(
+      "positive_score_loss"
+    );
+    expect(
+      report.decisiveMoveTrace.rejectedCandidates.some(candidate =>
+        candidate.reasons.includes("final_position_excluded")
+      )
+    ).toBe(true);
   });
 
   it("includes review ranking and explanation plan trace", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
 
-    expect(report.reviewMovesTrace.selected.some((move) => move.turnIndex === 3 && move.rankingScore > 0)).toBe(true);
-    expect(report.explanationPlanTrace.some((plan) => plan.targetType === "decisive_move" && plan.referenceLinePvLength > 0)).toBe(true);
-    expect(report.uiSummary.every((row) => row.tryPlayImpact === "none")).toBe(true);
+    expect(
+      report.reviewMovesTrace.selected.some(
+        move => move.turnIndex === 3 && move.rankingScore > 0
+      )
+    ).toBe(true);
+    expect(
+      report.explanationPlanTrace.some(
+        plan =>
+          plan.targetType === "decisive_move" && plan.referenceLinePvLength > 0
+      )
+    ).toBe(true);
+    expect(report.uiSummary.every(row => row.tryPlayImpact === "none")).toBe(
+      true
+    );
   });
 
   it("includes v2.5 evidence breakdown in workbench traces", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
 
-    expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy).toBe("decisive_candidate");
-    expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes).toContain("loss_evidence");
-    expect(report.reviewMovesTrace.selected.some((move) => move.v25Taxonomy != null && move.v25EvidenceTypes.length > 0)).toBe(true);
+    expect(report.decisiveMoveTrace.v25EvidenceBreakdown?.taxonomy).toBe(
+      "decisive_candidate"
+    );
+    expect(
+      report.decisiveMoveTrace.v25EvidenceBreakdown?.evidenceTypes
+    ).toContain("loss_evidence");
+    expect(
+      report.reviewMovesTrace.selected.some(
+        move => move.v25Taxonomy != null && move.v25EvidenceTypes.length > 0
+      )
+    ).toBe(true);
     const rendered = renderProductReviewWorkbenchMarkdownV1(report);
     expect(rendered).toContain("v25EvidenceTypes");
     expect(rendered).toContain("reservedDuplicatePenalty");
@@ -206,7 +328,11 @@ describe("productReviewWorkbenchV1", () => {
 
     expect(report.decisiveMoveTrace.conceptTagsV1).toBeDefined();
     expect(report.decisiveMoveTrace.forbiddenConceptClaims).toBeDefined();
-    expect(report.reviewMovesTrace.selected.every((move) => Array.isArray(move.conceptTagsV1))).toBe(true);
+    expect(
+      report.reviewMovesTrace.selected.every(move =>
+        Array.isArray(move.conceptTagsV1)
+      )
+    ).toBe(true);
     expect(rendered).toContain("conceptTagsV1");
     expect(rendered).toContain("forbiddenConceptClaims");
   });
@@ -215,9 +341,19 @@ describe("productReviewWorkbenchV1", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
     const rendered = renderProductReviewWorkbenchMarkdownV1(report);
 
-    expect(report.decisiveMoveTrace.candidateComparisonV1?.comparisonType).toBe("move_difference");
-    expect(report.decisiveMoveTrace.candidateComparisonV1?.deltas.some((delta) => delta.type === "score_loss")).toBe(true);
-    expect(report.reviewMovesTrace.selected.every((move) => move.candidateComparisonV1 != null)).toBe(true);
+    expect(report.decisiveMoveTrace.candidateComparisonV1?.comparisonType).toBe(
+      "move_difference"
+    );
+    expect(
+      report.decisiveMoveTrace.candidateComparisonV1?.deltas.some(
+        delta => delta.type === "score_loss"
+      )
+    ).toBe(true);
+    expect(
+      report.reviewMovesTrace.selected.every(
+        move => move.candidateComparisonV1 != null
+      )
+    ).toBe(true);
     expect(rendered).toContain("candidateComparisonV1");
   });
 
@@ -225,20 +361,47 @@ describe("productReviewWorkbenchV1", () => {
     const report = buildProductReviewWorkbenchV1(completedResultFixture());
     const rendered = renderProductReviewWorkbenchMarkdownV1(report);
 
-    expect(report.explanationPlanV2Trace.some((plan) => plan.audience === "dan" && plan.bullets.includes("candidate_comparison"))).toBe(true);
-    expect(report.explanationPlanV2Trace.every((plan) => Array.isArray(plan.forbiddenClaims))).toBe(true);
+    expect(
+      report.explanationPlanV2Trace.some(
+        plan =>
+          plan.audience === "dan" &&
+          plan.bullets.includes("candidate_comparison")
+      )
+    ).toBe(true);
+    expect(
+      report.explanationPlanV2Trace.every(plan =>
+        Array.isArray(plan.forbiddenClaims)
+      )
+    ).toBe(true);
     expect(rendered).toContain("ExplanationPlanV2 Trace");
   });
 
   it("safely skips mock or unknown results", () => {
-    expect(buildProductReviewWorkbenchV1({ source: "mock", meta: { mock: true } }).status).toBe("unsupported");
-    expect(buildProductReviewWorkbenchV1({ source: "katago-worker-v1", meta: { mock: true } }).unsupportedReason).toBe("mock_result_unsupported");
-    expect(buildProductReviewWorkbenchV1({ source: "katago-worker-v1", isMock: true }).unsupportedReason).toBe("mock_result_unsupported");
+    expect(
+      buildProductReviewWorkbenchV1({ source: "mock", meta: { mock: true } })
+        .status
+    ).toBe("unsupported");
+    expect(
+      buildProductReviewWorkbenchV1({
+        source: "katago-worker-v1",
+        meta: { mock: true },
+      }).unsupportedReason
+    ).toBe("mock_result_unsupported");
+    expect(
+      buildProductReviewWorkbenchV1({
+        source: "katago-worker-v1",
+        isMock: true,
+      }).unsupportedReason
+    ).toBe("mock_result_unsupported");
   });
 
   it("unwraps GET analyze response wrappers", () => {
     const inner = completedResultFixture();
-    const wrapper = { status: "completed", data: inner, meta: { requestId: "req-1" } };
+    const wrapper = {
+      status: "completed",
+      data: inner,
+      meta: { requestId: "req-1" },
+    };
 
     expect(unwrapProductReviewWorkbenchInputV1(wrapper)).toBe(inner);
     expect(buildProductReviewWorkbenchV1(wrapper).status).toBe("ok");
@@ -246,8 +409,12 @@ describe("productReviewWorkbenchV1", () => {
   });
 
   it("redacts SGF-like payloads, secrets, and path-like strings from rendered output", () => {
-    const rendered = renderProductReviewWorkbenchMarkdownV1(buildProductReviewWorkbenchV1(completedResultFixture()));
-    const fakeSecret = ["sk", "live", "abcdefghijklmnopqrstuvwxyz123456"].join("_");
+    const rendered = renderProductReviewWorkbenchMarkdownV1(
+      buildProductReviewWorkbenchV1(completedResultFixture())
+    );
+    const fakeSecret = ["sk", "live", "abcdefghijklmnopqrstuvwxyz123456"].join(
+      "_"
+    );
     const redacted = redactWorkbenchTextV1(
       `${rendered}\n(;FF[4]GM[1];B[pd])\n(;GM[1]SZ[19];B[pd];W[dd])\n(;B[pd];W[dd])\nC:\\KataGo\\katago.exe\n${fakeSecret}`
     );
@@ -263,7 +430,9 @@ describe("productReviewWorkbenchV1", () => {
   });
 
   it("does not emit forbidden labels", () => {
-    const rendered = renderProductReviewWorkbenchMarkdownV1(buildProductReviewWorkbenchV1(completedResultFixture()));
+    const rendered = renderProductReviewWorkbenchMarkdownV1(
+      buildProductReviewWorkbenchV1(completedResultFixture())
+    );
     const forbiddenLabels = [
       ["패착", " ", "확정"].join(""),
       ["완착", " ", "확정"].join(""),

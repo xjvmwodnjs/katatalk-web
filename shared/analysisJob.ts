@@ -15,7 +15,11 @@ export type AnalysisJobStatus = "queued" | "running" | "completed" | "failed";
 export type AnalysisJobCreateResponse = {
   success: true;
   jobId: string;
-  status: "queued";
+  status: AnalysisJobStatus;
+  /** True when this response replays an already committed request. */
+  replayed: boolean;
+  /** False only for the temporary cached-client rollout compatibility path. */
+  idempotencyProtected: boolean;
   /** 차감 직후 남은 크레딧 (서버 wallet 기준). */
   creditBalance?: number;
   /** 차감 직후 남은 크레딧 (creditBalance 와 동일, 클라이언트 편의). */
@@ -35,11 +39,25 @@ export type AnalysisJobGetResponse = {
   progress: number | null;
   createdAt: string;
   updatedAt: string;
-  /** Present when status === "completed". */
-  data?: unknown;
+  /** Version of the separate result envelope when completion is available. */
+  resultVersion?: "analysis-job-result-v1";
   /** Present when status === "failed". */
   error?: { message: string };
-  meta?: { mock: boolean; message: string };
+};
+
+export type AnalysisJobResultMeta = { mock: boolean; message: string };
+
+/**
+ * GET /api/analyze/:jobId/result payload, fetched once after completion.
+ * Keeping large result data out of the status contract prevents every poll
+ * from loading the stored SGF and analysis JSON.
+ */
+export type AnalysisJobResultResponse = AnalysisJobGetResponse & {
+  status: "completed";
+  progress: 100;
+  resultVersion: "analysis-job-result-v1";
+  data: unknown;
+  meta?: AnalysisJobResultMeta;
 };
 
 export type AnalysisJobErrorResponse = {
@@ -47,7 +65,12 @@ export type AnalysisJobErrorResponse = {
   message: string;
 };
 
-const TERMINAL_STATUSES = new Set<AnalysisJobStatus>(["queued", "running", "completed", "failed"]);
+const TERMINAL_STATUSES = new Set<AnalysisJobStatus>([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+]);
 
 /**
  * DB/클라이언트 간 status 문자열 표기 차이를 흡수한다 (예: "COMPLETED").
@@ -91,11 +114,17 @@ export function mergeDbSgfContentIntoCompletedJobData(
   sgfContentFromDb: string | null | undefined
 ): unknown {
   const sgf =
-    typeof sgfContentFromDb === "string" && sgfContentFromDb.trim() ? sgfContentFromDb : null;
+    typeof sgfContentFromDb === "string" && sgfContentFromDb.trim()
+      ? sgfContentFromDb
+      : null;
   if (sgf == null) {
     return parsedResult;
   }
-  if (parsedResult == null || typeof parsedResult !== "object" || Array.isArray(parsedResult)) {
+  if (
+    parsedResult == null ||
+    typeof parsedResult !== "object" ||
+    Array.isArray(parsedResult)
+  ) {
     return parsedResult;
   }
   return { ...(parsedResult as Record<string, unknown>), sgf_content: sgf };

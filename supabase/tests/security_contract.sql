@@ -38,6 +38,7 @@ BEGIN
         ('public.get_analysis_worker_health(text, integer)'),
         ('public.purge_expired_analysis_job_data(integer, boolean)'),
         ('public.enqueue_paid_analysis_job(text, text, integer, text, text, text, text, integer, boolean, timestamp with time zone)'),
+        ('public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)'),
         ('public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)'),
         ('public.reconcile_analysis_job_finalization(text, boolean)')
     ) AS expected(signature)
@@ -111,6 +112,7 @@ BEGIN
         'public.get_analysis_worker_health(text, integer)'::pg_catalog.regprocedure,
         'public.purge_expired_analysis_job_data(integer, boolean)'::pg_catalog.regprocedure,
         'public.enqueue_paid_analysis_job(text, text, integer, text, text, text, text, integer, boolean, timestamp with time zone)'::pg_catalog.regprocedure,
+        'public.enqueue_paid_analysis_job_v2(text, text, text, text, integer, text, text, text, text, integer, boolean, text, timestamp with time zone)'::pg_catalog.regprocedure,
         'public.fail_analysis_job_and_refund_with_lease(text, text, integer, text, text)'::pg_catalog.regprocedure,
         'public.reconcile_analysis_job_finalization(text, boolean)'::pg_catalog.regprocedure
       ]::oid[]
@@ -256,6 +258,21 @@ SELECT public.enqueue_paid_analysis_job(
   '__security_hash__',
   8,
   true,
+  NULL
+);
+SELECT public.enqueue_paid_analysis_job_v2(
+  '__security_probe__',
+  '__security_job_v2__',
+  'security-request-v2-0001',
+  pg_catalog.repeat('a', 64),
+  1,
+  'security-v2.sgf',
+  'en',
+  '(;GM[1])',
+  pg_catalog.repeat('b', 64),
+  8,
+  true,
+  NULL,
   NULL
 );
 SELECT public.claim_next_analysis_job('__security_probe_worker__', 900);

@@ -3,46 +3,60 @@ import { getAnalysisWorkerMode } from "../analysisWorkerMode";
 import { isMockAnalysisAllowed } from "../_core/env";
 import { getAnalysisEngineName } from "../worker/analysisEngines/config";
 
+export type AnalyzeEnqueueAdmissionCode =
+  | "ANALYSIS_IDEMPOTENCY_UNAVAILABLE"
+  | "KATAGO_INLINE_FORBIDDEN"
+  | "MOCK_ANALYSIS_DISABLED";
+
 /**
- * Production: mock 엔진은 KATATALK_ALLOW_MOCK_ANALYSIS 로만 공개.
- * KataGo 실분석은 ANALYSIS_WORKER_MODE=external 일 때만 enqueue 허용(inline+katago 는 웹과 혼동·위험).
+ * Return why a new job must not be admitted. The v2 database RPC evaluates
+ * this only after checking for an exact committed replay. A configuration
+ * change therefore cannot hide a job whose original HTTP response was lost.
  */
-export function requireAnalyzeEnqueueAllowed(req: Request, res: Response, next: NextFunction): void {
+export function analyzeEnqueueAdmissionCode(): AnalyzeEnqueueAdmissionCode | null {
+  if (process.env.KATATALK_ATOMIC_ENQUEUE?.trim().toLowerCase() === "false") {
+    return "ANALYSIS_IDEMPOTENCY_UNAVAILABLE";
+  }
   if (process.env.NODE_ENV !== "production") {
-    next();
-    return;
+    return null;
   }
 
   const engine = getAnalysisEngineName();
   const mode = getAnalysisWorkerMode();
-
   if (engine === "katago") {
-    if (mode === "inline") {
-      res.status(503).json({
-        success: false,
-        code: "KATAGO_INLINE_FORBIDDEN",
-        message:
-          "운영에서는 ANALYSIS_ENGINE=katago 일 때 ANALYSIS_WORKER_MODE=external 만 허용됩니다. 별도 worker 프로세스로 큐를 소비하세요.",
-      });
-      return;
-    }
+    return mode === "inline" ? "KATAGO_INLINE_FORBIDDEN" : null;
+  }
+  return isMockAnalysisAllowed() ? null : "MOCK_ANALYSIS_DISABLED";
+}
+
+/** Standalone middleware retained for focused guard tests and other callers. */
+export function requireAnalyzeEnqueueAllowed(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const code = analyzeEnqueueAdmissionCode();
+  if (code == null) {
     next();
     return;
   }
 
-  if (!isMockAnalysisAllowed()) {
-    res.status(503).json({
-      success: false,
-      code: "MOCK_ANALYSIS_DISABLED",
-      message: "현재 분석 기능은 준비 중입니다.",
-    });
-    return;
-  }
-
-  next();
+  res.status(503).json({
+    success: false,
+    code,
+    message:
+      code === "KATAGO_INLINE_FORBIDDEN"
+        ? "Production KataGo analysis requires an external Worker."
+        : code === "ANALYSIS_IDEMPOTENCY_UNAVAILABLE"
+          ? "Analysis submission is unavailable because atomic idempotency is disabled."
+          : "Analysis is temporarily unavailable.",
+  });
 }
 
-/** DB insert 시 is_mock — KataGo+external 실분석 job 만 false */
+/** DB insert `is_mock`: false only for KataGo jobs handled by an external Worker. */
 export function shouldEnqueueAnalysisJobAsMock(): boolean {
-  return !(getAnalysisEngineName() === "katago" && getAnalysisWorkerMode() === "external");
+  return !(
+    getAnalysisEngineName() === "katago" &&
+    getAnalysisWorkerMode() === "external"
+  );
 }
