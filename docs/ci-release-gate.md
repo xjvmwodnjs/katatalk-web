@@ -23,6 +23,17 @@
 - Chromium Playwright E2E with failure artifacts; and
 - production dependency audit that fails on high or critical advisories.
 
+The GitHub-hosted E2E job uses the Chrome Stable channel already installed on
+the hosted runner image instead of running `playwright install --with-deps`.
+This keeps browser automation under Playwright while removing an otherwise
+unbounded `apt update` dependency from every PR gate. Local E2E continues to
+use Playwright's installed Chromium.
+
+PR #4 run [`32232659277`](https://github.com/xjvmwodnjs/katatalk-web/actions/runs/32232659277)
+motivated this boundary: type/unit/build, PostgreSQL, and dependency-audit jobs
+passed, while E2E exhausted its 25-minute budget inside the runner's Ubuntu
+mirror update before any browser test started.
+
 The local secret scanner reports only a file path, line number, and rule name.
 It never prints a suspected secret value.
 
